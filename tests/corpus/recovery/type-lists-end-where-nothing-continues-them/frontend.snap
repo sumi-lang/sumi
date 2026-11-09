@@ -1,0 +1,160 @@
+== tree ==
+SourceFile! 1:1..23:1
+  TypeItem! 3:1..5:2
+    Name 3:6..3:10 "Open"
+    TypeParamList! 3:10..3:12
+      Name 3:11..3:12 "T"
+    FieldList 3:13..5:2
+      Field 4:5..4:13
+        Name 4:5..4:10 "value"
+        TypeRef 4:12..4:13 "T"
+  FnItem! 7:1..7:28
+    Name 7:4..7:11 "missing"
+    TypeParamList! 7:11..7:13
+      Name 7:12..7:13 "T"
+    ParamList 7:13..7:19
+      Param 7:14..7:18
+        Name 7:14..7:15 "x"
+        TypeRef 7:17..7:18 "T"
+    TypeRef 7:23..7:24 "T"
+    NameRef 7:27..7:28 "x"
+  FnItem! 9:1..9:49
+    Name 9:4..9:12 "elements"
+    TypeParamList! 9:12..9:17
+      Name 9:15..9:16 "T"
+    ParamList! 9:17..9:37
+      Param! 9:18..9:36
+        Name 9:18..9:19 "x"
+        TypeRef! 9:21..9:36
+          TypeArgList! 9:24..9:36
+            TypeRef 9:25..9:28 "int"
+            TypeRef 9:31..9:35 "bool"
+    TypeRef! 9:41..9:45
+      TypeArgList! 9:44..9:45 "<"
+    NameRef 9:48..9:49 "x"
+  FnItem! 11:1..11:41
+    Name 11:4..11:14 "separators"
+    TypeParamList! 11:14..11:19
+      Name 11:15..11:16 "T"
+      Name 11:17..11:18 "U"
+    ParamList! 11:19..11:38
+      Param! 11:20..11:37
+        Name 11:20..11:21 "x"
+        TypeRef! 11:23..11:37
+          TypeArgList! 11:27..11:37
+            TypeRef 11:28..11:31 "int"
+            TypeRef 11:32..11:36 "bool"
+    Block 11:39..11:41 "{}"
+  FnItem! 13:1..13:43
+    Name 13:4..13:10 "unions"
+    ParamList! 13:10..13:40
+      Param! 13:11..13:23
+        Name 13:11..13:12 "x"
+        UnionType! 13:14..13:23
+          TypeRef! 13:14..13:18
+            TypeArgList! 13:17..13:18 "<"
+          TypeRef 13:20..13:23 "int"
+      Error! 13:23..13:24 ">"
+      Param! 13:26..13:39
+        Name 13:26..13:27 "y"
+        TypeRef! 13:29..13:39
+          TypeArgList! 13:32..13:39
+            UnionType! 13:33..13:38
+              TypeRef 13:33..13:36 "int"
+    Block 13:41..13:43 "{}"
+  FnItem! 15:1..20:2
+    Name 15:4..15:10 "spaced"
+    TypeParamList 15:11..15:14
+      Name 15:12..15:13 "T"
+    ParamList 15:14..15:26
+      Param 15:15..15:25
+        Name 15:15..15:16 "x"
+        TypeRef 15:18..15:25
+          TypeArgList 15:22..15:25
+            TypeRef 15:23..15:24 "T"
+    Block! 15:27..20:2
+      MatchExpr! 16:5..19:6
+        NameRef 16:11..16:12 "x"
+        ArmList! 16:13..19:6
+          MatchArm 17:9..17:32
+            MemberPattern 17:9..17:23
+              NameRef 17:9..17:12 "Box"
+              TypeArgList 17:13..17:16
+                TypeRef 17:14..17:15 "T"
+              Name 17:17..17:22 "inner"
+            NameRef 17:27..17:32 "inner"
+          MatchArm! 18:9..18:29
+            MemberPattern! 18:9..18:20
+              NameRef 18:9..18:12 "Box"
+              TypeArgList! 18:12..18:13 "<"
+              Name 18:14..18:19 "inner"
+            NameRef 18:24..18:29 "inner"
+  FnItem! 22:1..22:28
+    Name 22:4..22:13 "discarded"
+    TypeParamList! 22:13..22:16
+      Name! 22:14..22:15 "_"
+    ParamList 22:16..22:24
+      Param 22:17..22:23
+        Name 22:17..22:18 "x"
+        TypeRef 22:20..22:23 "int"
+    NameRef 22:27..22:28 "x"
+
+== evidence ==
+Expected(Gt) at 3:13
+Expected(Gt) at 7:13
+ExpectedName at 9:13
+ExpectedType at 9:29
+Expected(Gt) at 9:46
+Expected(Comma) at 11:17
+Expected(Comma) at 11:32
+Expected(Gt) at 13:18
+Expected(Comma) at 13:23
+ExpectedName at 13:23
+ExpectedType at 13:38
+SpacedListOpener at 15:11
+SpacedListOpener at 15:22
+SpacedListOpener at 17:13
+Expected(Gt) at 18:13
+ExpectedName at 22:14
+
+== diagnostics ==
+error[syntax/expected-token] 3:13: expected `>`
+error[syntax/expected-token] 7:13: expected `>`
+error[syntax/expected-name] 9:13: expected a name
+error[syntax/expected-type] 9:29: expected a type
+error[syntax/expected-token] 9:46: expected `>`
+error[syntax/expected-token] 11:17: expected `,`
+error[syntax/expected-token] 11:32: expected `,`
+error[syntax/expected-token] 13:18: expected `>`
+error[syntax/expected-token] 13:23: expected `,`
+error[syntax/expected-name] 13:23..13:24 ">": expected a name
+error[syntax/expected-type] 13:38: expected a type
+error[syntax/spaced-list-opener] 15:11..15:12 "<": opening `<` must be adjacent to the name before it
+error[syntax/spaced-list-opener] 15:22..15:23 "<": opening `<` must be adjacent to the name before it
+error[syntax/spaced-list-opener] 17:13..17:14 "<": opening `<` must be adjacent to the name before it
+error[syntax/expected-token] 18:13: expected `>`
+error[syntax/expected-name] 22:14..22:15 "_": expected a name
+
+== formatted ==
+// A type list no `>` closes ends before the first token that neither begins
+// nor separates its elements, and what it lacks is reported where it belongs.
+type Open<T {
+    value: T,
+}
+
+fn missing<T(x: T) -> T = x
+
+fn elements<, T>(x: Box<int,, bool>) -> Box< = x
+
+fn separators<T U>(x: Pair<int bool>) {}
+
+fn unions(x: Box<| int>, y: Box<int |>) {}
+
+fn spaced<T>(x: Box<T>) {
+    match x {
+        Box<T>(inner) => inner,
+        Box<(inner) => inner,
+    }
+}
+
+fn discarded<_>(x: int) = x

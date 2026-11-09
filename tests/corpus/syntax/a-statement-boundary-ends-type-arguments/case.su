@@ -1,0 +1,14 @@
+// A name's `<` opens type arguments in an expression only when the `>` that
+// closes them and the call's `(` follow with no statement boundary between;
+// a line break that ends no statement is no boundary.
+fn calls(x: int) -> int {
+    let broken = id<
+        int,
+    >(x)
+    let closed = id<int
+    >(x)
+    let spaced = id<int> (x)
+    let less = a<b
+    c>(x)
+    broken + closed
+}

@@ -1,64 +1,83 @@
 == tree ==
-SourceFile! 1:1..9:1
-  FnItem! 3:1..8:2
-    Name 3:4..3:5 "f"
-    ParamList 3:5..3:7 "()"
-    Block! 3:8..8:2
-      IfExpr 4:5..4:24
-        BinaryExpr 4:8..4:11
-          NameRef 4:8..4:9 "a"
-          NameRef 4:10..4:11 "b"
-        Block 4:12..4:24
-          ReturnStmt 4:14..4:22
-            LiteralExpr 4:21..4:22 "1"
-      IfExpr! 5:5..5:28
-        Error! 5:8..5:15
-          BinaryExpr 5:8..5:11
-            NameRef 5:8..5:9 "a"
-            NameRef 5:10..5:11 "b"
-          ParenExpr 5:12..5:15
-            NameRef 5:13..5:14 "c"
-        Block 5:16..5:28
-          ReturnStmt 5:18..5:26
-            LiteralExpr 5:25..5:26 "2"
-      LetStmt 6:5..6:17
-        Name 6:9..6:10 "x"
-        BinaryExpr 6:13..6:17
-          NameRef 6:13..6:14 "a"
-          NameRef 6:16..6:17 "b"
-      LetStmt 7:5..7:17
-        Name 7:9..7:10 "y"
-        BinaryExpr 7:13..7:17
-          NameRef 7:13..7:14 "a"
-          NameRef 7:16..7:17 "b"
+SourceFile! 1:1..11:1
+  FnItem! 4:1..10:2
+    Name 4:4..4:5 "f"
+    ParamList 4:5..4:7 "()"
+    Block! 4:8..10:2
+      IfExpr 5:5..5:24
+        BinaryExpr 5:8..5:11
+          NameRef 5:8..5:9 "a"
+          NameRef 5:10..5:11 "b"
+        Block 5:12..5:24
+          ReturnStmt 5:14..5:22
+            LiteralExpr 5:21..5:22 "1"
+      IfExpr! 6:5..6:26
+        Error! 6:8..6:13
+          BinaryExpr 6:8..6:11
+            NameRef 6:8..6:9 "a"
+            NameRef 6:10..6:11 "b"
+          NameRef 6:12..6:13 "c"
+        Block 6:14..6:26
+          ReturnStmt 6:16..6:24
+            LiteralExpr 6:23..6:24 "2"
+      IfExpr 7:5..7:33
+        BinaryExpr 7:8..7:20
+          BinaryExpr 7:8..7:11
+            NameRef 7:8..7:9 "a"
+            NameRef 7:10..7:11 "b"
+          BinaryExpr 7:15..7:20
+            NameRef 7:15..7:16 "c"
+            ParenExpr 7:17..7:20
+              NameRef 7:18..7:19 "d"
+        Block 7:21..7:33
+          ReturnStmt 7:23..7:31
+            LiteralExpr 7:30..7:31 "3"
+      LetStmt 8:5..8:17
+        Name 8:9..8:10 "x"
+        BinaryExpr 8:13..8:17
+          NameRef 8:13..8:14 "a"
+          NameRef 8:16..8:17 "b"
+      LetStmt 9:5..9:17
+        Name 9:9..9:10 "y"
+        BinaryExpr 9:13..9:17
+          NameRef 9:13..9:14 "a"
+          NameRef 9:16..9:17 "b"
 
 == evidence ==
-UnspacedBinaryOperator at 4:9
 UnspacedBinaryOperator at 5:9
-UnspacedBinaryOperator at 5:11
-ChainedComparison at 5:11
-UnspacedBinaryOperator at 6:14
-UnspacedBinaryOperator at 7:15
+UnspacedBinaryOperator at 6:9
+UnspacedBinaryOperator at 6:11
+ChainedComparison at 6:11
+UnspacedBinaryOperator at 7:9
+UnspacedBinaryOperator at 7:16
+UnspacedBinaryOperator at 8:14
+UnspacedBinaryOperator at 9:15
 
 == diagnostics ==
-error[syntax/unspaced-binary-operator] 4:9..4:10 "<": binary operator must have spaces on both sides
 error[syntax/unspaced-binary-operator] 5:9..5:10 "<": binary operator must have spaces on both sides
-error[syntax/unspaced-binary-operator] 5:11..5:12 ">": binary operator must have spaces on both sides
-error[syntax/chained-comparison] 5:11..5:12 ">": comparison operators cannot be chained
-error[syntax/unspaced-binary-operator] 6:14..6:15 "<": binary operator must have spaces on both sides
-error[syntax/unspaced-binary-operator] 7:15..7:16 "<": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 6:9..6:10 "<": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 6:11..6:12 ">": binary operator must have spaces on both sides
+error[syntax/chained-comparison] 6:11..6:12 ">": comparison operators cannot be chained
+error[syntax/unspaced-binary-operator] 7:9..7:10 "<": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 7:16..7:17 ">": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 8:14..8:15 "<": binary operator must have spaces on both sides
+error[syntax/unspaced-binary-operator] 9:15..9:16 "<": binary operator must have spaces on both sides
 
 == formatted ==
 remaining: ChainedComparison, UnspacedBinaryOperator
 
-// A `<` glued to the name before it is reserved for type arguments, so
-// every glued comparison stays an error until it becomes an unclosed list.
+// A `<` glued to the name before it opens type arguments only where a `>`
+// and the `(` of a call close them, so every other glued comparison stays
+// an error.
 fn f() {
     if a < b {
         return 1
     }
-    if a<b>(c) {
+    if a<b>c {
         return 2
+    }
+    if a < b && c > (d) {
+        return 3
     }
     let x = a < b
     let y = a < b

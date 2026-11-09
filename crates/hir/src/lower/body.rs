@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::Fix;
 use sumi_graph::{
-    ArithOp, Arms, BinaryOp, Carried, Case, CmpOp, DeclId, FunctionId, Graph, GraphBuilder, Int,
-    NodeId, Op, References, RegionId, Ty,
+    ArithOp, Arms, BinaryOp, Carried, Case, CmpOp, Decl, DeclId, FunctionId, Graph, GraphBuilder,
+    Int, NodeId, Op, References, RegionId, Ty,
 };
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
@@ -17,7 +17,7 @@ use sumi_syntax::{
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
-use super::declare::{Declarations, Header, HeaderResult, Named, Parameter};
+use super::declare::{Declarations, Header, HeaderResult, Named};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
@@ -25,22 +25,30 @@ use crate::codes;
 use crate::spans::{Spans, SpansBuilder};
 use crate::{Binding, BindingId, BindingKind, Occurrence, Symbol};
 
+/// Every function's body, the instances of the generic ones among them: a body names the
+/// instances it calls, and each is lowered in its turn.
 pub(crate) fn lower<'s>(
     source: &mut Source<'s>,
-    items: &[ast::FnItem],
-    declared: &Declarations<'s>,
+    declared: Declarations<'s>,
     graph: GraphBuilder,
-) -> (Graph, Spans, Lowered) {
-    let mut builder = Builder::new(source, &declared.headers, &declared.names, graph);
-    for (index, (item, params)) in items.iter().zip(&declared.parameters).enumerate() {
-        let built = builder.build(index, *item, params);
+) -> (Graph, Spans, Lowered, Declarations<'s>) {
+    let mut builder = Builder::new(source, declared, graph);
+    let mut index = 0;
+    while index < builder.declared.headers.len() {
+        let built = builder.build(index);
         builder.lowered.built.push(built);
+        index += 1;
     }
+    builder.source.scope.clear();
+    builder.source.is_muted = false;
+    let fields = builder.source.take_fields();
+    builder.graph.declare(fields.into_iter().map(Decl::new));
     builder
         .graph
         .set_unions(builder.source.unions.borrow().clone());
     let graph = builder.graph.finish();
     let spans = builder.spans.finish(&graph);
+    let declared = builder.declared;
     let mut lowered = builder.lowered;
     lowered.references.append(&mut source.references);
     lowered
@@ -50,7 +58,7 @@ pub(crate) fn lower<'s>(
     lowered
         .unresolved
         .sort_unstable_by_key(|range| range.start());
-    (graph, spans, lowered)
+    (graph, spans, lowered, declared)
 }
 
 /// The syntax's operator in the graph's vocabulary, which has no lazy operator.
@@ -168,8 +176,7 @@ impl Value {
 
 struct Builder<'a, 's> {
     source: &'a mut Source<'s>,
-    headers: &'a [Header],
-    names: &'a NameMap<'s, Named>,
+    declared: Declarations<'s>,
     graph: GraphBuilder,
     spans: SpansBuilder,
     lowered: Lowered,
@@ -200,27 +207,22 @@ struct Builder<'a, 's> {
 }
 
 impl<'a, 's> Builder<'a, 's> {
-    fn new(
-        source: &'a mut Source<'s>,
-        headers: &'a [Header],
-        names: &'a NameMap<'s, Named>,
-        graph: GraphBuilder,
-    ) -> Self {
+    fn new(source: &'a mut Source<'s>, declared: Declarations<'s>, graph: GraphBuilder) -> Self {
         let nodes = source.tree.len();
+        let functions = declared.headers.len();
         Self {
             source,
-            headers,
-            names,
+            declared,
             graph,
             spans: SpansBuilder::new(nodes),
             lowered: Lowered {
-                built: Vec::with_capacity(headers.len()),
+                built: Vec::with_capacity(functions),
                 typed: Vec::with_capacity(nodes),
                 calls: Vec::new(),
                 called: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
-                fallthroughs: vec![None; headers.len()],
+                fallthroughs: Vec::with_capacity(functions),
                 bindings: Vec::new(),
                 references: Vec::new(),
                 unresolved: Vec::new(),
@@ -247,7 +249,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    fn build(&mut self, owner: usize, item: ast::FnItem, parameters: &[Parameter<'s>]) -> bool {
+    fn build(&mut self, owner: usize) -> bool {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.has_failed = false;
         self.depth = 0;
@@ -255,9 +257,30 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals.clear();
         self.versions.clear();
         self.mutable_locals.clear();
-        let header = &self.headers[owner];
+        self.lowered.fallthroughs.push(None);
+        let header = self.declared.headers[owner];
         let item_node = header.item;
         let tree = self.source.tree;
+        let generic = &self.declared.items[header.generic.index()];
+        let item = generic.item;
+        let type_args = &self.declared.type_args[owner];
+        self.source.scope.clear();
+        self.source.scope.extend(
+            generic
+                .params
+                .iter()
+                .copied()
+                .zip(type_args.iter().copied()),
+        );
+        self.source.is_muted = header.generic.index() != owner;
+        if self.source.is_muted {
+            // The item's syntax built another instance before this one.
+            let syntax = item_node.to_usize()..item_node.to_usize() + tree.subtree_len(item_node);
+            self.nodes_of[syntax.clone()].fill(None);
+            self.bottoms[syntax.clone()].fill(false);
+            self.reads_of[syntax].fill(None);
+        }
+        let parameters = std::mem::take(&mut self.declared.parameters[owner]);
         let root_node = item.body(tree).map(|body| body.node());
         let body_range = match root_node {
             Some(root) => TextRange::new(self.source.range(root).start(), self.scope_end(root)),
@@ -354,8 +377,9 @@ impl<'a, 's> Builder<'a, 's> {
             }
         };
         self.graph.close_run(run, region, value);
+        self.declared.parameters[owner] = parameters;
         let is_whole = !self.has_failed && root_node.is_some() && body.is_valid;
-        if is_whole {
+        if is_whole && !self.source.is_muted {
             self.unused();
         }
         is_whole
@@ -387,7 +411,7 @@ impl<'a, 's> Builder<'a, 's> {
             let renamed = format!("_{}", local.name);
             // Renaming onto a name already in use would capture its reads or duplicate it.
             let is_free = !local.is_assigned
-                && !self.names.contains_key(renamed.as_str())
+                && !self.declared.names.contains_key(renamed.as_str())
                 && !taken.contains(renamed.as_str());
             let mut diagnostic = diagnostic(
                 at,
@@ -517,9 +541,10 @@ impl<'a, 's> Builder<'a, 's> {
             // An operator's result has its type whatever its operands; a call has its callee's
             // whatever its arguments.
             Op::Neg | Op::Not | Op::Binary(_) | Op::And { .. } | Op::Or { .. } => true,
-            Op::Call(function) => {
-                !matches!(self.headers[function.index()].result, HeaderResult::None)
-            }
+            Op::Call(function) => !matches!(
+                self.declared.headers[function.index()].result,
+                HeaderResult::None
+            ),
             // A construction has its type whatever its fields.
             Op::Make(_) => true,
             Op::Assign => typed(declaration()) && typed(inputs[0].0),
@@ -542,12 +567,12 @@ impl<'a, 's> Builder<'a, 's> {
     }
 
     /// The function a call to `target` is held to: one with parameter types.
-    fn callee(&self, target: Target) -> Option<(FunctionId, &'a Header)> {
+    fn callee(&self, target: Target) -> Option<(FunctionId, Header)> {
         let Target::Function(target) = target else {
             return None;
         };
         self.graph.param_types(target)?;
-        Some((target, &self.headers[target.index()]))
+        Some((target, self.declared.headers[target.index()]))
     }
 
     fn arity(&self, callee: FunctionId) -> usize {
@@ -683,10 +708,14 @@ impl<'a, 's> Builder<'a, 's> {
         let is_mutable = matches!(kind, BindingKind::Let { is_mutable: true });
         let end = self.scope_ends[self.depth - 1];
         let from = from.min(end);
+        // A muted instance declares no binding, so its locals' IDs name none; `refer` is muted
+        // with it.
         let binding = BindingId::new(self.lowered.bindings.len());
-        self.lowered
-            .bindings
-            .push(Binding::new(range, kind, node, TextRange::new(from, end)));
+        if !self.source.is_muted {
+            self.lowered
+                .bindings
+                .push(Binding::new(range, kind, node, TextRange::new(from, end)));
+        }
         let id = self.versions.declare(node, is_mutable);
         debug_assert_eq!(
             id.index(),
@@ -817,6 +846,9 @@ impl<'a, 's> Builder<'a, 's> {
     }
 
     fn refer(&mut self, node: NodeIdx, symbol: Symbol, is_write: bool) {
+        if self.source.is_muted {
+            return;
+        }
         self.lowered.references.push(Occurrence {
             range: self.source.range(node),
             symbol,
@@ -1120,7 +1152,9 @@ impl<'a, 's> Builder<'a, 's> {
             }
             let name = self.source.text(inner);
             if declared.contains(name) {
-                self.lowered.unresolved.push(self.source.range(inner));
+                if !self.source.is_muted {
+                    self.lowered.unresolved.push(self.source.range(inner));
+                }
                 continue;
             }
             if let Some(local) = self.lookup(name) {
@@ -1129,8 +1163,8 @@ impl<'a, 's> Builder<'a, 's> {
                     Symbol::Local(self.locals[local.index()].binding),
                     false,
                 );
-            } else if let Some(Named::Function(id)) = self.names.get(name) {
-                self.refer(inner, Symbol::Function(*id), false);
+            } else if let Some(&Named::Function(id)) = self.declared.names.get(name) {
+                self.refer(inner, Symbol::Function(id), false);
             }
         }
         self.fail();
@@ -1309,6 +1343,7 @@ impl<'a, 's> Builder<'a, 's> {
             let is_expression = ast::Expr::cast(tree, child).is_some();
             let is_tail = is_expression && children.peek().is_none();
             self.lowered.statements.push(Statement {
+                owner: FunctionId::new(self.owner as usize),
                 block: node,
                 range: self.source.range(child),
                 context: self.context(),
@@ -1366,8 +1401,15 @@ impl<'a, 's> Builder<'a, 's> {
         let node = name.node();
         let name = self.source.text(node);
         let Some(local) = self.lookup(name) else {
-            if let Some(named) = self.names.get(name) {
-                let what = match *named {
+            if self.source.param(name).is_some() {
+                self.source.error(
+                    node,
+                    codes::NOT_A_VALUE,
+                    format!("type parameter `{name}` is not a value"),
+                    None,
+                );
+            } else if let Some(&named) = self.declared.names.get(name) {
+                let what = match named {
                     Named::Function(id) => {
                         self.refer(node, Symbol::Function(id), false);
                         "function"
@@ -1723,9 +1765,25 @@ impl<'a, 's> Builder<'a, 's> {
                 ast::CleanPattern::MemberPattern(pattern) => {
                     let member = pattern.member().node();
                     let name = self.source.text(member);
-                    match self.names.get(name).copied() {
-                        Some(Named::Type(decl)) => {
-                            self.refer(member, Symbol::Type(decl), false);
+                    if self.source.param(name).is_some() {
+                        self.source.error(
+                            member,
+                            codes::INVALID_UNION_MEMBER,
+                            format!("`{name}` is a type parameter, so no member an arm can name"),
+                            None,
+                        );
+                        is_valid = false;
+                        continue;
+                    }
+                    match self.declared.names.get(name).copied() {
+                        Some(Named::Type(item)) => {
+                            self.refer(member, Symbol::Type(item), false);
+                            let at = self.source.range(member);
+                            let type_args = pattern.type_args(tree);
+                            let Some(decl) = self.source.apply(item, type_args, at, false) else {
+                                is_valid = false;
+                                continue;
+                            };
                             named.push(decl);
                             let binding = pattern
                                 .binding(tree)
@@ -2003,8 +2061,8 @@ impl<'a, 's> Builder<'a, 's> {
         };
         let text = self.source.text(name.node());
         let Some(local) = self.lookup(text) else {
-            if let Some(named) = self.names.get(text) {
-                let what = match *named {
+            if let Some(&named) = self.declared.names.get(text) {
+                let what = match named {
                     Named::Function(id) => {
                         self.refer(name.node(), Symbol::Function(id), true);
                         "function"
@@ -2075,14 +2133,21 @@ impl<'a, 's> Builder<'a, 's> {
             }
             return Target::Unknown;
         }
-        match self.names.get(name) {
+        if self.source.param(name).is_some() {
+            self.source.error(
+                node,
+                codes::NOT_CALLABLE,
+                format!("type parameter `{name}` is not callable"),
+                None,
+            );
+            return Target::Unknown;
+        }
+        match self.declared.names.get(name).copied() {
             Some(Named::Function(target)) => {
-                let target = *target;
                 self.refer(node, Symbol::Function(target), false);
                 Target::Function(target)
             }
             Some(Named::Type(decl)) => {
-                let decl = *decl;
                 self.refer(node, Symbol::Type(decl), false);
                 Target::Type(decl)
             }
@@ -2099,13 +2164,62 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
+    /// The instance a call names: its target at the type arguments after the callee, one per type
+    /// parameter. A call that names none is reported here and has no target.
+    fn applied(
+        &mut self,
+        call: ast::CallExpr,
+        callee: NodeIdx,
+        target: Target,
+        damaged: bool,
+    ) -> Target {
+        let tree = self.source.tree;
+        let list = call.type_args(tree);
+        let at = self.source.range(callee);
+        match target {
+            Target::Unknown => {
+                self.source.type_args(list);
+                Target::Unknown
+            }
+            Target::Type(item) => match self.source.apply(item, list, at, damaged) {
+                Some(decl) => Target::Type(decl),
+                None => Target::Unknown,
+            },
+            Target::Function(generic) => {
+                let (given, args) = self.source.type_args(list);
+                let expected = self.declared.items[generic.index()].params.len();
+                let declared = self.declared.headers[generic.index()].name;
+                let takes = self
+                    .source
+                    .takes(expected, given, list, at, declared, damaged);
+                if !takes {
+                    return Target::Unknown;
+                }
+                if expected == 0 {
+                    return target;
+                }
+                let Some(args) = args.filter(|_| !self.declared.unbounded.contains(&call.node()))
+                else {
+                    return Target::Unknown;
+                };
+                let instance = self
+                    .declared
+                    .instance(self.source, &mut self.graph, generic, args);
+                instance.map_or(Target::Unknown, Target::Function)
+            }
+        }
+    }
+
     /// Every argument is read, arity aside: the typing holds each to its parameter. A damaged
     /// list is not yet the wrong length, and its labels are not yet in order.
     fn call(&mut self, call: ast::CallExpr, damaged: bool) -> Value {
         let tree = self.source.tree;
         let node = call.node();
         let target = match call.callee(tree) {
-            Some(callee) => self.target(callee.node()),
+            Some(callee) => {
+                let target = self.target(callee.node());
+                self.applied(call, callee.node(), target, damaged)
+            }
             None => Target::Unknown,
         };
         // The arguments before any garbage: the ones whose position is reliable.
@@ -2139,7 +2253,7 @@ impl<'a, 's> Builder<'a, 's> {
                 if let Some(label) = arg.label(tree)
                     && let Target::Function(function) = target
                 {
-                    let item = self.headers[function.index()].item;
+                    let item = self.declared.headers[function.index()].item;
                     self.source.error(
                         label.node(),
                         codes::LABELED_ARGUMENT,
@@ -2214,13 +2328,14 @@ impl<'a, 's> Builder<'a, 's> {
         let tree = self.source.tree;
         let node = call.node();
         let fields = self.source.decls[decl.index()].fields.len();
-        let type_name = self.source.decls[decl.index()].name;
+        let type_name = self.source.show(Ty::decl(decl)).to_string();
+        let item = self.source.decls[decl.index()].item;
         let declared = self.source.decls[decl.index()]
             .name_node
             .map(|name| (self.source.range(name), "declared here"));
         let mut given: Vec<Option<(Value, NodeIdx)>> = vec![None; fields];
         // A type with a field of no type is reported at its declaration.
-        let mut is_damaged = self.graph.decl(decl).field_types().is_none();
+        let mut is_damaged = self.source.fields(decl).iter().any(|(_, ty)| ty.is_none());
         for &(arg, value) in args {
             let Some(label) = arg.label(tree) else {
                 self.source.report(
@@ -2254,7 +2369,7 @@ impl<'a, 's> Builder<'a, 's> {
                         is_damaged = true;
                     }
                     None => {
-                        self.refer(label.node(), Symbol::Field(decl, index as u32), false);
+                        self.refer(label.node(), Symbol::Field(item, index as u32), false);
                         given[index] = Some((value, label.node()));
                     }
                 },
@@ -2319,6 +2434,7 @@ impl<'a, 's> Builder<'a, 's> {
         let id = self.push(node, op, &[base.input()], None);
         if let Some(field) = field
             && !damaged
+            && !self.source.is_muted
         {
             self.lowered
                 .field_reads

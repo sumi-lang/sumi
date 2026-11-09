@@ -22,6 +22,29 @@ fn named_declaration_heads_are_anchors_independent_of_expression_context() {
 }
 
 #[test]
+fn a_type_list_pairs_a_glued_less_than_with_its_greater_than() {
+    for (source, expected) in [
+        ("a<b>(c)", vec![(1, 3)]),
+        ("a<b, c<d | e>>(f)", vec![(1, 10), (5, 9)]),
+        ("a<\n    b,\n>(c)", vec![(1, 4)]),
+        ("a <b>(c)", vec![]),
+        ("a<b + c>(d)", vec![]),
+        ("a<b\nc>(d)", vec![]),
+        ("a<b>c<d", vec![(1, 3)]),
+        ("f(a<b\nc>(d))", vec![(3, 6)]),
+        ("a<b<c>", vec![(3, 5)]),
+    ] {
+        let lexed = lex(source).unwrap();
+        let input = ParserInput::new(&lexed);
+        let pairs: Vec<_> = input
+            .indices()
+            .filter_map(|index| Some((index.to_usize(), input.type_list_closer(index)?.to_usize())))
+            .collect();
+        assert_eq!(pairs, expected, "{source}");
+    }
+}
+
+#[test]
 fn expression_layout_restores_parent_context_after_malformed_brackets() {
     for (source, expected) in [
         (

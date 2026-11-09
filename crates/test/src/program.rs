@@ -38,10 +38,36 @@ fn chain(
         .boxed()
 }
 
+/// A type list, or nothing: `elements` between `<` and `>`, the last with a comma when `trailing`.
+fn type_list(elements: BoxedStrategy<String>) -> BoxedStrategy<String> {
+    prop::option::of((prop::collection::vec(elements, 0..3), any::<bool>()))
+        .prop_map(|list| match list {
+            Some((elements, trailing)) => {
+                let comma = if trailing && !elements.is_empty() {
+                    ","
+                } else {
+                    ""
+                };
+                format!("<{}{comma}>", elements.join(", "))
+            }
+            None => String::new(),
+        })
+        .boxed()
+}
+
+fn type_params() -> BoxedStrategy<String> {
+    type_list(
+        prop::sample::select(&["T", "U"][..])
+            .prop_map(str::to_owned)
+            .boxed(),
+    )
+}
+
 fn type_item() -> BoxedStrategy<String> {
     let field = (name(), type_text()).prop_map(|(name, ty)| format!("{name}: {ty}"));
     (
-        prop::sample::select(&["P", "Q"][..]),
+        (prop::sample::select(&["P", "Q"][..]), type_params())
+            .prop_map(|(name, params)| format!("{name}{params}")),
         prop::collection::vec(field, 0..3),
         any::<bool>(),
         any::<bool>(),
@@ -64,9 +90,21 @@ fn type_item() -> BoxedStrategy<String> {
 }
 
 fn type_text() -> BoxedStrategy<String> {
-    prop::sample::select(&["int", "bool", "P", "P | Q", "P | Q | int"][..])
-        .prop_map(str::to_owned)
-        .boxed()
+    prop::sample::select(
+        &[
+            "int",
+            "bool",
+            "P",
+            "T",
+            "P | Q",
+            "P | Q | int",
+            "P<int>",
+            "Q<T, bool,>",
+            "P<> | Q<P<U> | Q>",
+        ][..],
+    )
+    .prop_map(str::to_owned)
+    .boxed()
 }
 
 fn param_list() -> BoxedStrategy<String> {
@@ -118,7 +156,8 @@ fn expr() -> BoxedStrategy<String> {
             4 => literal(),
             1 => expr.clone().prop_map(|e| format!("({e})")),
             2 => (
-                name(),
+                (name(), type_list(type_text()))
+                    .prop_map(|(callee, type_args)| format!("{callee}{type_args}")),
                 prop::collection::vec((prop::option::of(name()), expr.clone()), 0..3),
                 any::<bool>(),
                 any::<bool>(),
@@ -143,7 +182,12 @@ fn expr() -> BoxedStrategy<String> {
             2 => (
                 expr.clone(),
                 prop::collection::vec(
-                    (prop::sample::select(&["P", "Q"][..]), prop::option::of(name()), expr.clone()),
+                    (
+                        (prop::sample::select(&["P", "Q"][..]), type_list(type_text()))
+                            .prop_map(|(member, type_args)| format!("{member}{type_args}")),
+                        prop::option::of(name()),
+                        expr.clone(),
+                    ),
                     0..3,
                 ),
                 prop::option::of(expr.clone()),
@@ -235,8 +279,15 @@ fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
 }
 
 pub fn program() -> BoxedStrategy<String> {
-    let function = (name(), param_list(), signature_tail(block(expr()), expr()))
-        .prop_map(|(name, params, (tail, _))| format!("fn {name}{params}{tail}"));
+    let function = (
+        name(),
+        type_params(),
+        param_list(),
+        signature_tail(block(expr()), expr()),
+    )
+        .prop_map(|(name, type_params, params, (tail, _))| {
+            format!("fn {name}{type_params}{params}{tail}")
+        });
     let item = prop_oneof![3 => function, 1 => type_item()];
     (any::<bool>(), prop::collection::vec(item, 0..3))
         .prop_map(|(comment, items)| {

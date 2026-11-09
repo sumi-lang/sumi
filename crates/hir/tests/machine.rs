@@ -201,11 +201,25 @@ impl Gen<'_> {
     }
 
     fn expr(&mut self, kind: Kind, fuel: u32) -> String {
+        if fuel > 0 && self.rng.chance(1, 10) {
+            return self.generic(kind, fuel - 1);
+        }
         match kind {
             Kind::Int => self.int(fuel),
             Kind::Bool => self.bool(fuel),
             Kind::Rec => self.rec(fuel),
             Kind::Shape => self.shape(fuel),
+        }
+    }
+
+    /// A value of `kind` through an instance of the generic prelude, which hands it back.
+    fn generic(&mut self, kind: Kind, fuel: u32) -> String {
+        let value = self.expr(kind, fuel);
+        let name = kind.name();
+        match self.rng.below(3) {
+            0 => format!("pass<{name}>({value})"),
+            1 => format!("wrap<{name}>({value}).g"),
+            _ => format!("G<{name}>(g: {value}).g"),
         }
     }
 
@@ -760,7 +774,10 @@ fn program(seed: u64) -> String {
             index += 1;
         }
     }
-    let mut text = String::from("type R { a: int, b: bool }\ntype S { c: int }\n");
+    let mut text = String::from(
+        "type R { a: int, b: bool }\ntype S { c: int }\ntype G<T> { g: T }\n\
+         fn pass<T>(x: T) -> T = x\nfn wrap<T>(x: T) -> G<T> = G<T>(g: x)\n",
+    );
     for current in 0..functions.len() {
         let signature = &functions[current];
         let mut body = Gen {
@@ -947,6 +964,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     let mut looping = 0usize;
     let mut recording = 0usize;
     let mut matching = 0usize;
+    let mut instancing = 0usize;
     let mut runs = Runs::default();
     for seed in 0..seeds {
         let source = program(seed);
@@ -957,6 +975,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
             looping += usize::from(source.contains("for ") && outcome.finished != 0);
             recording += usize::from(source.contains(".a") && outcome.finished != 0);
             matching += usize::from(source.contains("match ") && outcome.finished != 0);
+            instancing += usize::from(source.contains(">(") && outcome.finished != 0);
             mutating += usize::from(
                 source.contains("let mut ")
                     && source.lines().any(|line| {
@@ -982,6 +1001,10 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
         "no accepted record-reading program ran to the end"
     );
     assert_ne!(matching, 0, "no accepted matching program ran to the end");
+    assert_ne!(
+        instancing, 0,
+        "no accepted program naming a generic instance ran to the end"
+    );
     assert_ne!(
         looping, 0,
         "no accepted loop-bearing program ran to the end"

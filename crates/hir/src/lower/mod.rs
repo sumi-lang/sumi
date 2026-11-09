@@ -11,8 +11,8 @@ use sumi_syntax::NodeIdx;
 use sumi_text::TextRange;
 
 pub(crate) use body::lower;
-pub(crate) use declare::{Header, HeaderResult, TypeHeader, declare};
-pub(crate) use source::{Source, diagnostic};
+pub(crate) use declare::{Header, HeaderResult, declare};
+pub(crate) use source::{Params, Source, diagnostic};
 
 use crate::{Binding, Occurrence};
 
@@ -33,6 +33,7 @@ pub(crate) struct Call {
 
 /// A block's statement and the context it runs in, which is dead after one that never completes.
 pub(crate) struct Statement {
+    pub owner: FunctionId,
     pub block: NodeIdx,
     pub range: TextRange,
     pub context: NodeId,

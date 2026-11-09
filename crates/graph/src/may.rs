@@ -855,7 +855,7 @@ impl fmt::Display for Shown<'_> {
                     .copied()
                     .filter(|&decl| self.0.decls.get(decl).is_some())
                     .collect();
-                present.sort_by_key(|&decl| self.2.decl(decl));
+                present.sort_by_cached_key(|&decl| Ty::decl(decl).shown(self.2).to_string());
                 if present.is_empty() {
                     return f.write_str("∅");
                 }
@@ -878,7 +878,7 @@ impl May {
         names: &dyn Names,
         f: &mut fmt::Formatter<'_>,
     ) -> fmt::Result {
-        let name = names.decl(decl);
+        let name = Ty::decl(decl).shown(names);
         match self.decls.get(decl) {
             None => f.write_str("∅"),
             Some(Fields::Any) => write!(f, "{name}(..)"),
@@ -918,7 +918,7 @@ impl fmt::Display for ShownWhole<'_> {
             parts.push("unit".to_owned());
         }
         let mut decls: Vec<DeclId> = self.0.decls.iter().map(|(decl, _)| decl).collect();
-        decls.sort_by_key(|&decl| self.1.decl(decl));
+        decls.sort_by_cached_key(|&decl| Ty::decl(decl).shown(self.1).to_string());
         for decl in decls {
             parts.push(self.0.shown(Ty::decl(decl), self.1).to_string());
         }
@@ -1112,6 +1112,10 @@ mod tests {
     impl Names for NoNames {
         fn decl(&self, id: DeclId) -> &str {
             ["Point", "Pair"][id.index()]
+        }
+
+        fn type_args(&self, _: DeclId) -> &[Ty] {
+            &[]
         }
 
         fn field(&self, name: FieldName) -> &str {

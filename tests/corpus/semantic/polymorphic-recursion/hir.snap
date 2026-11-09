@@ -1,0 +1,226 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 2
+
+== graph ==
+fn grow<T>@8:1..12:2 (T ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param x@8:12..8:13: T
+  param n@8:18..8:19: int
+  result: copy : int @8:29..8:32
+    value: if : ? @8:35..12:2
+      scrutinee: eager == : bool @8:38..8:44
+        lhs: read n@8:18..8:19 : int
+        rhs: int 0 : int @8:43..8:44
+      then: int 0 : int @9:5..9:6
+      else: hole : ? @11:5..11:42
+        part[0]: make Box : Box<T> @11:18..11:34
+          value: read x@8:12..8:13 : T
+        part[1]: eager - : int @11:36..11:41
+          lhs: read n@8:18..8:19 [n == 0 fails@8:38..8:44] : int
+          rhs: int 1 : int @11:40..11:41
+
+fn ping<A, B>@13:1..17:2 (A ∈ ∅, B ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param a@13:15..13:16: A
+  param b@13:21..13:22: B
+  param n@13:27..13:28: int
+  result: copy : int @13:38..13:41
+    value: if : int @13:44..17:2
+      scrutinee: eager == : bool @13:47..13:53
+        lhs: read n@13:27..13:28 : int
+        rhs: int 0 : int @13:52..13:53
+      then: int 0 : int @14:5..14:6
+      else: call pong@18:1..18:102 : int @16:5..16:28
+        arg[0]: read b@13:21..13:22 : B
+        arg[1]: read a@13:15..13:16 : A
+        arg[2]: eager - : int @16:22..16:27
+          lhs: read n@13:27..13:28 [n == 0 fails@13:47..13:53] : int
+          rhs: int 1 : int @16:26..16:27
+
+fn pong<A, B>@18:1..18:102 (A ∈ ∅, B ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param a@18:15..18:16: A
+  param b@18:21..18:22: B
+  param n@18:27..18:28: int
+  result: copy : int @18:38..18:41
+    value: hole : ? @18:44..18:102
+      part[0]: make Pair : Pair<A, B> @18:64..18:95
+        first: read a@18:15..18:16 : A
+        second: read b@18:21..18:22 : B
+      part[1]: read b@18:21..18:22 : B
+      part[2]: read n@18:27..18:28 : int
+
+fn steady<T>@19:1..23:2 (T ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param x@19:14..19:15: T
+  param n@19:20..19:21: int
+  result: copy : int @19:31..19:34
+    value: if : int @19:37..23:2
+      scrutinee: eager == : bool @19:40..19:46
+        lhs: read n@19:20..19:21 : int
+        rhs: int 0 : int @19:45..19:46
+      then: int 0 : int @20:5..20:6
+      else: eager + : int @22:5..22:69
+        lhs: call steady@19:1..23:2 : int @22:5..22:24
+          arg[0]: read x@19:14..19:15 : T
+          arg[1]: eager - : int @22:18..22:23
+            lhs: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+            rhs: int 1 : int @22:22..22:23
+        rhs: call fixed@24:1..28:2 : int @22:27..22:69
+          arg[0]: make Box : Box<int> @22:43..22:61
+            value: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+          arg[1]: eager - : int @22:63..22:68
+            lhs: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+            rhs: int 1 : int @22:67..22:68
+
+fn fixed<T>@24:1..28:2 (T ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param x@24:13..24:14: T
+  param n@24:19..24:20: int
+  result: copy : int @24:30..24:33
+    value: if : int @24:36..28:2
+      scrutinee: eager == : bool @24:39..24:45
+        lhs: read n@24:19..24:20 : int
+        rhs: int 0 : int @24:44..24:45
+      then: int 0 : int @25:5..25:6
+      else: call steady@19:1..23:2 : int @27:5..27:48
+        arg[0]: make Box : Box<int> @27:22..27:40
+          value: read n@24:19..24:20 [n == 0 fails@24:39..24:45] : int
+        arg[1]: eager - : int @27:42..27:47
+          lhs: read n@24:19..24:20 [n == 0 fails@24:39..24:45] : int
+          rhs: int 1 : int @27:46..27:47
+
+fn main@29:1..29:85 () -> int ∈ ∅
+  result: copy : int @29:14..29:17
+    value: eager + : int @29:20..29:85
+      lhs: eager + : int @29:20..29:65
+        lhs: call grow@8:1..12:2 : int @29:20..29:35
+          arg[0]: int 1 : int @29:30..29:31
+          arg[1]: int 3 : int @29:33..29:34
+        rhs: call ping@13:1..17:2 : int @29:38..29:65
+          arg[0]: int 1 : int @29:54..29:55
+          arg[1]: bool true : bool @29:57..29:61
+          arg[2]: int 3 : int @29:63..29:64
+      rhs: call steady@19:1..23:2 : int @29:68..29:85
+        arg[0]: int 1 : int @29:80..29:81
+        arg[1]: int 3 : int @29:83..29:84
+
+fn pong<B, A>@18:1..18:102 (B ∈ ∅, A ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param a@18:15..18:16: B
+  param b@18:21..18:22: A
+  param n@18:27..18:28: int
+  result: copy : int @18:38..18:41
+    value: hole : ? @18:44..18:102
+      part[0]: make Pair : Pair<B, A> @18:64..18:95
+        first: read a@18:15..18:16 : B
+        second: read b@18:21..18:22 : A
+      part[1]: read b@18:21..18:22 : A
+      part[2]: read n@18:27..18:28 : int
+
+fn fixed<Box<int>>@24:1..28:2 (Box<int> ∈ Box<int>([1, 3]), int ∈ [0, 2]) -> int ∈ [0, 0]
+  param x@24:13..24:14: Box<int>
+  param n@24:19..24:20: int
+  result: copy : int @24:30..24:33
+    value: if : int @24:36..28:2
+      scrutinee: eager == : bool @24:39..24:45
+        lhs: read n@24:19..24:20 : int
+        rhs: int 0 : int @24:44..24:45
+      then: int 0 : int @25:5..25:6
+      else: call steady@19:1..23:2 : int @27:5..27:48
+        arg[0]: make Box : Box<int> @27:22..27:40
+          value: read n@24:19..24:20 [n == 0 fails@24:39..24:45] : int
+        arg[1]: eager - : int @27:42..27:47
+          lhs: read n@24:19..24:20 [n == 0 fails@24:39..24:45] : int
+          rhs: int 1 : int @27:46..27:47
+
+fn steady<Box<int>>@19:1..23:2 (Box<int> ∈ Box<int>([1, 2]), int ∈ [0, 1]) -> int ∈ [0, 0]
+  param x@19:14..19:15: Box<int>
+  param n@19:20..19:21: int
+  result: copy : int @19:31..19:34
+    value: if : int @19:37..23:2
+      scrutinee: eager == : bool @19:40..19:46
+        lhs: read n@19:20..19:21 : int
+        rhs: int 0 : int @19:45..19:46
+      then: int 0 : int @20:5..20:6
+      else: eager + : int @22:5..22:69
+        lhs: call steady@19:1..23:2 : int @22:5..22:24
+          arg[0]: read x@19:14..19:15 : Box<int>
+          arg[1]: eager - : int @22:18..22:23
+            lhs: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+            rhs: int 1 : int @22:22..22:23
+        rhs: call fixed@24:1..28:2 : int @22:27..22:69
+          arg[0]: make Box : Box<int> @22:43..22:61
+            value: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+          arg[1]: eager - : int @22:63..22:68
+            lhs: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+            rhs: int 1 : int @22:67..22:68
+
+fn grow<int>@8:1..12:2 (int ∈ [1, 1], int ∈ [3, 3]) -> int ∈ ∅
+  param x@8:12..8:13: int
+  param n@8:18..8:19: int
+  result: copy : int @8:29..8:32
+    value: if : ? @8:35..12:2
+      scrutinee: eager == : bool @8:38..8:44
+        lhs: read n@8:18..8:19 : int
+        rhs: int 0 : int @8:43..8:44
+      then: int 0 : int @9:5..9:6
+      else: hole : ? @11:5..11:42
+        part[0]: make Box : Box<int> @11:18..11:34
+          value: read x@8:12..8:13 : int
+        part[1]: eager - : int @11:36..11:41
+          lhs: read n@8:18..8:19 [n == 0 fails@8:38..8:44] : int
+          rhs: int 1 : int @11:40..11:41
+
+fn ping<int, bool>@13:1..17:2 (int ∈ [1, 1], bool ∈ {true}, int ∈ [3, 3]) -> int ∈ ∅
+  param a@13:15..13:16: int
+  param b@13:21..13:22: bool
+  param n@13:27..13:28: int
+  result: copy : int @13:38..13:41
+    value: if : int @13:44..17:2
+      scrutinee: eager == : bool @13:47..13:53
+        lhs: read n@13:27..13:28 : int
+        rhs: int 0 : int @13:52..13:53
+      then: int 0 : int @14:5..14:6
+      else: call pong@18:1..18:102 : int @16:5..16:28
+        arg[0]: read b@13:21..13:22 : bool
+        arg[1]: read a@13:15..13:16 : int
+        arg[2]: eager - : int @16:22..16:27
+          lhs: read n@13:27..13:28 [n == 0 fails@13:47..13:53] : int
+          rhs: int 1 : int @16:26..16:27
+
+fn steady<int>@19:1..23:2 (int ∈ [1, 1], int ∈ [0, 3]) -> int ∈ [0, 0]
+  param x@19:14..19:15: int
+  param n@19:20..19:21: int
+  result: copy : int @19:31..19:34
+    value: if : int @19:37..23:2
+      scrutinee: eager == : bool @19:40..19:46
+        lhs: read n@19:20..19:21 : int
+        rhs: int 0 : int @19:45..19:46
+      then: int 0 : int @20:5..20:6
+      else: eager + : int @22:5..22:69
+        lhs: call steady@19:1..23:2 : int @22:5..22:24
+          arg[0]: read x@19:14..19:15 : int
+          arg[1]: eager - : int @22:18..22:23
+            lhs: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+            rhs: int 1 : int @22:22..22:23
+        rhs: call fixed@24:1..28:2 : int @22:27..22:69
+          arg[0]: make Box : Box<int> @22:43..22:61
+            value: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+          arg[1]: eager - : int @22:63..22:68
+            lhs: read n@19:20..19:21 [n == 0 fails@19:40..19:46] : int
+            rhs: int 1 : int @22:67..22:68
+
+fn pong<bool, int>@18:1..18:102 (bool ∈ {true}, int ∈ [1, 1], int ∈ [2, 2]) -> int ∈ ∅
+  param a@18:15..18:16: bool
+  param b@18:21..18:22: int
+  param n@18:27..18:28: int
+  result: copy : int @18:38..18:41
+    value: hole : ? @18:44..18:102
+      part[0]: make Pair : Pair<bool, int> @18:64..18:95
+        first: read a@18:15..18:16 : bool
+        second: read b@18:21..18:22 : int
+      part[1]: read b@18:21..18:22 : int
+      part[2]: read n@18:27..18:28 : int
+
+== semantic diagnostics ==
+error[semantic/polymorphic-recursion] 11:10..11:16 "Box<T>": type argument `Box<T>` grows with every call around this cycle, so the calls have no last instance
+error[semantic/polymorphic-recursion] 18:49..18:59 "Pair<A, B>": type argument `Pair<A, B>` grows with every call around this cycle, so the calls have no last instance
+warning[semantic/unused-name] 24:13..24:14 "x": parameter `x` is never read
+  fix: prefix the name with `_`
+    24:13 -> "_"

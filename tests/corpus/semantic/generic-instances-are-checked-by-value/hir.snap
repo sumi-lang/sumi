@@ -1,0 +1,104 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 4
+
+== graph ==
+fn divide<T>@1:1..1:45 (T ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param _x@1:14..1:16: T
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn forever<T>@2:1..2:43 (T ∈ ∅) -> int ∈ ∅
+  param x@2:15..2:16: T
+  result: copy : int @2:24..2:27
+    value: call forever@2:1..2:43 : int @2:30..2:43
+      arg[0]: read x@2:15..2:16 : T
+
+fn partial<T>@7:1..9:2 (Box<T> | None ∈ ∅) -> int ∈ ∅
+  param v@7:15..7:16: Box<T> | None
+  result: copy : int @7:36..7:39
+    value: match : int @7:42..9:2
+      scrutinee: read v@7:15..7:16 : Box<T> | None
+      None: int 0 : int @8:13..8:14
+
+fn main@10:1..14:2 () -> int ∈ ∅
+  result: copy : int @10:14..10:17
+    value:
+      let _p@11:9..11:11: int @11:5..11:58
+        initializer: eager + : int @11:14..11:58
+          lhs: call partial@7:1..9:2 : int @11:14..11:34
+            arg[0]: make None : None @11:27..11:33
+          rhs: call partial@7:1..9:2 : int @11:37..11:58
+            arg[0]: make None : None @11:51..11:57
+      let a@12:9..12:10: int @12:5..12:76
+        initializer: eager + : int @12:13..12:76
+          lhs: eager + : int @12:13..12:54
+            lhs: call divide@1:1..1:45 : int @12:13..12:30
+              arg[0]: int 1 : int @12:25..12:26
+              arg[1]: int 0 : int @12:28..12:29
+            rhs: call divide@1:1..1:45 : int @12:33..12:54
+              arg[0]: bool true : bool @12:46..12:50
+              arg[1]: int 0 : int @12:52..12:53
+          rhs: call divide@1:1..1:45 : int @12:57..12:76
+            arg[0]: unit : unit @12:70..12:72
+            arg[1]: int 5 : int @12:74..12:75
+      tail: eager + : int @13:5..13:24
+        lhs: read a@12:9..12:10 : int
+        rhs: call forever@2:1..2:43 : int @13:9..13:24
+          arg[0]: int 1 : int @13:22..13:23
+
+fn partial<int>@7:1..9:2 (Box<int> | None ∈ None()) -> int ∈ [0, 0]
+  param v@7:15..7:16: Box<int> | None
+  result: copy : int @7:36..7:39
+    value: match : int @7:42..9:2
+      scrutinee: read v@7:15..7:16 : Box<int> | None
+      None: int 0 : int @8:13..8:14
+
+fn partial<bool>@7:1..9:2 (Box<bool> | None ∈ None()) -> int ∈ [0, 0]
+  param v@7:15..7:16: Box<bool> | None
+  result: copy : int @7:36..7:39
+    value: match : int @7:42..9:2
+      scrutinee: read v@7:15..7:16 : Box<bool> | None
+      None: int 0 : int @8:13..8:14
+
+fn divide<int>@1:1..1:45 (int ∈ [1, 1], int ∈ [0, 0]) -> int ∈ ∅
+  param _x@1:14..1:16: int
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn divide<bool>@1:1..1:45 (bool ∈ {true}, int ∈ [0, 0]) -> int ∈ ∅
+  param _x@1:14..1:16: bool
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn divide<unit>@1:1..1:45 (unit ∈ unit, int ∈ [5, 5]) -> int ∈ [20, 20]
+  param _x@1:14..1:16: unit
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn forever<int>@2:1..2:43 (int ∈ [1, 1]) -> int ∈ ∅
+  param x@2:15..2:16: int
+  result: copy : int @2:24..2:27
+    value: call forever@2:1..2:43 : int @2:30..2:43
+      arg[0]: read x@2:15..2:16 : int
+
+== semantic diagnostics ==
+error[semantic/division-by-zero] 1:38..1:45 "100 / d": division by zero
+  at 12:28..12:29 "0": argument is 0
+error[semantic/division-by-zero] 1:38..1:45 "100 / d": division by zero
+  at 12:52..12:53 "0": argument is 0
+error[semantic/unbounded-recursion] 2:4..2:11 "forever": recursion in `forever` has no argument that moves toward a bound on every call
+  at 2:30..2:43 "forever<T>(x)": argument passes `x` along
+error[semantic/non-exhaustive-match] 7:42..9:2 "match v {\n    None => 0,\n}": match has no arm for `Box<T>`

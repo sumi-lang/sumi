@@ -10,11 +10,11 @@ sumi_frontend::codes! {
     /// A name with no declaration in scope.
     UNKNOWN_NAME: Error = "unknown-name";
 
-    /// Two items in a file, two parameters of a function, or two fields of a type with the same
-    /// name, or an item named like a built-in type.
+    /// Two items in a file, two parameters or type parameters of an item, or two fields of a type
+    /// with the same name, or an item or type parameter named like a built-in type.
     DUPLICATE_NAME: Error = "duplicate-name";
 
-    /// A call whose callee is a parameter or binding.
+    /// A call whose callee is a parameter, a binding, or a type parameter.
     NOT_CALLABLE: Error = "not-callable";
 
     /// A call whose argument count differs from the callee's parameter count.
@@ -41,7 +41,7 @@ sumi_frontend::codes! {
     /// A cycle of calls in which no parameter strictly moves toward a bound.
     UNBOUNDED_RECURSION: Error = "unbounded-recursion";
 
-    /// A function or type name used where a value is required.
+    /// A function, type, or type parameter name used where a value is required.
     NOT_A_VALUE: Error = "not-a-value";
 
     /// A field read or label naming no field of the type it is applied to.
@@ -62,11 +62,20 @@ sumi_frontend::codes! {
     /// A type holding a value of its own type through its fields.
     RECURSIVE_TYPE: Error = "recursive-type";
 
-    /// A union member naming a scalar type.
+    /// A union member, or a `match` arm, naming a scalar type or a type parameter.
     INVALID_UNION_MEMBER: Error = "invalid-union-member";
 
     /// A `match` with no arm for a member its scrutinee may hold, whatever the arguments.
     NON_EXHAUSTIVE_MATCH: Error = "non-exhaustive-match";
+
+    /// A type or function named with other than one type argument per type parameter it declares.
+    TYPE_ARGUMENTS: Error = "type-arguments";
+
+    /// A type argument that grows around a cycle of generic functions, or of generic types.
+    POLYMORPHIC_RECURSION: Error = "polymorphic-recursion";
+
+    /// A file naming more instances of its generic types and functions than the limit.
+    TOO_MANY_INSTANCES: Error = "too-many-instances";
 
     /// A parameter or local never read whose name does not begin with `_`, in a function that
     /// lowers whole.

@@ -79,7 +79,8 @@ impl Analysis {
     pub fn show(&self, ty: Ty) -> ShownTy<'_> {
         ty.shown(self)
     }
-    /// In declaration order; the graph's table of the same types holds their field types.
+    /// The type items in declaration order, then the type parameters and the instances named; the
+    /// graph's table of the same types holds their field types.
     pub fn decls(&self) -> &[TypeDecl] {
         &self.decls
     }
@@ -108,7 +109,7 @@ impl Analysis {
     pub fn semantic_diagnostics(&self) -> impl Iterator<Item = &Diagnostic> {
         self.diagnostics.iter().filter(|d| Self::is_semantic(d))
     }
-    /// In declaration order.
+    /// The function items in declaration order, then the instances of the generic ones.
     pub fn functions(&self) -> &[Function] {
         &self.functions
     }
@@ -122,9 +123,11 @@ impl Analysis {
     pub fn binding(&self, id: BindingId) -> &Binding {
         &self.bindings[id.index()]
     }
-    /// A function's parameters by position; one without a name is absent.
+    /// A function's parameters by position; one without a name is absent. An instance's are its
+    /// item's, which declares them.
     pub fn params(&self, id: FunctionId) -> impl ExactSizeIterator<Item = Option<&Binding>> {
-        self.graph.run(id).params().map(|node| {
+        let item = self.function(id).generic;
+        self.graph.run(item).params().map(|node| {
             // Bindings are declared in node order, so the node's binding is where it would sort.
             let index = self
                 .bindings
@@ -288,13 +291,15 @@ impl<'a> Program<'a> {
             .enumerate()
             .map(|(index, function)| (FunctionId::new(index), function))
     }
-    /// A valid file names each function once.
+    /// A valid file names each function item once; a generic one is found as the instance at its
+    /// own type parameters.
     pub fn function_named(self, name: &str) -> Option<FunctionId> {
         self.functions()
-            .find(|(_, function)| {
-                function
-                    .name()
-                    .is_some_and(|range| self.analysis.text(range) == name)
+            .find(|&(id, function)| {
+                function.generic == id
+                    && function
+                        .name()
+                        .is_some_and(|range| self.analysis.text(range) == name)
             })
             .map(|(id, _)| id)
     }
@@ -407,6 +412,8 @@ impl<'a> Compiled<'a> {
 pub struct Function {
     name: Option<TextRange>,
     origin: TextRange,
+    generic: FunctionId,
+    type_args: Box<[Ty]>,
     /// Resolved only for a function with parameter types.
     result: Option<Ty>,
     is_complete: bool,
@@ -419,6 +426,15 @@ impl Function {
     }
     pub fn origin(&self) -> TextRange {
         self.origin
+    }
+    /// The function item's instance at its own type parameters, which a `Symbol` names; itself
+    /// for that instance, and for a function that takes none.
+    pub fn generic(&self) -> FunctionId {
+        self.generic
+    }
+    /// The type arguments this is its item's instance at, one per type parameter.
+    pub fn type_args(&self) -> &[Ty] {
+        &self.type_args
     }
     /// The body built whole and every value in it resolved.
     pub fn is_complete(&self) -> bool {
@@ -451,6 +467,10 @@ impl Names for Analysis {
             .map_or("<missing>", |name| self.text(name))
     }
 
+    fn type_args(&self, id: DeclId) -> &[Ty] {
+        &self.decl(id).type_args
+    }
+
     fn field(&self, name: FieldName) -> &str {
         &self.field_names[name.index()]
     }
@@ -460,20 +480,36 @@ impl Names for Analysis {
     }
 }
 
-/// A declared type as the source wrote it; its field types are the graph's.
+/// A declared type as the source wrote it: a type item at its own type parameters or at other
+/// type arguments, or a type parameter, which has no fields. Its field types are the graph's.
 #[derive(Debug)]
 pub struct TypeDecl {
     name: Option<TextRange>,
     origin: TextRange,
     fields: Vec<FieldDecl>,
+    is_param: bool,
+    generic: DeclId,
+    type_args: Box<[Ty]>,
 }
 
 impl TypeDecl {
+    pub fn is_param(&self) -> bool {
+        self.is_param
+    }
     pub fn name(&self) -> Option<TextRange> {
         self.name
     }
     pub fn origin(&self) -> TextRange {
         self.origin
+    }
+    /// The type item's instance at its own type parameters, which a `Symbol` names; itself for
+    /// that instance, for a type that takes none, and for a type parameter.
+    pub fn generic(&self) -> DeclId {
+        self.generic
+    }
+    /// The type arguments this is its item's instance at, one per type parameter.
+    pub fn type_args(&self) -> &[Ty] {
+        &self.type_args
     }
     /// In declaration order, parallel to the graph's.
     pub fn fields(&self) -> &[FieldDecl] {
@@ -500,9 +536,11 @@ impl FieldDecl {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Symbol {
     Local(BindingId),
+    /// A function item, as its instance at its own type parameters.
     Function(FunctionId),
+    /// A type item, as its instance at its own type parameters, or a type parameter.
     Type(DeclId),
-    /// A field of the type, by position.
+    /// A field of the type item, by position.
     Field(DeclId, u32),
 }
 

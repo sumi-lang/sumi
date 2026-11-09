@@ -1,0 +1,22 @@
+// A type list no `>` closes ends before the first token that neither begins
+// nor separates its elements, and what it lacks is reported where it belongs.
+type Open<T {
+    value: T,
+}
+
+fn missing<T(x: T) -> T = x
+
+fn elements<, T>(x: Box<int,, bool>) -> Box< = x
+
+fn separators<T U>(x: Pair<int bool>) {}
+
+fn unions(x: Box<| int>, y: Box<int |>) {}
+
+fn spaced <T>(x: Box <T>) {
+    match x {
+        Box <T>(inner) => inner,
+        Box<(inner) => inner,
+    }
+}
+
+fn discarded<_>(x: int) = x

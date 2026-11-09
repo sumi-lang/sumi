@@ -21,23 +21,18 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let functions: Vec<_> = items
-        .iter()
-        .filter_map(|item| match item {
-            ast::Item::FnItem(item) => Some(*item),
-            ast::Item::TypeItem(_) => None,
-        })
-        .collect();
     let mut graph = GraphBuilder::new(tree.len());
     let declared = lower::declare(&mut source, &items, &mut graph);
-    let (graph, spans, lowered) = lower::lower(&mut source, &functions, &declared, graph);
+    let (graph, spans, lowered, declared) = lower::lower(&mut source, declared, graph);
     let headers = declared.headers;
-    let types = declared.types;
     let mut functions: Vec<Function> = headers
         .iter()
-        .map(|header| Function {
+        .zip(&declared.type_args)
+        .map(|(header, type_args)| Function {
             name: header.name,
             origin: source.range(header.item),
+            generic: header.generic,
+            type_args: type_args.iter().copied().collect(),
             result: None,
             is_complete: false,
             depth: None,
@@ -49,7 +44,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &spans,
         &lowered,
         &headers,
-        &types,
         &mut functions,
     );
     let values = Values::delivered(&graph, &lowered);
@@ -57,7 +51,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let typing = Typing::new(checked.types, values);
     let failed = checked.failed;
     divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
-    exhaustive(&mut source, &graph, &spans, &lowered, &failed, &any);
+    exhaustive(
+        &mut source,
+        &graph,
+        &spans,
+        &lowered,
+        &headers,
+        &failed,
+        &any,
+    );
     bounds(
         &mut source,
         &graph,
@@ -88,21 +90,24 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         )
     };
     drop(any);
-    let decls = types
+    let decls: Vec<TypeDecl> = source
+        .decls
         .iter()
-        .zip(&source.decls)
-        .map(|(header, names)| TypeDecl {
-            name: header.name,
-            origin: source.range(header.item),
+        .enumerate()
+        .map(|(index, names)| TypeDecl {
+            is_param: source.params.holds(DeclId::new(index)),
+            name: names.name_node.map(|node| source.range(node)),
+            origin: source.range(names.origin),
             fields: names
                 .fields
                 .iter()
-                .zip(&header.fields)
-                .map(|(&(name, _), &range)| FieldDecl {
-                    name: range,
+                .map(|&(name, node)| FieldDecl {
+                    name: source.range(node),
                     text: name.into(),
                 })
                 .collect(),
+            generic: names.item,
+            type_args: names.args.iter().copied().collect(),
         })
         .collect();
     let field_names = source.field_names.iter().map(|&name| name.into()).collect();
@@ -117,7 +122,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         {
             references.push(Occurrence {
                 range,
-                symbol: Symbol::Field(decl, index as u32),
+                symbol: Symbol::Field(decls[decl.index()].generic, index as u32),
                 is_write: false,
             });
         }
@@ -128,6 +133,25 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut diagnostics = source.diagnostics;
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
+    // Two instances of one generic function may each prove the same of its body: of those that
+    // start together, each is kept once.
+    let has_instances = headers
+        .iter()
+        .enumerate()
+        .any(|(index, header)| header.generic.index() != index);
+    if has_instances {
+        let mut kept: Vec<Diagnostic> = Vec::with_capacity(diagnostics.len());
+        for diagnostic in diagnostics {
+            let together = kept
+                .iter()
+                .rev()
+                .take_while(|earlier| earlier.primary.start() == diagnostic.primary.start());
+            if !together.into_iter().any(|earlier| *earlier == diagnostic) {
+                kept.push(diagnostic);
+            }
+        }
+        diagnostics = kept;
+    }
     let analysis = Analysis {
         parsed,
         graph,
@@ -157,12 +181,15 @@ fn exhaustive(
     graph: &Graph,
     spans: &Spans,
     lowered: &Lowered,
+    headers: &[lower::Header],
     failed: &[bool],
     any: &AnyValues<'_>,
 ) {
     let mut switches: Vec<(NodeId, sumi_graph::Arms)> = Vec::new();
     for (index, run) in graph.runs().iter().enumerate() {
-        if failed[index] || !lowered.built[index] {
+        // An instance's arms are its item's, which answers for them at its own parameters.
+        let is_instance = headers[index].generic.index() != index;
+        if failed[index] || !lowered.built[index] || is_instance {
             continue;
         }
         for node in run.nodes() {
@@ -200,7 +227,7 @@ fn exhaustive(
         }
         let names: Vec<String> = missing
             .iter()
-            .map(|&decl| format!("`{}`", source.decls[decl.index()].name))
+            .map(|&decl| format!("`{}`", source.show(Ty::decl(decl))))
             .collect();
         source.report(
             spans.origin(node),

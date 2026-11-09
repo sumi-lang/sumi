@@ -317,7 +317,12 @@ impl Planner<'_> {
         match kind {
             NodeKind::SourceFile => unreachable!("the root is laid out by source_file"),
             NodeKind::FnItem => self.function(node, &els, level),
-            NodeKind::ParamList | NodeKind::ArgList => self.list(node, &els, level),
+            NodeKind::ParamList | NodeKind::ArgList => {
+                self.list(node, &els, level, SyntaxKind::LParen, SyntaxKind::RParen);
+            }
+            NodeKind::TypeParamList | NodeKind::TypeArgList => {
+                self.list(node, &els, level, SyntaxKind::Lt, SyntaxKind::Gt);
+            }
             NodeKind::Block => self.block(&els, level),
             NodeKind::FieldList | NodeKind::ArmList => {
                 self.pairs(&els, |a, b| match (a, b) {
@@ -367,15 +372,18 @@ impl Planner<'_> {
                 });
                 self.children(&els, level);
             }
-            NodeKind::PrefixExpr | NodeKind::CallExpr | NodeKind::FieldExpr => {
+            NodeKind::PrefixExpr | NodeKind::CallExpr | NodeKind::FieldExpr | NodeKind::TypeRef => {
                 self.pairs(&els, |_, _| Gap::glue(level));
                 self.children(&els, level);
             }
-            NodeKind::ReturnStmt
-            | NodeKind::IfExpr
-            | NodeKind::MatchExpr
-            | NodeKind::TypeItem
-            | NodeKind::UnionType => {
+            NodeKind::TypeItem => {
+                self.pairs(&els, |_, b| match b {
+                    El::Node(_, NodeKind::TypeParamList) => Gap::glue(level),
+                    _ => Gap::space(level),
+                });
+                self.children(&els, level);
+            }
+            NodeKind::ReturnStmt | NodeKind::IfExpr | NodeKind::MatchExpr | NodeKind::UnionType => {
                 self.pairs(&els, |_, _| Gap::space(level));
                 self.children(&els, level);
             }
@@ -389,7 +397,6 @@ impl Planner<'_> {
                 self.children(&els, level);
             }
             NodeKind::Name
-            | NodeKind::TypeRef
             | NodeKind::NameRef
             | NodeKind::LiteralExpr
             | NodeKind::RestPattern
@@ -433,6 +440,10 @@ impl Planner<'_> {
         self.pairs(els, |a, b| match (a, b) {
             (El::Tok(_, SyntaxKind::FnKw), El::Node(_, NodeKind::ParamList)) => Gap::glue(level),
             (El::Node(_, NodeKind::Name), El::Node(_, NodeKind::ParamList)) => Gap::glue(level),
+            (_, El::Node(_, NodeKind::TypeParamList)) => Gap::glue(level),
+            (El::Node(_, NodeKind::TypeParamList), El::Node(_, NodeKind::ParamList)) => {
+                Gap::glue(level)
+            }
             (El::Tok(_, SyntaxKind::Minus), El::Tok(_, SyntaxKind::Gt)) => Gap::glue(level),
             (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Gap::soft(level + 1),
             _ => Gap::space(level),
@@ -454,20 +465,28 @@ impl Planner<'_> {
         }
     }
 
-    fn list(&mut self, node: NodeIdx, els: &[El], level: u32) {
+    /// A list between `opener` and `closer`, its elements separated by commas.
+    fn list(
+        &mut self,
+        node: NodeIdx,
+        els: &[El],
+        level: u32,
+        opener: SyntaxKind,
+        closer: SyntaxKind,
+    ) {
         self.pairs(els, |a, b| match (a, b) {
-            (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => Gap::glue(level),
-            (El::Tok(_, SyntaxKind::LParen), _) => Gap::soft_glue(level + 1),
+            (El::Tok(_, a), El::Tok(_, b)) if a == opener && b == closer => Gap::glue(level),
+            (El::Tok(_, a), _) if a == opener => Gap::soft_glue(level + 1),
             (_, El::Tok(_, SyntaxKind::Comma)) => Gap::glue(level + 1),
-            (_, El::Tok(_, SyntaxKind::RParen)) => Gap::closer(Closer::List, level, Breaks::Soft),
+            (_, El::Tok(_, b)) if b == closer => Gap::closer(Closer::List, level, Breaks::Soft),
             (El::Tok(_, SyntaxKind::Comma), _) => Gap::soft(level + 1),
             _ => Gap::space(level + 1),
         });
         let is_sound = !self.tree.has_error(node);
         if is_sound {
             for pair in els.windows(2) {
-                if let (El::Tok(sig, SyntaxKind::Comma), El::Tok(_, SyntaxKind::RParen)) =
-                    (pair[0], pair[1])
+                if let (El::Tok(sig, SyntaxKind::Comma), El::Tok(_, last)) = (pair[0], pair[1])
+                    && last == closer
                 {
                     self.layout_comma[sig as usize] = true;
                 }

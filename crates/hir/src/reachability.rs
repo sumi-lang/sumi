@@ -97,9 +97,18 @@ pub(crate) fn warn(
         })
         .collect();
     let mut statements: Vec<_> = lowered.statements.iter().collect();
-    statements.sort_by_key(|statement| (statement.block.to_usize(), statement.range.start()));
+    statements.sort_by_key(|statement| {
+        (
+            statement.owner.index(),
+            statement.block.to_usize(),
+            statement.range.start(),
+        )
+    });
+    let same_block = |before: &Statement, after: &Statement| {
+        before.owner == after.owner && before.block == after.block
+    };
     let stops = |[before, after]: [&Statement; 2], typing: &Values| {
-        before.block == after.block
+        same_block(before, after)
             && typing.may(before.context).is_live()
             && !typing.may(after.context).is_live()
     };
@@ -220,7 +229,7 @@ pub(crate) fn warn(
         }
         let last = statements[index + 1..]
             .iter()
-            .take_while(|statement| statement.block == after.block)
+            .take_while(|statement| same_block(statement, after))
             .last()
             .expect("the dead statement is in its block");
         let dead = Dead {
@@ -236,11 +245,14 @@ pub(crate) fn warn(
         deads.push(dead);
     }
     deads.sort_by_key(|dead| (dead.range.start(), dead.range.end()));
+    // Two instances of one generic function may each find the same code dead.
+    deads.dedup();
     deads
 }
 
 /// A function with parameters that no chain of calls from a parameterless or `_`-named one
-/// reaches. A call in a branch that never runs still counts, so the verdict never rests on values.
+/// reaches, in any instance. A call in a branch that never runs still counts, so the verdict never
+/// rests on values.
 fn unused_functions(source: &mut Source<'_>, graph: &Graph, lowered: &Lowered, headers: &[Header]) {
     let names: Vec<&str> = headers
         .iter()
@@ -278,7 +290,15 @@ fn unused_functions(source: &mut Source<'_>, graph: &Graph, lowered: &Lowered, h
         }
     }
     for (index, header) in headers.iter().enumerate() {
-        if reached[index] {
+        let item = header.generic.index();
+        if item != index {
+            reached[item] |= reached[index];
+            called[item] |= called[index];
+            recursive[item] |= recursive[index];
+        }
+    }
+    for (index, header) in headers.iter().enumerate() {
+        if reached[index] || header.generic.index() != index {
             continue;
         }
         let name = names[index];

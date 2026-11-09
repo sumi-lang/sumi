@@ -62,3 +62,11 @@ fn empty() {}
 fn unit_value() -> unit {
     return
 }
+
+type Box<T> {
+    value: T,
+}
+
+fn wrap<T>(x: T) -> Box<T> = Box<T>(value: x)
+
+fn unwrap(b: Box<int>) -> int = wrap<Box<int>>(b).value.value

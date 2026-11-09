@@ -1,0 +1,198 @@
+== tree ==
+SourceFile 1:1..28:1
+  TypeItem 4:1..6:2
+    Name 4:6..4:9 "Box"
+    TypeParamList 4:9..4:12
+      Name 4:10..4:11 "T"
+    FieldList 4:13..6:2
+      Field 5:5..5:13
+        Name 5:5..5:10 "value"
+        TypeRef 5:12..5:13 "T"
+  TypeItem 8:1..11:2
+    Name 8:6..8:10 "Pair"
+    TypeParamList 8:10..8:17
+      Name 8:11..8:12 "A"
+      Name 8:14..8:15 "B"
+    FieldList 8:18..11:2
+      Field 9:5..9:13
+        Name 9:5..9:10 "first"
+        TypeRef 9:12..9:13 "A"
+      Field 10:5..10:19
+        Name 10:5..10:11 "second"
+        TypeRef 10:13..10:19
+          TypeArgList 10:16..10:19
+            TypeRef 10:17..10:18 "B"
+  TypeItem 13:1..13:16
+    Name 13:6..13:11 "Empty"
+    TypeParamList 13:11..13:13 "<>"
+    FieldList 13:14..13:16 "{}"
+  FnItem 15:1..15:24
+    Name 15:4..15:6 "id"
+    TypeParamList 15:6..15:9
+      Name 15:7..15:8 "T"
+    ParamList 15:9..15:15
+      Param 15:10..15:14
+        Name 15:10..15:11 "x"
+        TypeRef 15:13..15:14 "T"
+    TypeRef 15:19..15:20 "T"
+    NameRef 15:23..15:24 "x"
+  FnItem 17:1..17:89
+    Name 17:4..17:8 "pair"
+    TypeParamList 17:8..17:14
+      Name 17:9..17:10 "A"
+      Name 17:12..17:13 "B"
+    ParamList 17:14..17:26
+      Param 17:15..17:19
+        Name 17:15..17:16 "a"
+        TypeRef 17:18..17:19 "A"
+      Param 17:21..17:25
+        Name 17:21..17:22 "b"
+        TypeRef 17:24..17:25 "B"
+    TypeRef 17:30..17:40
+      TypeArgList 17:34..17:40
+        TypeRef 17:35..17:36 "A"
+        TypeRef 17:38..17:39 "B"
+    CallExpr 17:43..17:89
+      NameRef 17:43..17:47 "Pair"
+      TypeArgList 17:47..17:53
+        TypeRef 17:48..17:49 "A"
+        TypeRef 17:51..17:52 "B"
+      ArgList 17:53..17:89
+        Arg 17:54..17:62
+          NameRef 17:54..17:59 "first"
+          NameRef 17:61..17:62 "a"
+        Arg 17:64..17:88
+          NameRef 17:64..17:70 "second"
+          CallExpr 17:72..17:88
+            NameRef 17:72..17:75 "Box"
+            TypeArgList 17:75..17:78
+              TypeRef 17:76..17:77 "B"
+            ArgList 17:78..17:88
+              Arg 17:79..17:87
+                NameRef 17:79..17:84 "value"
+                NameRef 17:86..17:87 "b"
+  FnItem 19:1..19:34
+    Name 19:4..19:9 "plain"
+    TypeParamList 19:9..19:11 "<>"
+    ParamList 19:11..19:13 "()"
+    TypeRef 19:17..19:20 "int"
+    CallExpr 19:23..19:34
+      NameRef 19:23..19:25 "id"
+      TypeArgList 19:25..19:31
+        TypeRef 19:26..19:29 "int"
+      ArgList 19:31..19:34
+        Arg 19:32..19:33
+          LiteralExpr 19:32..19:33 "1"
+  FnItem 21:1..27:2
+    Name 21:4..21:10 "nested"
+    ParamList 21:10..21:49
+      Param 21:11..21:48
+        Name 21:11..21:12 "p"
+        TypeRef 21:14..21:48
+          TypeArgList 21:18..21:48
+            TypeRef 21:19..21:27
+              TypeArgList 21:22..21:27
+                TypeRef 21:23..21:26 "int"
+            UnionType 21:29..21:47
+              TypeRef 21:29..21:37
+                TypeArgList 21:32..21:37
+                  TypeRef 21:33..21:36 "int"
+              TypeRef 21:40..21:47
+                TypeArgList 21:45..21:47 "<>"
+    TypeRef 21:53..21:56 "int"
+    Block 21:57..27:2
+      LetStmt 22:5..22:47
+        Name 22:9..22:10 "b"
+        UnionType 22:12..22:30
+          TypeRef 22:12..22:20
+            TypeArgList 22:15..22:20
+              TypeRef 22:16..22:19 "int"
+          TypeRef 22:23..22:30
+            TypeArgList 22:28..22:30 "<>"
+        FieldExpr 22:33..22:47
+          FieldExpr 22:33..22:41
+            NameRef 22:33..22:34 "p"
+            NameRef 22:35..22:41 "second"
+          NameRef 22:42..22:47 "value"
+      MatchExpr 23:5..26:6
+        NameRef 23:11..23:12 "b"
+        ArmList 23:13..26:6
+          MatchArm 24:9..24:39
+            MemberPattern 24:9..24:24
+              NameRef 24:9..24:12 "Box"
+              TypeArgList 24:12..24:17
+                TypeRef 24:13..24:16 "int"
+              Name 24:18..24:23 "inner"
+            FieldExpr 24:28..24:39
+              NameRef 24:28..24:33 "inner"
+              NameRef 24:34..24:39 "value"
+          MatchArm 25:9..25:103
+            MemberPattern 25:9..25:16
+              NameRef 25:9..25:14 "Empty"
+              TypeArgList 25:14..25:16 "<>"
+            BinaryExpr 25:20..25:103
+              CallExpr 25:20..25:29
+                NameRef 25:20..25:25 "plain"
+                TypeArgList 25:25..25:27 "<>"
+                ArgList 25:27..25:29 "()"
+              FieldExpr 25:32..25:103
+                FieldExpr 25:32..25:97
+                  CallExpr 25:32..25:91
+                    NameRef 25:32..25:34 "id"
+                    TypeArgList 25:34..25:49
+                      TypeRef 25:35..25:48
+                        TypeArgList 25:38..25:48
+                          TypeRef 25:39..25:47
+                            TypeArgList 25:42..25:47
+                              TypeRef 25:43..25:46 "int"
+                    ArgList 25:49..25:91
+                      Arg 25:50..25:90
+                        CallExpr 25:50..25:90
+                          NameRef 25:50..25:53 "Box"
+                          TypeArgList 25:53..25:63
+                            TypeRef 25:54..25:62
+                              TypeArgList 25:57..25:62
+                                TypeRef 25:58..25:61 "int"
+                          ArgList 25:63..25:90
+                            Arg 25:64..25:89
+                              NameRef 25:64..25:69 "value"
+                              CallExpr 25:71..25:89
+                                NameRef 25:71..25:74 "Box"
+                                TypeArgList 25:74..25:79
+                                  TypeRef 25:75..25:78 "int"
+                                ArgList 25:79..25:89
+                                  Arg 25:80..25:88
+                                    NameRef 25:80..25:85 "value"
+                                    LiteralExpr 25:87..25:88 "2"
+                  NameRef 25:92..25:97 "value"
+                NameRef 25:98..25:103 "value"
+
+== formatted ==
+// Type parameters follow an item's name; type arguments follow the name of a
+// type, a callee, or a match member. Either list may be empty and may end in
+// a comma.
+type Box<T> {
+    value: T,
+}
+
+type Pair<A, B> {
+    first: A,
+    second: Box<B>,
+}
+
+type Empty<> {}
+
+fn id<T>(x: T) -> T = x
+
+fn pair<A, B>(a: A, b: B) -> Pair<A, B> = Pair<A, B>(first: a, second: Box<B>(value: b))
+
+fn plain<>() -> int = id<int>(1)
+
+fn nested(p: Pair<Box<int>, Box<int> | Empty<>>) -> int {
+    let b: Box<int> | Empty<> = p.second.value
+    match b {
+        Box<int>(inner) => inner.value,
+        Empty<> => plain<>()
+            + id<Box<Box<int>>>(Box<Box<int>>(value: Box<int>(value: 2))).value.value,
+    }
+}
