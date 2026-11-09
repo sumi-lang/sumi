@@ -1,0 +1,18 @@
+type Box<T> {
+    value: T,
+}
+fn inferred(c: bool) = if c {
+    declared(c)
+} else {
+    true
+}
+fn declared(c: bool) -> int = if c {
+    inferred(c)
+} else {
+    1
+}
+fn field<T>(x: T) = x.value
+fn instance() -> bool = field<Box<int>>(Box<int>(value: 1))
+fn pong(n: int) = ping(n)
+fn ping(n: int) = pong(n)
+fn main() -> int = declared(true) + ping(1)

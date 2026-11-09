@@ -942,22 +942,23 @@ fn result<'a>(
                 .zip(&roles[1..])
                 .filter(|(_, role)| role.is_value())
                 .fold(Sym::None, |joined, (&value, _)| joined.joined(at(value))),
-            Op::Switch { arms } if roles[0].is_value() && selection(graph, *arms).total => arms
-                .iter()
-                .map(|arm| graph.region(arm))
-                .filter(|region| region.result_has_value())
-                .fold(Sym::None, |joined, region| {
-                    let result = at(region.result());
-                    let Case::Is(member) = graph.case(region.context) else {
-                        return joined.joined(result);
-                    };
-                    // An arm runs only where its member reaches the scrutinee.
-                    match at(inputs[0]).narrowed(member, types) {
-                        Sym::None => joined,
-                        Sym::Same(path) => joined.joined(&result.needing(&path)),
-                        Sym::Any | Sym::Int(_) | Sym::Made(_) => joined.joined(result),
-                    }
-                }),
+            Op::Switch { arms } if roles[0].is_value() && selection(graph.cases(*arms)).total => {
+                arms.iter()
+                    .map(|arm| graph.region(arm))
+                    .filter(|region| region.result_has_value())
+                    .fold(Sym::None, |joined, region| {
+                        let result = at(region.result());
+                        let Case::Is(member) = graph.case(region.context) else {
+                            return joined.joined(result);
+                        };
+                        // An arm runs only where its member reaches the scrutinee.
+                        match at(inputs[0]).narrowed(member, types) {
+                            Sym::None => joined,
+                            Sym::Same(path) => joined.joined(&result.needing(&path)),
+                            Sym::Any | Sym::Int(_) | Sym::Made(_) => joined.joined(result),
+                        }
+                    })
+            }
             Op::LoopIndex => at(inputs[0]).range(at(inputs[1])),
             Op::LoopValue => {
                 let (header, next) = graph.carry(node);

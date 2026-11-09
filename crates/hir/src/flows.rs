@@ -5,7 +5,7 @@ use std::cell::OnceCell;
 use std::collections::{HashMap, HashSet};
 
 use rustc_hash::FxBuildHasher;
-use sumi_graph::{Arms, Case, Domain, Graph, Int, May, NodeId, Op, Thresholds, Value};
+use sumi_graph::{Case, Domain, Graph, Int, May, NodeId, Op, Thresholds, Value};
 
 use crate::lattice::{Arm, Context, Edge, Many, Pair};
 use crate::lower::Lowered;
@@ -61,10 +61,12 @@ pub(crate) struct Selection {
     pub total: bool,
 }
 
-pub(crate) fn selection(graph: &Graph, arms: Arms) -> Selection {
-    let (mut boolean, mut on_true, mut on_false) = (true, false, false);
-    for arm in arms.iter() {
-        match graph.case(graph.region(arm).context) {
+/// `cases` is one per arm of a switch.
+pub(crate) fn selection(cases: impl Iterator<Item = Case>) -> Selection {
+    let (mut boolean, mut on_true, mut on_false, mut is_empty) = (true, false, false, true);
+    for case in cases {
+        is_empty = false;
+        match case {
             Case::Bool(true) => on_true = true,
             Case::Bool(false) => on_false = true,
             Case::Is(_) | Case::Not(_) | Case::Any => boolean = false,
@@ -73,7 +75,7 @@ pub(crate) fn selection(graph: &Graph, arms: Arms) -> Selection {
     let total = if boolean {
         on_true && on_false
     } else {
-        !arms.is_empty()
+        !is_empty
     };
     Selection { boolean, total }
 }
@@ -96,7 +98,7 @@ fn solve(graph: &Graph, lowered: &Lowered, summaries: &Summaries, arguments: Arg
         let Op::Switch { arms } = entry.op else {
             continue;
         };
-        if selection(graph, arms).boolean {
+        if selection(graph.cases(arms)).boolean {
             continue;
         }
         let mut previous = None;
@@ -179,7 +181,7 @@ fn solve(graph: &Graph, lowered: &Lowered, summaries: &Summaries, arguments: Arg
                 ),
                 Op::Exactly(value) => values.flow(inputs[0], node, Edge::Exactly(*value)),
                 Op::Narrow(ty) => values.flow(inputs[0], node, Edge::Narrow(*ty)),
-                Op::Switch { arms } if selection(graph, *arms).total => {
+                Op::Switch { arms } if selection(graph.cases(*arms)).total => {
                     for arm in arms.iter() {
                         let region = graph.region(arm);
                         if !graph.input_roles(node)[0].is_value() || !region.result_has_value() {
@@ -281,7 +283,7 @@ fn solve(graph: &Graph, lowered: &Lowered, summaries: &Summaries, arguments: Arg
                             Edge::Values,
                         );
                     }
-                    if !selection(graph, *arms).total {
+                    if !selection(graph.cases(*arms)).total {
                         let first = arms.iter().next().expect("an observe has an arm");
                         let Case::Bool(taken) = graph.case(graph.region(first).context) else {
                             unreachable!("a partial switch is boolean")

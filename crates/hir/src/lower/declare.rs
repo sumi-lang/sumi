@@ -51,7 +51,7 @@ pub(crate) enum HeaderResult {
 
 impl HeaderResult {
     /// The type the body is held to and the node declaring it, written or omitted.
-    pub(super) fn declared(self) -> Option<(Ty, NodeIdx)> {
+    pub fn declared(self) -> Option<(Ty, NodeIdx)> {
         match self {
             Self::Declared(ty, node) => Some((ty, node)),
             Self::Omitted(node) => Some((Ty::UNIT, node)),
@@ -60,8 +60,9 @@ impl HeaderResult {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct Parameter<'s> {
-    pub(super) node: NodeIdx,
+    pub node: NodeIdx,
     pub(super) name: Option<(&'s str, NodeIdx)>,
     pub(super) ty: Option<Ty>,
     pub(super) is_duplicate: bool,
@@ -79,7 +80,8 @@ pub(crate) struct Declarations<'s> {
     /// By function, the type arguments it is its item's instance at.
     pub type_args: Vec<Rc<[Ty]>>,
     pub(super) names: NameMap<'s, Named>,
-    pub(super) parameters: Vec<Vec<Parameter<'s>>>,
+    /// By function, its parameters as declared, whole list or not.
+    pub parameters: Vec<Vec<Parameter<'s>>>,
     /// By function item, which its ID as a function indexes.
     pub(super) items: Vec<FnItem<'s>>,
     instances: HashMap<(FunctionId, Rc<[Ty]>), FunctionId, FxBuildHasher>,
@@ -122,6 +124,77 @@ impl<'s> Declarations<'s> {
         self.type_args.push(args.clone());
         self.instances.insert((generic, args), function);
         Some(function)
+    }
+}
+
+/// The order the function items' bodies are built in: grouped by the inferred results each reads,
+/// a group after every group it reads. Items that read none keep their own order.
+pub(crate) struct Order {
+    groups: Components,
+    /// By item, the members of its group whose bodies call it.
+    callers: Rows,
+}
+
+impl Order {
+    /// A call reads its callee's result by name: one a local shadows only groups more than it must.
+    pub fn new(source: &Source<'_>, declarations: &Declarations<'_>) -> Self {
+        let tree = source.tree;
+        let items = &declarations.items;
+        let inferred = |function: FunctionId| {
+            matches!(
+                declarations.headers[function.index()].result,
+                HeaderResult::Inferred
+            )
+        };
+        let mut reads: Vec<(usize, u32)> = Vec::new();
+        if (0..items.len()).any(|item| inferred(FunctionId::new(item))) {
+            for (caller, item) in items.iter().enumerate() {
+                for call in under(source, item.item.node()) {
+                    let Some(call) = ast::CallExpr::cast(tree, call) else {
+                        continue;
+                    };
+                    let callee = call.callee(tree).map(|callee| source.head(callee.node()));
+                    if let Some(Named::Function(callee)) =
+                        callee.and_then(|name| declarations.names.get(name))
+                        && inferred(*callee)
+                    {
+                        reads.push((caller, callee.index() as u32));
+                    }
+                }
+            }
+        }
+        let rows = Rows::new(items.len(), || reads.iter().copied());
+        let groups = Components::new(&rows, |callee| callee as usize);
+        let callers = Rows::new(items.len(), || {
+            reads.iter().filter_map(|&(caller, callee)| {
+                (groups.of[caller] == groups.of[callee as usize])
+                    .then_some((callee as usize, caller as u32))
+            })
+        });
+        Self { groups, callers }
+    }
+
+    pub fn groups(&self) -> usize {
+        self.groups.count()
+    }
+
+    pub fn members(&self, group: usize) -> &[u32] {
+        self.groups.members(group)
+    }
+
+    pub fn group(&self, item: FunctionId) -> u32 {
+        self.groups.of[item.index()]
+    }
+
+    pub fn callers(&self, item: usize) -> &[u32] {
+        self.callers.get(item)
+    }
+
+    /// Whether a member of `group` reads the inferred result of one, itself or another.
+    pub fn is_recursive(&self, group: usize) -> bool {
+        self.members(group)
+            .iter()
+            .any(|&member| !self.callers(member as usize).is_empty())
     }
 }
 

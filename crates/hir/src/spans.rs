@@ -1,15 +1,17 @@
 //! Where the graph's nodes and regions come from in the source. The graph carries no position; this
 //! holds one entry per node and per region, in the order the builder made them.
 
+use std::ops::Deref;
+
 use sumi_graph::{Graph, NodeId, RegionId};
 use sumi_text::TextRange;
 
-pub struct Spans {
-    nodes: Box<[NodeSpan]>,
-    reads: Box<[TextRange]>,
+/// A span per node, which the builder and the finished spans both read through it.
+pub struct NodeSpans {
+    nodes: Vec<NodeSpan>,
+    reads: Vec<TextRange>,
     /// By node, ascending.
-    annotations: Box<[(NodeId, TextRange)]>,
-    result_reads: Box<[TextRange]>,
+    annotations: Vec<(NodeId, TextRange)>,
 }
 
 #[derive(Clone, Copy)]
@@ -20,7 +22,7 @@ struct NodeSpan {
     reads: u32,
 }
 
-impl Spans {
+impl NodeSpans {
     /// The syntax that built the node.
     pub fn origin(&self, node: NodeId) -> TextRange {
         self.nodes[node.index()].origin
@@ -50,7 +52,22 @@ impl Spans {
             .ok()?;
         Some(self.annotations[index].1)
     }
+}
 
+pub struct Spans {
+    nodes: NodeSpans,
+    result_reads: Box<[TextRange]>,
+}
+
+impl Deref for Spans {
+    type Target = NodeSpans;
+
+    fn deref(&self) -> &NodeSpans {
+        &self.nodes
+    }
+}
+
+impl Spans {
     /// Where a region's result is read: a block's tail, or the expression itself.
     pub fn result_read(&self, region: RegionId) -> TextRange {
         self.result_reads[region.index()]
@@ -60,28 +77,34 @@ impl Spans {
 /// Collects the spans beside a `GraphBuilder`: one `push` per node the builder pushes, in the
 /// same order, and one `close` per region.
 pub(crate) struct SpansBuilder {
-    nodes: Vec<NodeSpan>,
-    reads: Vec<TextRange>,
-    annotations: Vec<(NodeId, TextRange)>,
-    result_reads: Vec<(RegionId, TextRange)>,
+    nodes: NodeSpans,
+    /// By region; none until it closes.
+    result_reads: Vec<Option<TextRange>>,
+}
+
+impl Deref for SpansBuilder {
+    type Target = NodeSpans;
+
+    fn deref(&self) -> &NodeSpans {
+        &self.nodes
+    }
 }
 
 impl SpansBuilder {
     pub fn new(nodes: usize) -> Self {
         Self {
-            nodes: Vec::with_capacity(nodes),
-            reads: Vec::with_capacity(nodes),
-            annotations: Vec::new(),
+            nodes: NodeSpans {
+                nodes: Vec::with_capacity(nodes),
+                reads: Vec::with_capacity(nodes),
+                annotations: Vec::new(),
+            },
             result_reads: Vec::new(),
         }
     }
 
-    pub fn origin(&self, node: NodeId) -> TextRange {
-        self.nodes[node.index()].origin
-    }
-
-    pub fn name(&self, node: NodeId) -> Option<TextRange> {
-        self.nodes[node.index()].name
+    /// Of a region already closed.
+    pub fn result_read(&self, region: RegionId) -> TextRange {
+        self.result_reads[region.index()].expect("a region read is closed")
     }
 
     /// `reads` is where the node reads each input, in input order.
@@ -91,45 +114,54 @@ impl SpansBuilder {
         name: Option<TextRange>,
         reads: impl Iterator<Item = TextRange>,
     ) {
-        self.nodes.push(NodeSpan {
+        let spans = &mut self.nodes;
+        spans.nodes.push(NodeSpan {
             origin,
             name,
-            reads: u32::try_from(self.reads.len()).expect("read count fits u32"),
+            reads: u32::try_from(spans.reads.len()).expect("read count fits u32"),
         });
-        self.reads.extend(reads);
+        spans.reads.extend(reads);
     }
 
     /// `node` is the last pushed.
     pub fn annotate(&mut self, node: NodeId, at: TextRange) {
         assert_eq!(
             node.index() + 1,
-            self.nodes.len(),
+            self.nodes.nodes.len(),
             "an annotation names the last node"
         );
-        self.annotations.push((node, at));
+        self.nodes.annotations.push((node, at));
     }
 
     pub fn close(&mut self, region: RegionId, at: TextRange) {
-        self.result_reads.push((region, at));
+        if self.result_reads.len() <= region.index() {
+            self.result_reads.resize(region.index() + 1, None);
+        }
+        self.result_reads[region.index()] = Some(at);
     }
 
     /// `graph` is the one built alongside.
     pub fn finish(mut self, graph: &Graph) -> Spans {
-        assert_eq!(self.nodes.len(), graph.nodes().len(), "a span per node");
-        self.result_reads
-            .sort_unstable_by_key(|(region, _)| region.index());
-        assert!(
-            self.result_reads
-                .iter()
-                .map(|(region, _)| region.index())
-                .eq(0..graph.region_ids().len()),
+        assert_eq!(
+            self.nodes.nodes.len(),
+            graph.nodes().len(),
+            "a span per node"
+        );
+        assert_eq!(
+            self.result_reads.len(),
+            graph.region_ids().len(),
             "a result read per region"
         );
+        self.nodes.nodes.shrink_to_fit();
+        self.nodes.reads.shrink_to_fit();
+        self.nodes.annotations.shrink_to_fit();
         Spans {
-            nodes: self.nodes.into_boxed_slice(),
-            reads: self.reads.into_boxed_slice(),
-            annotations: self.annotations.into_boxed_slice(),
-            result_reads: self.result_reads.into_iter().map(|(_, at)| at).collect(),
+            nodes: self.nodes,
+            result_reads: self
+                .result_reads
+                .into_iter()
+                .map(|at| at.expect("a result read per region"))
+                .collect(),
         }
     }
 }

@@ -17,30 +17,42 @@ use sumi_syntax::{
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
-use super::declare::{Declarations, Header, HeaderResult, Named};
+use super::declare::{Declarations, Header, HeaderResult, Named, Order};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
 use crate::codes;
 use crate::spans::{Spans, SpansBuilder};
+use crate::typing::{Checked, Checker, Types};
 use crate::{Binding, BindingId, BindingKind, Occurrence, Symbol};
 
-/// Every function's body, the instances of the generic ones among them: a body names the
-/// instances it calls, and each is lowered in its turn.
+/// Every function's body with its types, the instances of the generic ones among them. The items
+/// are built in `Order`; a body names the instances it calls, and each is built in its turn.
 pub(crate) fn lower<'s>(
     source: &mut Source<'s>,
     declared: Declarations<'s>,
     graph: GraphBuilder,
-) -> (Graph, Spans, Lowered, Declarations<'s>) {
-    let mut builder = Builder::new(source, declared, graph);
-    let mut index = 0;
+) -> (Graph, Spans, Lowered, Declarations<'s>, Checked) {
+    let order = Order::new(source, &declared);
+    let items = declared.items.len();
+    let mut builder = Builder::new(source, declared, graph, order);
+    for group in 0..builder.order.groups() {
+        for member in 0..builder.order.members(group).len() {
+            builder.build(builder.order.members(group)[member] as usize);
+        }
+        builder.checker().settle(group);
+    }
+    let mut index = items;
     while index < builder.declared.headers.len() {
-        let built = builder.build(index);
-        builder.lowered.built.push(built);
+        builder.build(index);
+        builder.checker().walk(FunctionId::new(index), true);
         index += 1;
     }
     builder.source.scope.clear();
     builder.source.is_muted = false;
+    let checked = builder
+        .types
+        .finish(builder.source, builder.declared.headers.len());
     let fields = builder.source.take_fields();
     builder.graph.declare(fields.into_iter().map(Decl::new));
     builder
@@ -50,6 +62,7 @@ pub(crate) fn lower<'s>(
     let spans = builder.spans.finish(&graph);
     let declared = builder.declared;
     let mut lowered = builder.lowered;
+    lowered.calls.sort_by_key(|call| call.caller.index());
     lowered.references.append(&mut source.references);
     lowered
         .references
@@ -58,7 +71,7 @@ pub(crate) fn lower<'s>(
     lowered
         .unresolved
         .sort_unstable_by_key(|range| range.start());
-    (graph, spans, lowered, declared)
+    (graph, spans, lowered, declared, checked)
 }
 
 /// The syntax's operator in the graph's vocabulary, which has no lazy operator.
@@ -180,6 +193,8 @@ struct Builder<'a, 's> {
     graph: GraphBuilder,
     spans: SpansBuilder,
     lowered: Lowered,
+    order: Order,
+    types: Types,
     /// By syntax node, the graph node it built, which refinement reads by the condition's syntax.
     nodes_of: Vec<Option<NodeId>>,
     /// By syntax node, whether it completes; a condition's operand is read by its syntax.
@@ -207,22 +222,29 @@ struct Builder<'a, 's> {
 }
 
 impl<'a, 's> Builder<'a, 's> {
-    fn new(source: &'a mut Source<'s>, declared: Declarations<'s>, graph: GraphBuilder) -> Self {
+    fn new(
+        source: &'a mut Source<'s>,
+        declared: Declarations<'s>,
+        graph: GraphBuilder,
+        order: Order,
+    ) -> Self {
         let nodes = source.tree.len();
         let functions = declared.headers.len();
         Self {
             source,
+            types: Types::new(declared.items.len()),
             declared,
             graph,
             spans: SpansBuilder::new(nodes),
+            order,
             lowered: Lowered {
-                built: Vec::with_capacity(functions),
+                built: vec![false; functions],
                 typed: Vec::with_capacity(nodes),
                 calls: Vec::new(),
                 called: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
-                fallthroughs: Vec::with_capacity(functions),
+                fallthroughs: vec![None; functions],
                 bindings: Vec::new(),
                 references: Vec::new(),
                 unresolved: Vec::new(),
@@ -249,7 +271,20 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    fn build(&mut self, owner: usize) -> bool {
+    /// The typing's reading of what is built so far.
+    fn checker(&mut self) -> Checker<'_, 's> {
+        Checker {
+            types: &mut self.types,
+            source: self.source,
+            graph: &self.graph,
+            spans: &self.spans,
+            lowered: &self.lowered,
+            declared: &self.declared,
+            order: &self.order,
+        }
+    }
+
+    fn build(&mut self, owner: usize) {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.has_failed = false;
         self.depth = 0;
@@ -257,7 +292,10 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals.clear();
         self.versions.clear();
         self.mutable_locals.clear();
-        self.lowered.fallthroughs.push(None);
+        if self.lowered.built.len() <= owner {
+            self.lowered.built.resize(owner + 1, false);
+            self.lowered.fallthroughs.resize(owner + 1, None);
+        }
         let header = self.declared.headers[owner];
         let item_node = header.item;
         let tree = self.source.tree;
@@ -280,7 +318,6 @@ impl<'a, 's> Builder<'a, 's> {
             self.bottoms[syntax.clone()].fill(false);
             self.reads_of[syntax].fill(None);
         }
-        let parameters = std::mem::take(&mut self.declared.parameters[owner]);
         let root_node = item.body(tree).map(|body| body.node());
         let body_range = match root_node {
             Some(root) => TextRange::new(self.source.range(root).start(), self.scope_end(root)),
@@ -293,7 +330,8 @@ impl<'a, 's> Builder<'a, 's> {
         self.returns.clear();
         let run = self.graph.open_run(FunctionId::new(owner));
         let entry = self.push(item_node, Op::Entry, &[], None);
-        for (index, param) in parameters.iter().enumerate() {
+        for index in 0..self.declared.parameters[owner].len() {
+            let param = self.declared.parameters[owner][index];
             let index = u32::try_from(index).expect("parameter count fits u32");
             let name = param.name.map(|(_, node)| self.source.range(node));
             let ty = param.ty.filter(|_| !param.is_duplicate);
@@ -377,12 +415,11 @@ impl<'a, 's> Builder<'a, 's> {
             }
         };
         self.graph.close_run(run, region, value);
-        self.declared.parameters[owner] = parameters;
         let is_whole = !self.has_failed && root_node.is_some() && body.is_valid;
+        self.lowered.built[owner] = is_whole;
         if is_whole && !self.source.is_muted {
             self.unused();
         }
-        is_whole
     }
 
     /// Only after a whole build: a walk that stopped early leaves reads unresolved.

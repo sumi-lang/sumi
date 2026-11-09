@@ -5,7 +5,7 @@
 //! file's graph is complete.
 
 use std::num::NonZeroU32;
-use std::ops::Range;
+use std::ops::{Deref, Range};
 
 use crate::{BinaryOp, CmpOp, DeclId, FieldName, FunctionId, Int, Ty, TyKind, UnionId};
 
@@ -586,9 +586,9 @@ pub struct Node {
 
 const _: () = assert!(size_of::<Node>() == 32, "nodes stay four words");
 
-/// The nodes with their edges, shared by the builder and the finished graph.
+/// The nodes with their edges, which the builder and the finished graph both read through it.
 #[derive(Debug, Default)]
-struct Store {
+pub struct Store {
     nodes: Vec<Node>,
     edges: Vec<NodeId>,
     roles: Vec<Role>,
@@ -609,15 +609,132 @@ impl Store {
     }
 
     #[inline]
-    fn operands(&self, id: NodeId) -> Range<usize> {
+    fn operand_range(&self, id: NodeId) -> Range<usize> {
         let node = &self.nodes[id.index()];
         node.edges.start as usize..node.edges.start as usize + node.operands as usize
     }
 
-    fn references(&self, id: NodeId) -> References<'_> {
+    /// In push order.
+    pub fn nodes(&self) -> &[Node] {
+        &self.nodes
+    }
+
+    pub fn node_ids(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
+        (0..self.nodes.len()).map(NodeId::new)
+    }
+
+    #[inline]
+    pub fn node(&self, id: NodeId) -> &Node {
+        &self.nodes[id.index()]
+    }
+
+    /// The operands, then the references.
+    pub fn edges(&self, id: NodeId) -> &[NodeId] {
+        &self.edges[self.range(id)]
+    }
+
+    /// Parallel to `edges`.
+    pub fn roles(&self, id: NodeId) -> &[Role] {
+        &self.roles[self.range(id)]
+    }
+
+    /// The operands: the edges the node reads a value, or a completion, from.
+    #[inline]
+    pub fn inputs(&self, id: NodeId) -> &[NodeId] {
+        &self.edges[self.operand_range(id)]
+    }
+
+    /// Parallel to `inputs`: `Value` or `Completes` each.
+    #[inline]
+    pub fn input_roles(&self, id: NodeId) -> &[Role] {
+        &self.roles[self.operand_range(id)]
+    }
+
+    pub fn operands(&self, id: NodeId) -> impl ExactSizeIterator<Item = Operand> + '_ {
+        self.inputs(id)
+            .iter()
+            .zip(self.input_roles(id))
+            .map(|(&node, role)| match role {
+                Role::Value => Operand::Value(node),
+                Role::Completes => Operand::Completes(node),
+                _ => unreachable!("operands precede references"),
+            })
+    }
+
+    /// The nodes `id`'s op names but does not read.
+    pub fn references(&self, id: NodeId) -> References<'_> {
         let node = &self.nodes[id.index()];
         let range = node.edges.start as usize + node.operands as usize..node.edges.end as usize;
         References::decode(&self.edges[range.clone()], &self.roles[range])
+    }
+
+    /// The declaration an `Assign`, `Carry`, or `Phi` is a version of.
+    pub fn declaration(&self, id: NodeId) -> NodeId {
+        match self.references(id) {
+            References::Version(declaration) | References::Phi { declaration, .. } => declaration,
+            _ => unreachable!("{id:?} is no version of a local"),
+        }
+    }
+
+    /// The arm contexts gating a `Phi`'s values, one per value.
+    pub fn phi_contexts(&self, id: NodeId) -> &[NodeId] {
+        let References::Phi { contexts, .. } = self.references(id) else {
+            unreachable!("{id:?} is no phi")
+        };
+        contexts
+    }
+
+    /// The case of the arm `context` is in: itself, or the arm a continuation context follows.
+    #[inline]
+    pub fn case(&self, mut context: NodeId) -> Case {
+        loop {
+            match self.node(context).op {
+                Op::Arm(case) => return case,
+                Op::After => context = self.inputs(context)[1],
+                ref op => unreachable!("{context:?} is {op:?}, in no arm"),
+            }
+        }
+    }
+
+    /// A `Loop`'s index node.
+    pub fn loop_index(&self, id: NodeId) -> NodeId {
+        self.loop_references(id).0
+    }
+
+    /// A `Loop`'s continuation context, live after an iteration, and its empty context, live
+    /// when no iteration runs.
+    pub fn loop_contexts(&self, id: NodeId) -> [NodeId; 2] {
+        let (_, continuation, empty, _) = self.loop_references(id);
+        [continuation, empty]
+    }
+
+    /// Each carry of a `Loop` with its next value, in carried order.
+    pub fn carried(
+        &self,
+        id: NodeId,
+    ) -> impl DoubleEndedIterator<Item = (NodeId, NodeId)> + ExactSizeIterator {
+        self.loop_references(id).3.iter()
+    }
+
+    fn loop_references(&self, id: NodeId) -> (NodeId, NodeId, NodeId, Carried<'_>) {
+        let References::Loop {
+            index,
+            continuation,
+            empty,
+            carried,
+        } = self.references(id)
+        else {
+            unreachable!("{id:?} is no loop")
+        };
+        (index, continuation, empty, carried)
+    }
+
+    /// The carry a `LoopValue` reads and its next value.
+    pub fn carry(&self, id: NodeId) -> (NodeId, NodeId) {
+        let References::LoopValue { carry, next } = self.references(id) else {
+            unreachable!("{id:?} is no loop value")
+        };
+        (carry, next)
     }
 
     fn push(
@@ -688,16 +805,21 @@ pub struct Graph {
     store: Store,
     regions: Vec<Region>,
     runs: Vec<Run>,
+    /// The functions in the order of their runs' nodes.
+    built: Box<[FunctionId]>,
     decls: Vec<Decl>,
     unions: Unions,
 }
 
-impl Graph {
-    #[inline]
-    pub fn node(&self, id: NodeId) -> &Node {
-        &self.store.nodes[id.index()]
-    }
+impl Deref for Graph {
+    type Target = Store;
 
+    fn deref(&self) -> &Store {
+        &self.store
+    }
+}
+
+impl Graph {
     /// Indexed by declared type ID.
     pub fn decls(&self) -> &[Decl] {
         &self.decls
@@ -707,132 +829,31 @@ impl Graph {
         &self.decls[id.index()]
     }
 
-    /// The operands, then the references.
-    pub fn edges(&self, id: NodeId) -> &[NodeId] {
-        &self.store.edges[self.store.range(id)]
-    }
-
-    /// Parallel to `edges`.
-    pub fn roles(&self, id: NodeId) -> &[Role] {
-        &self.store.roles[self.store.range(id)]
-    }
-
-    /// The operands: the edges the node reads a value, or a completion, from.
-    #[inline]
-    pub fn inputs(&self, id: NodeId) -> &[NodeId] {
-        &self.store.edges[self.store.operands(id)]
-    }
-
-    /// Parallel to `inputs`: `Value` or `Completes` each.
-    #[inline]
-    pub fn input_roles(&self, id: NodeId) -> &[Role] {
-        &self.store.roles[self.store.operands(id)]
-    }
-
-    pub fn operands(&self, id: NodeId) -> impl ExactSizeIterator<Item = Operand> + '_ {
-        self.inputs(id)
-            .iter()
-            .zip(self.input_roles(id))
-            .map(|(&node, role)| match role {
-                Role::Value => Operand::Value(node),
-                Role::Completes => Operand::Completes(node),
-                _ => unreachable!("operands precede references"),
-            })
-    }
-
-    /// The nodes `id`'s op names but does not read.
-    pub fn references(&self, id: NodeId) -> References<'_> {
-        self.store.references(id)
-    }
-
-    /// The declaration an `Assign`, `Carry`, or `Phi` is a version of.
-    pub fn declaration(&self, id: NodeId) -> NodeId {
-        match self.references(id) {
-            References::Version(declaration) | References::Phi { declaration, .. } => declaration,
-            _ => unreachable!("{id:?} is no version of a local"),
-        }
-    }
-
-    /// The arm contexts gating a `Phi`'s values, one per value.
-    pub fn phi_contexts(&self, id: NodeId) -> &[NodeId] {
-        let References::Phi { contexts, .. } = self.references(id) else {
-            unreachable!("{id:?} is no phi")
-        };
-        contexts
-    }
-
-    /// The case of the arm `context` is in: itself, or the arm a continuation context follows.
-    #[inline]
-    pub fn case(&self, mut context: NodeId) -> Case {
-        loop {
-            match self.node(context).op {
-                Op::Arm(case) => return case,
-                Op::After => context = self.inputs(context)[1],
-                ref op => unreachable!("{context:?} is {op:?}, in no arm"),
-            }
-        }
+    /// The case of each arm, in arm order.
+    pub fn cases(&self, arms: Arms) -> impl Iterator<Item = Case> + '_ {
+        arms.iter().map(|arm| self.case(self.region(arm).context))
     }
 
     pub fn unions(&self) -> &Unions {
         &self.unions
     }
 
-    /// A `Loop`'s index node.
-    pub fn loop_index(&self, id: NodeId) -> NodeId {
-        self.loop_references(id).0
-    }
-
-    /// A `Loop`'s continuation context, live after an iteration, and its empty context, live
-    /// when no iteration runs.
-    pub fn loop_contexts(&self, id: NodeId) -> [NodeId; 2] {
-        let (_, continuation, empty, _) = self.loop_references(id);
-        [continuation, empty]
-    }
-
-    /// Each carry of a `Loop` with its next value, in carried order.
-    pub fn carried(
-        &self,
-        id: NodeId,
-    ) -> impl DoubleEndedIterator<Item = (NodeId, NodeId)> + ExactSizeIterator {
-        self.loop_references(id).3.iter()
-    }
-
-    fn loop_references(&self, id: NodeId) -> (NodeId, NodeId, NodeId, Carried<'_>) {
-        let References::Loop {
-            index,
-            continuation,
-            empty,
-            carried,
-        } = self.references(id)
-        else {
-            unreachable!("{id:?} is no loop")
-        };
-        (index, continuation, empty, carried)
-    }
-
-    /// The carry a `LoopValue` reads and its next value.
-    pub fn carry(&self, id: NodeId) -> (NodeId, NodeId) {
-        let References::LoopValue { carry, next } = self.references(id) else {
-            unreachable!("{id:?} is no loop value")
-        };
-        (carry, next)
-    }
-
-    /// Indexed by function ID.
+    /// Indexed by function ID; their nodes lie in the order the runs were built, which need not
+    /// be this one.
     pub fn runs(&self) -> &[Run] {
         &self.runs
     }
 
+    /// The function whose run holds `node`.
+    pub fn owner(&self, node: NodeId) -> FunctionId {
+        let index = self
+            .built
+            .partition_point(|&function| self.run(function).entry().index() <= node.index());
+        self.built[index - 1]
+    }
+
     pub fn run(&self, id: FunctionId) -> &Run {
         &self.runs[id.index()]
-    }
-
-    pub fn nodes(&self) -> &[Node] {
-        &self.store.nodes
-    }
-
-    pub fn node_ids(&self) -> impl ExactSizeIterator<Item = NodeId> + use<> {
-        (0..self.store.nodes.len()).map(NodeId::new)
     }
 
     /// Outermost first where regions nest.
@@ -899,15 +920,39 @@ pub struct GraphBuilder {
     unions: Unions,
 }
 
+impl Deref for GraphBuilder {
+    type Target = Store;
+
+    fn deref(&self) -> &Store {
+        &self.store
+    }
+}
+
 impl GraphBuilder {
-    #[inline]
-    pub fn node(&self, id: NodeId) -> &Node {
-        &self.store.nodes[id.index()]
+    /// The case of each arm, in arm order.
+    pub fn cases(&self, arms: Arms) -> impl Iterator<Item = Case> + '_ {
+        arms.iter().map(|arm| self.case(self.context(arm)))
     }
 
-    #[inline]
-    pub fn inputs(&self, id: NodeId) -> &[NodeId] {
-        &self.store.edges[self.store.operands(id)]
+    /// The result of a region already closed, as a value or as what completes in its place.
+    pub fn result(&self, region: RegionId) -> Operand {
+        let closed = self.regions[region.index()]
+            .closed
+            .as_ref()
+            .expect("a region read is closed");
+        if closed.result_has_value {
+            Operand::Value(closed.result)
+        } else {
+            Operand::Completes(closed.result)
+        }
+    }
+
+    /// The run of a function already built.
+    pub fn run(&self, function: FunctionId) -> &Run {
+        match &self.runs[function.index()] {
+            Slot::Closed(run) => run,
+            Slot::Declared(_) | Slot::Open(_) => panic!("a run read is closed"),
+        }
     }
 
     /// `nodes` is the count to expect.
@@ -980,7 +1025,7 @@ impl GraphBuilder {
 
     /// Marks an input as structurally completing the current function instead of yielding a value.
     pub fn complete_input(&mut self, node: NodeId, index: usize) {
-        let operands = self.store.operands(node);
+        let operands = self.store.operand_range(node);
         assert!(
             index < operands.len(),
             "an input exists before it completes"
@@ -1089,10 +1134,22 @@ impl GraphBuilder {
 
     /// Every region opened must be closed, and every function's run opened and closed.
     pub fn finish(self) -> Graph {
+        let runs: Vec<Run> = self
+            .runs
+            .into_iter()
+            .map(|slot| match slot {
+                Slot::Closed(run) => run,
+                Slot::Open(_) => panic!("a run opened is closed"),
+                Slot::Declared(_) => panic!("a function declared has a run"),
+            })
+            .collect();
+        let mut built: Box<[FunctionId]> = (0..runs.len()).map(FunctionId::new).collect();
+        built.sort_unstable_by_key(|function| runs[function.index()].nodes.start);
         Graph {
             decls: self.decls,
             unions: self.unions,
             store: self.store,
+            built,
             regions: self
                 .regions
                 .into_iter()
@@ -1107,15 +1164,7 @@ impl GraphBuilder {
                     }
                 })
                 .collect(),
-            runs: self
-                .runs
-                .into_iter()
-                .map(|slot| match slot {
-                    Slot::Closed(run) => run,
-                    Slot::Open(_) => panic!("a run opened is closed"),
-                    Slot::Declared(_) => panic!("a function declared has a run"),
-                })
-                .collect(),
+            runs,
         }
     }
 }

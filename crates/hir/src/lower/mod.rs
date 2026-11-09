@@ -11,7 +11,7 @@ use sumi_syntax::NodeIdx;
 use sumi_text::TextRange;
 
 pub(crate) use body::lower;
-pub(crate) use declare::{Header, HeaderResult, declare};
+pub(crate) use declare::{Declarations, Header, HeaderResult, Order, declare};
 pub(crate) use source::{Params, Source, diagnostic};
 
 use crate::{Binding, Occurrence};
@@ -46,7 +46,7 @@ pub(crate) struct Fallthrough {
 }
 
 pub(crate) struct Lowered {
-    /// By function.
+    /// By function, whether its body built whole.
     pub built: Vec<bool>,
     /// By node.
     pub typed: Vec<bool>,
