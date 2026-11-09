@@ -4,8 +4,8 @@
 
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind};
 use sumi_syntax::{
-    AssignOp, NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx,
-    SyntaxTree, TokenField, binary_operator,
+    NodeIdx, NodeKind, Parse, ParseAnchor, ParseEvidence, ParserInput, SigIdx, SyntaxTree,
+    binary_operator,
 };
 
 /// The line width, in characters.
@@ -523,15 +523,6 @@ impl Planner<'_> {
         self.pairs(els, |a, b| match (a, b) {
             (_, El::Tok(_, SyntaxKind::Colon)) => Gap::glue(level),
             (El::Tok(_, SyntaxKind::Eq), El::Node(..)) => Gap::soft(level + 1),
-            // An assignment's operator and its `=` are one.
-            (El::Tok(_, op), El::Tok(_, SyntaxKind::Eq))
-                if matches!(
-                    AssignOp::read(op, Some(SyntaxKind::Eq)),
-                    Some((AssignOp::Arith(_), _))
-                ) =>
-            {
-                Gap::glue(level)
-            }
             _ => Gap::space(level),
         });
         self.head_and_value(node, els, level);

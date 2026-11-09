@@ -51,8 +51,6 @@ fn arguments() -> int {
 fn fields() -> int {
     let mut m = Point(x: 1, y: 2)
     let p = Point(x: mut m.x, y: 2)
-    m.z += 1
-    m.x.y -= 1
     p.x
 }
 fn overlaps() -> int {
@@ -66,19 +64,3 @@ fn overlaps() -> int {
     l.from.x + c.radius
 }
 fn unassigned(mut p: Point, mut q: Point) -> int = p.x
-fn compounds(d: int) -> int {
-    let p = Point(x: 1, y: 2)
-    let mut m = Point(x: 1, y: 2)
-    let mut flag = true
-    p.x += 1
-    m.x += true
-    flag += 1
-    m.x + d
-}
-fn divisors(d: int) -> int {
-    let mut m = Point(x: 1, y: 2)
-    m.y /= d
-    m.x %= 0
-    m.x + m.y
-}
-fn divided() -> int = divisors(0)

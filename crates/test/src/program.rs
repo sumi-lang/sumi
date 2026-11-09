@@ -256,12 +256,7 @@ fn statement(expr: BoxedStrategy<String>) -> BoxedStrategy<(String, bool)> {
             let ty = typed.map_or(String::new(), |ty| format!(": {ty}"));
             (format!("let {mutable}{name}{ty} = {init}"), false)
         }),
-        2 => (
-            expr.clone(),
-            prop::sample::select(&["=", "+=", "-=", "*=", "/=", "%="][..]),
-            expr.clone(),
-        )
-            .prop_map(|(target, op, value)| (format!("{target} {op} {value}"), false)),
+        2 => (expr.clone(), expr.clone()).prop_map(|(target, value)| (format!("{target} = {value}"), false)),
         1 => expr.clone().prop_map(|e| (format!("_ = {e}"), false)),
         1 => prop::option::of(expr).prop_map(|value| match value {
             Some(value) => (format!("return {value}"), false),

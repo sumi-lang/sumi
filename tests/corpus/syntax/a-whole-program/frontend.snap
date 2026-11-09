@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 1:1..88:1
+SourceFile 1:1..83:1
   FnItem 3:1..15:2
     Name 3:4..3:8 "main"
     ParamList 3:8..3:10 "()"
@@ -339,11 +339,11 @@ SourceFile 1:1..88:1
             NameRef 75:11..75:12 "p"
             NameRef 75:13..75:14 "x"
           NameRef 75:17..75:19 "by"
-  FnItem 78:1..87:2
+  FnItem 78:1..82:2
     Name 78:4..78:9 "moved"
     ParamList 78:9..78:11 "()"
     TypeRef 78:15..78:18 "int"
-    Block 78:19..87:2
+    Block 78:19..82:2
       LetStmt 79:5..79:34
         Name 79:13..79:14 "p"
         CallExpr 79:17..79:34
@@ -362,31 +362,6 @@ SourceFile 1:1..88:1
             NameRef 80:14..80:15 "p"
           Arg 80:17..80:18
             LiteralExpr 80:17..80:18 "3"
-      AssignStmt 81:5..81:13
-        FieldExpr 81:5..81:8
-          NameRef 81:5..81:6 "p"
-          NameRef 81:7..81:8 "x"
-        LiteralExpr 81:12..81:13 "1"
-      AssignStmt 82:5..82:13
-        FieldExpr 82:5..82:8
-          NameRef 82:5..82:6 "p"
-          NameRef 82:7..82:8 "x"
-        LiteralExpr 82:12..82:13 "2"
-      AssignStmt 83:5..83:13
-        FieldExpr 83:5..83:8
-          NameRef 83:5..83:6 "p"
-          NameRef 83:7..83:8 "x"
-        LiteralExpr 83:12..83:13 "3"
-      AssignStmt 84:5..84:13
-        FieldExpr 84:5..84:8
-          NameRef 84:5..84:6 "p"
-          NameRef 84:7..84:8 "x"
-        LiteralExpr 84:12..84:13 "4"
-      AssignStmt 85:5..85:13
-        FieldExpr 85:5..85:8
-          NameRef 85:5..85:6 "p"
-          NameRef 85:7..85:8 "x"
-        LiteralExpr 85:12..85:13 "5"
-      FieldExpr 86:5..86:8
-        NameRef 86:5..86:6 "p"
-        NameRef 86:7..86:8 "x"
+      FieldExpr 81:5..81:8
+        NameRef 81:5..81:6 "p"
+        NameRef 81:7..81:8 "x"

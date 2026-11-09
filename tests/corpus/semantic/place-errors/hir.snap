@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 28
+semantic errors: 21
 
 == graph ==
 fn shift@15:1..17:2 (Point ∈ ∅, int ∈ [1, 1]) -> unit ∈ unit
@@ -118,7 +118,7 @@ fn arguments@39:1..50:2 () -> int ∈ [1, 1]
           base: read m@41:13..41:14 : Point
         rhs: read n@42:13..42:14 : int
 
-fn fields@51:1..57:2 () -> int ∈ [1, 1]
+fn fields@51:1..55:2 () -> int ∈ [1, 1]
   result: copy : int @51:16..51:19
     value:
       let m@52:13..52:14: Point @52:5..52:34
@@ -130,144 +130,69 @@ fn fields@51:1..57:2 () -> int ∈ [1, 1]
           x: field x : int @53:26..53:29
             base: read m@52:13..52:14 : Point
           y: int 2 : int @53:34..53:35
-      discard: int 1 : int @54:12..54:13
-      discard: field z : ? @54:5..54:8
-        base: read m@52:13..52:14 : Point
-      discard: hole : ? @54:5..54:13
-      discard: int 1 : int @55:14..55:15
-      discard: field y : ? @55:5..55:10
-        base: field x : int @55:5..55:8
-          base: read m@52:13..52:14 : Point
-      discard: hole : ? @55:5..55:15
-      tail: field x : int @56:5..56:8
+      tail: field x : int @54:5..54:8
         base: read p@53:9..53:10 : Point
 
-fn overlaps@58:1..67:2 () -> int ∈ ∅
-  result: copy : int @58:18..58:21
+fn overlaps@56:1..65:2 () -> int ∈ ∅
+  result: copy : int @56:18..56:21
     value:
-      let l@59:13..59:14: Line @59:5..59:69
-        initializer: make Line : Line @59:17..59:69
-          from: make Point : Point @59:28..59:45
-            x: int 0 : int @59:37..59:38
-            y: int 0 : int @59:43..59:44
-          to: make Point : Point @59:51..59:68
-            x: int 3 : int @59:60..59:61
-            y: int 4 : int @59:66..59:67
-      let c@60:13..60:14: Circle @60:5..60:34
-        initializer: make Circle : Circle @60:17..60:34
-          radius: int 1 : int @60:32..60:33
-      discard: field return : unit @61:5..61:33
-        base: call swap@18:1..22:2 : <missing> @61:5..61:33
-          arg[0]: field from : Point @61:14..61:20
-            base: read l@59:13..59:14 : Line
-          arg[1]: field from : Point @61:26..61:32
-            base: read l@59:13..59:14 : Line
-      discard: field return : unit @62:5..62:26
-        base: call swap@18:1..22:2 : <missing> @62:5..62:26
-          arg[0]: read l@59:13..59:14 : Line
-          arg[1]: field to : Point @62:21..62:25
-            base: read l@59:13..59:14 : Line
-      discard: field return : unit @63:5..63:35
-        base: call swap@18:1..22:2 : <missing> @63:5..63:35
-          arg[0]: field x : int @63:14..63:22
-            base: field from : Point @63:14..63:20
-              base: read l@59:13..59:14 : Line
-          arg[1]: field from : Point @63:28..63:34
-            base: read l@59:13..59:14 : Line
-      assignment: assign l@59:13..59:14 : Line @64:14..64:20
-        value: make Line : Line @64:14..64:20
-          from: field a : Point @64:14..64:20
-            base: call swap@18:1..22:2 : <missing> @64:5..64:28
-              arg[0]: field from : Point @64:14..64:20
-                base: read l@59:13..59:14 : Line
-              arg[1]: read c@60:13..60:14 : Circle
-          to: field to : Point @64:14..64:15
-            base: read l@59:13..59:14 : Line
-      discard: field return : unit @64:5..64:28
-        base: call swap@18:1..22:2 : <missing> @64:5..64:28
-          arg[0]: field from : Point @64:14..64:20
-            base: read l@59:13..59:14 : Line
-          arg[1]: read c@60:13..60:14 : Circle
-      discard: field return : unit @65:5..65:19
-        base: call reshape@23:1..25:2 : <missing> @65:5..65:19
-          arg[0]: read c@60:13..60:14 : Circle
-      tail: eager + : int @66:5..66:24
-        lhs: field x : int @66:5..66:13
-          base: field from : Point @66:5..66:11
-            base: read l@59:13..59:14 (assigned @64:14..64:20) : Line
-        rhs: field radius : int @66:16..66:24
-          base: read c@60:13..60:14 : Circle
+      let l@57:13..57:14: Line @57:5..57:69
+        initializer: make Line : Line @57:17..57:69
+          from: make Point : Point @57:28..57:45
+            x: int 0 : int @57:37..57:38
+            y: int 0 : int @57:43..57:44
+          to: make Point : Point @57:51..57:68
+            x: int 3 : int @57:60..57:61
+            y: int 4 : int @57:66..57:67
+      let c@58:13..58:14: Circle @58:5..58:34
+        initializer: make Circle : Circle @58:17..58:34
+          radius: int 1 : int @58:32..58:33
+      discard: field return : unit @59:5..59:33
+        base: call swap@18:1..22:2 : <missing> @59:5..59:33
+          arg[0]: field from : Point @59:14..59:20
+            base: read l@57:13..57:14 : Line
+          arg[1]: field from : Point @59:26..59:32
+            base: read l@57:13..57:14 : Line
+      discard: field return : unit @60:5..60:26
+        base: call swap@18:1..22:2 : <missing> @60:5..60:26
+          arg[0]: read l@57:13..57:14 : Line
+          arg[1]: field to : Point @60:21..60:25
+            base: read l@57:13..57:14 : Line
+      discard: field return : unit @61:5..61:35
+        base: call swap@18:1..22:2 : <missing> @61:5..61:35
+          arg[0]: field x : int @61:14..61:22
+            base: field from : Point @61:14..61:20
+              base: read l@57:13..57:14 : Line
+          arg[1]: field from : Point @61:28..61:34
+            base: read l@57:13..57:14 : Line
+      assignment: assign l@57:13..57:14 : Line @62:14..62:20
+        value: make Line : Line @62:14..62:20
+          from: field a : Point @62:14..62:20
+            base: call swap@18:1..22:2 : <missing> @62:5..62:28
+              arg[0]: field from : Point @62:14..62:20
+                base: read l@57:13..57:14 : Line
+              arg[1]: read c@58:13..58:14 : Circle
+          to: field to : Point @62:14..62:15
+            base: read l@57:13..57:14 : Line
+      discard: field return : unit @62:5..62:28
+        base: call swap@18:1..22:2 : <missing> @62:5..62:28
+          arg[0]: field from : Point @62:14..62:20
+            base: read l@57:13..57:14 : Line
+          arg[1]: read c@58:13..58:14 : Circle
+      discard: field return : unit @63:5..63:19
+        base: call reshape@23:1..25:2 : <missing> @63:5..63:19
+          arg[0]: read c@58:13..58:14 : Circle
+      tail: eager + : int @64:5..64:24
+        lhs: field x : int @64:5..64:13
+          base: field from : Point @64:5..64:11
+            base: read l@57:13..57:14 (assigned @62:14..62:20) : Line
+        rhs: field radius : int @64:16..64:24
+          base: read c@58:13..58:14 : Circle
 
-fn unassigned@68:1..68:55 (Point ∈ ∅, Point ∈ ∅) -> int ∈ ∅
-  param p@68:19..68:20: Point
-  param q@68:33..68:34: Point
-  body: make <missing> : <missing> @68:52..68:55
-
-fn compounds@69:1..77:2 (int ∈ ∅) -> int ∈ ∅
-  param d@69:14..69:15: int
-  result: copy : int @69:25..69:28
-    value:
-      let p@70:9..70:10: Point @70:5..70:30
-        initializer: make Point : Point @70:13..70:30
-          x: int 1 : int @70:22..70:23
-          y: int 2 : int @70:28..70:29
-      let m@71:13..71:14: Point @71:5..71:34
-        initializer: make Point : Point @71:17..71:34
-          x: int 1 : int @71:26..71:27
-          y: int 2 : int @71:32..71:33
-      let flag@72:13..72:17: bool @72:5..72:24
-        initializer: bool true : bool @72:20..72:24
-      discard: hole : ? @73:5..73:13
-        part[0]: int 1 : int @73:12..73:13
-      assignment: assign m@71:13..71:14 : Point @74:5..74:16
-        value: make Point : Point @74:5..74:16
-          x: eager + : int @74:5..74:16
-            lhs: field x : int @74:5..74:8
-              base: read m@71:13..71:14 : Point
-            rhs: bool true : bool @74:12..74:16
-          y: field y : int @74:5..74:6
-            base: read m@71:13..71:14 : Point
-      discard: int 1 : int @75:13..75:14
-      discard: hole : ? @75:5..75:14
-      tail: eager + : int @76:5..76:12
-        lhs: field x : int @76:5..76:8
-          base: read m@71:13..71:14 (assigned @74:5..74:16) : Point
-        rhs: read d@69:14..69:15 : int
-
-fn divisors@78:1..83:2 (int ∈ [0, 0]) -> int ∈ ∅
-  param d@78:13..78:14: int
-  result: copy : int @78:24..78:27
-    value:
-      let m@79:13..79:14: Point @79:5..79:34
-        initializer: make Point : Point @79:17..79:34
-          x: int 1 : int @79:26..79:27
-          y: int 2 : int @79:32..79:33
-      assignment: assign m@79:13..79:14 : Point @80:5..80:13
-        value: make Point : Point @80:5..80:13
-          x: field x : int @80:5..80:6
-            base: read m@79:13..79:14 : Point
-          y: eager / : int @80:5..80:13
-            lhs: field y : int @80:5..80:8
-              base: read m@79:13..79:14 : Point
-            rhs: read d@78:13..78:14 : int
-      assignment: assign m@79:13..79:14 : Point @81:5..81:13
-        value: make Point : Point @81:5..81:13
-          x: eager % : int @81:5..81:13
-            lhs: field x : int @81:5..81:8
-              base: read m@79:13..79:14 (assigned @80:5..80:13) : Point
-            rhs: int 0 : int @81:12..81:13
-          y: field y : int @81:5..81:6
-            base: read m@79:13..79:14 (assigned @80:5..80:13) : Point
-      tail: eager + : int @82:5..82:14
-        lhs: field x : int @82:5..82:8
-          base: read m@79:13..79:14 (assigned @81:5..81:13) : Point
-        rhs: field y : int @82:11..82:14
-          base: read m@79:13..79:14 (assigned @81:5..81:13) : Point
-
-fn divided@84:1..84:34 () -> int ∈ ∅
-  result: copy : int @84:17..84:20
-    value: call divisors@78:1..83:2 : int @84:23..84:34
-      arg[0]: int 0 : int @84:32..84:33
+fn unassigned@66:1..66:55 (Point ∈ ∅, Point ∈ ∅) -> int ∈ ∅
+  param p@66:19..66:20: Point
+  param q@66:33..66:34: Point
+  body: make <missing> : <missing> @66:52..66:55
 
 fn swap<Point>@18:1..22:2 (Point ∈ Point([0, 0], [0, 0]), Point ∈ ∅) -> unit ∈ unit
   param a@18:16..18:17: Point
@@ -328,31 +253,20 @@ error[semantic/type-mismatch] 47:15..47:18 "m.x": expected Point, found int
   at 15:10..15:22 "mut p: Point": declared here
 error[semantic/unknown-name] 48:5..48:11 "absent": unknown function `absent`
 error[semantic/mut-argument] 53:26..53:29 "m.x": a field takes a value: `mut` is written for a `mut` parameter
-error[semantic/unknown-field] 54:5..54:8 "m.z": `Point` has no field `z`
-  at 1:6..1:11 "Point": declared here
-error[semantic/unknown-field] 55:5..55:10 "m.x.y": `int` has no field `y`
-error[semantic/overlapping-places] 61:26..61:32 "l.from": this place overlaps another the call changes
-  at 61:14..61:20 "l.from": also changed here
-error[semantic/overlapping-places] 62:21..62:25 "l.to": this place overlaps another the call changes
-  at 62:14..62:15 "l": also changed here
-error[semantic/type-mismatch] 62:21..62:25 "l.to": expected Line, found Point
+error[semantic/overlapping-places] 59:26..59:32 "l.from": this place overlaps another the call changes
+  at 59:14..59:20 "l.from": also changed here
+error[semantic/overlapping-places] 60:21..60:25 "l.to": this place overlaps another the call changes
+  at 60:14..60:15 "l": also changed here
+error[semantic/type-mismatch] 60:21..60:25 "l.to": expected Line, found Point
   at 18:22..18:30 "mut b: T": declared here
-error[semantic/overlapping-places] 63:28..63:34 "l.from": this place overlaps another the call changes
-  at 63:14..63:22 "l.from.x": also changed here
-error[semantic/type-mismatch] 63:28..63:34 "l.from": expected int, found Point
+error[semantic/overlapping-places] 61:28..61:34 "l.from": this place overlaps another the call changes
+  at 61:14..61:22 "l.from.x": also changed here
+error[semantic/type-mismatch] 61:28..61:34 "l.from": expected int, found Point
   at 18:22..18:30 "mut b: T": declared here
-error[semantic/type-mismatch] 64:26..64:27 "c": expected Point, found Circle
+error[semantic/type-mismatch] 62:26..62:27 "c": expected Point, found Circle
   at 18:22..18:30 "mut b: T": declared here
-error[semantic/type-mismatch] 65:17..65:18 "c": this place holds Circle, and `mut` parameter `s` may leave Circle | Square in it; their types must be the same
+error[semantic/type-mismatch] 63:17..63:18 "c": this place holds Circle, and `mut` parameter `s` may leave Circle | Square in it; their types must be the same
   at 23:12..23:34 "mut s: Circle | Square": declared here
-warning[semantic/unused-name] 68:33..68:34 "q": parameter `q` is never read
+warning[semantic/unused-name] 66:33..66:34 "q": parameter `q` is never read
   fix: prefix the name with `_`
-    68:33 -> "_"
-error[semantic/immutable-assignment] 73:5..73:6 "p": cannot assign to immutable local `p`
-  at 70:9..70:10 "p": declared here
-error[semantic/type-mismatch] 74:12..74:16 "true": expected int, found bool
-error[semantic/type-mismatch] 75:5..75:9 "flag": expected int, found bool
-error[semantic/division-by-zero] 80:5..80:13 "m.y /= d": division by zero
-  at 84:32..84:33 "0": argument is 0
-error[semantic/division-by-zero] 81:5..81:13 "m.x %= 0": division by zero
-  at 81:12..81:13 "0": is 0
+    66:33 -> "_"

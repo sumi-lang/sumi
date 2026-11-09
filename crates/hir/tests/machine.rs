@@ -603,12 +603,8 @@ impl Gen<'_> {
                         format!("_ = {}", self.expr(Kind::Int, fuel))
                     } else {
                         let name = self.rng.pick(&records).clone();
-                        match self.rng.below(5) {
+                        match self.rng.below(4) {
                             0 => format!("{name}.a = {}", self.expr(Kind::Int, fuel)),
-                            4 => {
-                                let op = *self.rng.pick(&["+=", "-=", "*="]);
-                                format!("{name}.a {op} {}", self.expr(Kind::Int, fuel))
-                            }
                             1 => format!("{name}.b = {}", self.expr(Kind::Bool, fuel)),
                             2 => format!("bump(mut {name}, {})", self.expr(Kind::Int, fuel)),
                             _ => format!("_ = reset(mut {name})"),

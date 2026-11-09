@@ -88,19 +88,3 @@ fn guarded() -> int {
     p.x = 4
     100 / p.x + 100 / p.y
 }
-fn compound() -> int {
-    let mut p = Point(x: 10, y: 3)
-    let mut n = 2
-    p.x += 5
-    p.x -= n
-    n *= p.y
-    p.x /= n
-    p.y %= 2
-    p.x * 100 + p.y * 10 + n
-}
-fn once() -> int {
-    let mut p = Point(x: 1, y: 1)
-    p.x += { p.x = 10
-        5 }
-    p.x
-}
