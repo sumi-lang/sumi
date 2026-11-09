@@ -1,0 +1,83 @@
+== tree ==
+SourceFile! 1:1..9:1
+  FnItem! 1:1..8:2
+    Name 1:4..1:5 "f"
+    ParamList 1:5..1:7 "()"
+    Block! 1:8..8:2
+      DiscardStmt! 2:5..3:26
+        BinaryExpr! 2:9..3:26
+          NameRef 2:9..2:10 "a"
+          BinaryExpr! 3:10..3:26
+            MatchExpr! 3:10..3:22
+              NameRef 3:10..3:11 "b"
+              ArmList 3:12..3:22
+                MatchArm 3:14..3:20
+                  MemberPattern 3:14..3:15
+                    NameRef 3:14..3:15 "P"
+                  LiteralExpr 3:19..3:20 "0"
+            LiteralExpr 3:25..3:26 "1"
+      DiscardStmt! 4:5..5:10
+        BinaryExpr! 4:9..5:10
+          ForExpr! 4:9..4:36
+            Name 4:13..4:14 "x"
+            MatchExpr! 4:18..4:30
+              NameRef 4:18..4:19 "a"
+              ArmList 4:20..4:30
+                MatchArm 4:22..4:28
+                  MemberPattern 4:22..4:23
+                    NameRef 4:22..4:23 "P"
+                  LiteralExpr 4:27..4:28 "0"
+            NameRef 4:32..4:33 "b"
+            Block 4:34..4:36 "{}"
+          NameRef 5:9..5:10 "c"
+      ForExpr! 6:5..6:26
+        Name 6:9..6:10 "x"
+        NameRef 6:14..6:15 "a"
+        Block! 6:16..6:26
+          AssignStmt! 6:18..6:24
+            NameRef 6:18..6:19 "P"
+            Error! 6:21..6:22 ">"
+            LiteralExpr 6:23..6:24 "0"
+      DiscardStmt! 7:5..7:21
+        MatchExpr! 7:9..7:21
+          NameRef 7:9..7:10 "b"
+          ArmList 7:11..7:21
+            MatchArm 7:13..7:19
+              MemberPattern 7:13..7:14
+                NameRef 7:13..7:14 "P"
+              LiteralExpr 7:18..7:19 "0"
+      Error! 7:22..7:32 "{ Q => 1 }"
+
+== evidence ==
+Expected(MatchKw) at 3:10
+Expected(MatchKw) at 4:18
+ExpectedRangeOperator at 6:16
+ExpectedExpression at 6:21
+Expected(MatchKw) at 7:9
+
+== diagnostics ==
+error[syntax/expected-token] 3:10: expected `match`
+error[syntax/expected-token] 4:18: expected `match`
+error[syntax/expected-token] 6:16: expected `..`
+error[syntax/expected-expression] 6:21..6:22 ">": expected an expression
+error[syntax/expected-token] 7:9: expected `match`
+  at 7:22..7:32 "{ Q => 1 }": skipped while recovering
+
+== formatted ==
+fn f() {
+    _ = a
+        || b {
+            P => 0
+        }
+            % 1
+    _ = for x in a {
+        P => 0
+    }..b {}
+        % c
+    for x in a {
+        P => 0
+    }
+    _ = b {
+        P => 0
+    } { Q => 1 }
+}

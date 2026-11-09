@@ -1016,6 +1016,16 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if follow == ExprFollow::Block && p.at(T::LBrace) {
             break;
         }
+        if begins_keywordless_match(p, &lhs, follow) {
+            let scrutinee = p.completed_node(&lhs);
+            let mut m = p.precede(lhs);
+            m.missing_before(ParseRecoveryKind::Token(T::MatchKw));
+            m.wrapped_field(scrutinee, 0);
+            arm_list(&mut m);
+            lhs = m.complete(N::MatchExpr);
+            was_comparison = false;
+            continue;
+        }
         if p.at(T::Dot) && p.nth(1) == Some(T::Ident) {
             let base = p.completed_node(&lhs);
             let mut m = p.precede(lhs);
@@ -1089,6 +1099,23 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         was_comparison = op.is_comparison() && !is_chained;
     }
     Some(lhs)
+}
+
+/// Arms on the line of an operand are a `match` that lost its keyword, the operand its scrutinee.
+/// A head's `{` may be the arms of the `match` the head belongs to, and in a range they must be
+/// followed by what continues it, or they are the body; nor do arms stack on a match's own.
+fn begins_keywordless_match(p: &Marker<'_, '_>, lhs: &CompletedMarker, follow: ExprFollow) -> bool {
+    p.at(T::LBrace)
+        && follow != ExprFollow::Block
+        && !p.is_after_newline()
+        && p.completed_kind(lhs) != N::MatchExpr
+        && p.nth_partner(0).is_some_and(|close| {
+            let next = close + 1;
+            (follow == ExprFollow::Anything
+                || p.nth(next) == Some(T::Dot)
+                || (!p.is_nth_at_boundary(next) && binary_op(p, next).is_some()))
+                && holds_arm(p, close)
+        })
 }
 
 /// `is_after_newline`, not `is_at_boundary`: parentheses suspend boundaries, but a `(` on a new line
@@ -1267,11 +1294,16 @@ fn match_expr(p: &mut Marker<'_, '_>) -> CompletedMarker {
         m.field(&scrutinee, 0);
     }
     if m.at(T::LBrace) {
-        delimited_list::<ArmsRule>(&mut m, 1);
+        arm_list(&mut m);
     } else {
         m.missing(ParseRecoveryKind::Token(T::LBrace));
     }
     m.complete(N::MatchExpr)
+}
+
+/// A `MatchExpr`'s arms, from its `{`.
+fn arm_list(m: &mut Marker<'_, '_>) {
+    delimited_list::<ArmsRule>(m, 1);
 }
 
 /// `Pattern '=>' Expr`; a pattern is `_` or a member name with optional type arguments and
