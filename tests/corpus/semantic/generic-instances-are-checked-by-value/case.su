@@ -1,0 +1,6 @@
+fn divide<T>(_x: T, d: int) -> int = 100 / d
+fn forever<T>(x: T) -> int = forever<T>(x)
+fn main() -> int {
+    let a = divide<int>(1, 0) + divide<bool>(true, 0) + divide<unit>({}, 5)
+    a + forever<int>(1)
+}

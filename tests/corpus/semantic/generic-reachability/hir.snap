@@ -1,0 +1,190 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn count<T>@5:1..9:2 (T ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param x@5:13..5:14: T
+  param n@5:19..5:20: int
+  result: copy : int @5:30..5:33
+    value: if : int @5:36..9:2
+      scrutinee: eager == : bool @5:39..5:45
+        lhs: read n@5:19..5:20 : int
+        rhs: int 0 : int @5:44..5:45
+      then: int 0 : int @6:5..6:6
+      else: eager + : int @8:5..8:27
+        lhs: int 1 : int @8:5..8:6
+        rhs: call count@5:1..9:2 : int @8:9..8:27
+          arg[0]: read x@5:13..5:14 : T
+          arg[1]: eager - : int @8:21..8:26
+            lhs: read n@5:19..5:20 [n == 0 fails@5:39..5:45] : int
+            rhs: int 1 : int @8:25..8:26
+
+fn unused<T>@10:1..10:28 (T ∈ ∅) -> T ∈ ∅
+  param x@10:14..10:15: T
+  result: copy : T @10:23..10:24
+    value: read x@10:14..10:15 : T
+
+fn only_generic<T>@11:1..11:45 (T ∈ ∅) -> T ∈ ∅
+  param x@11:20..11:21: T
+  result: copy : T @11:29..11:30
+    value: call unused@10:1..10:28 : T @11:33..11:45
+      arg[0]: read x@11:20..11:21 : T
+
+fn narrow<T>@12:1..15:2 (Box<T> | None ∈ ∅) -> int ∈ ∅
+  param x@12:14..12:15: Box<T> | None
+  result: copy : int @12:35..12:38
+    value: match : int @12:41..15:2
+      scrutinee: read x@12:14..12:15 : Box<T> | None
+      Box<T>:
+        let _b@13:12..13:14: narrow to Box<T> : Box<T> @13:12..13:14
+          scrutinee: read x@12:14..12:15 : Box<T> | None
+        tail: int 1 : int @13:19..13:20
+      None: int 2 : int @14:13..14:14
+
+fn constant<T>@16:1..20:2 (T ∈ ∅) -> int ∈ ∅
+  param _x@16:16..16:18: T
+  result: copy : int @16:26..16:29
+    value: if : int @16:32..20:2
+      scrutinee: bool true : bool @16:35..16:39
+      then: int 1 : int @17:5..17:6
+      else: int 2 : int @19:5..19:6
+
+fn stops<T>@21:1..24:2 (T ∈ ∅) -> T ∈ ∅
+  param x@21:13..21:14: T
+  result: result : T @21:22..21:23
+    outcome[0]:
+      discard: after : ? @22:5..22:13
+        control: return : T @22:5..22:13
+        context: entry : ? @21:1..24:2
+      tail: read x@21:13..21:14 : T
+    outcome[1]: return : T @22:5..22:13
+      payload: read x@21:13..21:14 : T
+
+fn main@25:1..29:2 () -> int ∈ [5, +∞)
+  result: copy : int @25:14..25:17
+    value:
+      let b@26:9..26:10: int @26:5..26:54
+        initializer: eager + : int @26:13..26:54
+          lhs: call count@5:1..9:2 : int @26:13..26:30
+            arg[0]: int 1 : int @26:24..26:25
+            arg[1]: int 10 : int @26:27..26:29
+          rhs: call count@5:1..9:2 : int @26:33..26:54
+            arg[0]: bool true : bool @26:45..26:49
+            arg[1]: int 20 : int @26:51..26:53
+      let d@27:9..27:10: int @27:5..27:83
+        initializer: eager + : int @27:13..27:83
+          lhs: call narrow@12:1..15:2 : int @27:13..27:44
+            arg[0]: make Box : Box<int> @27:25..27:43
+              value: int 1 : int @27:41..27:42
+          rhs: call narrow@12:1..15:2 : int @27:47..27:83
+            arg[0]: make Box : Box<bool> @27:60..27:82
+              value: bool true : bool @27:77..27:81
+      tail: eager + : int @28:5..28:68
+        lhs: eager + : int @28:5..28:52
+          lhs: eager + : int @28:5..28:29
+            lhs: eager + : int @28:5..28:10
+              lhs: read b@26:9..26:10 : int
+              rhs: read d@27:9..27:10 : int
+            rhs: call constant@16:1..20:2 : int @28:13..28:29
+              arg[0]: int 1 : int @28:27..28:28
+          rhs: call constant@16:1..20:2 : int @28:32..28:52
+            arg[0]: bool true : bool @28:47..28:51
+        rhs: call stops@21:1..24:2 : int @28:55..28:68
+          arg[0]: int 1 : int @28:66..28:67
+
+fn unused<T>@10:1..10:28 (T ∈ ∅) -> T ∈ ∅
+  param x@10:14..10:15: T
+  result: copy : T @10:23..10:24
+    value: read x@10:14..10:15 : T
+
+fn count<int>@5:1..9:2 (int ∈ [1, 1], int ∈ [0, 10]) -> int ∈ [0, +∞)
+  param x@5:13..5:14: int
+  param n@5:19..5:20: int
+  result: copy : int @5:30..5:33
+    value: if : int @5:36..9:2
+      scrutinee: eager == : bool @5:39..5:45
+        lhs: read n@5:19..5:20 : int
+        rhs: int 0 : int @5:44..5:45
+      then: int 0 : int @6:5..6:6
+      else: eager + : int @8:5..8:27
+        lhs: int 1 : int @8:5..8:6
+        rhs: call count@5:1..9:2 : int @8:9..8:27
+          arg[0]: read x@5:13..5:14 : int
+          arg[1]: eager - : int @8:21..8:26
+            lhs: read n@5:19..5:20 [n == 0 fails@5:39..5:45] : int
+            rhs: int 1 : int @8:25..8:26
+
+fn count<bool>@5:1..9:2 (bool ∈ {true}, int ∈ [0, 20]) -> int ∈ [0, +∞)
+  param x@5:13..5:14: bool
+  param n@5:19..5:20: int
+  result: copy : int @5:30..5:33
+    value: if : int @5:36..9:2
+      scrutinee: eager == : bool @5:39..5:45
+        lhs: read n@5:19..5:20 : int
+        rhs: int 0 : int @5:44..5:45
+      then: int 0 : int @6:5..6:6
+      else: eager + : int @8:5..8:27
+        lhs: int 1 : int @8:5..8:6
+        rhs: call count@5:1..9:2 : int @8:9..8:27
+          arg[0]: read x@5:13..5:14 : bool
+          arg[1]: eager - : int @8:21..8:26
+            lhs: read n@5:19..5:20 [n == 0 fails@5:39..5:45] : int
+            rhs: int 1 : int @8:25..8:26
+
+fn narrow<int>@12:1..15:2 (Box<int> | None ∈ Box<int>([1, 1])) -> int ∈ [1, 1]
+  param x@12:14..12:15: Box<int> | None
+  result: copy : int @12:35..12:38
+    value: match : int @12:41..15:2
+      scrutinee: read x@12:14..12:15 : Box<int> | None
+      Box<int>:
+        let _b@13:12..13:14: narrow to Box<int> : Box<int> @13:12..13:14
+          scrutinee: read x@12:14..12:15 : Box<int> | None
+        tail: int 1 : int @13:19..13:20
+      None: int 2 : int @14:13..14:14
+
+fn narrow<bool>@12:1..15:2 (Box<bool> | None ∈ Box<bool>({true})) -> int ∈ [1, 1]
+  param x@12:14..12:15: Box<bool> | None
+  result: copy : int @12:35..12:38
+    value: match : int @12:41..15:2
+      scrutinee: read x@12:14..12:15 : Box<bool> | None
+      Box<bool>:
+        let _b@13:12..13:14: narrow to Box<bool> : Box<bool> @13:12..13:14
+          scrutinee: read x@12:14..12:15 : Box<bool> | None
+        tail: int 1 : int @13:19..13:20
+      None: int 2 : int @14:13..14:14
+
+fn constant<int>@16:1..20:2 (int ∈ [1, 1]) -> int ∈ [1, 1]
+  param _x@16:16..16:18: int
+  result: copy : int @16:26..16:29
+    value: if : int @16:32..20:2
+      scrutinee: bool true : bool @16:35..16:39
+      then: int 1 : int @17:5..17:6
+      else: int 2 : int @19:5..19:6
+
+fn constant<bool>@16:1..20:2 (bool ∈ {true}) -> int ∈ [1, 1]
+  param _x@16:16..16:18: bool
+  result: copy : int @16:26..16:29
+    value: if : int @16:32..20:2
+      scrutinee: bool true : bool @16:35..16:39
+      then: int 1 : int @17:5..17:6
+      else: int 2 : int @19:5..19:6
+
+fn stops<int>@21:1..24:2 (int ∈ [1, 1]) -> int ∈ [1, 1]
+  param x@21:13..21:14: int
+  result: result : int @21:22..21:23
+    outcome[0]:
+      discard: after : ? @22:5..22:13
+        control: return : int @22:5..22:13
+        context: entry : ? @21:1..24:2
+      tail: read x@21:13..21:14 : int
+    outcome[1]: return : int @22:5..22:13
+      payload: read x@21:13..21:14 : int
+
+== semantic diagnostics ==
+warning[semantic/unused-function] 10:4..10:10 "unused": function `unused` is only called from functions never called
+warning[semantic/unused-function] 11:4..11:16 "only_generic": function `only_generic` is never called
+warning[semantic/constant-condition] 16:35..16:39 "true": condition is always true
+  at 18:8..20:2 "{\n    2\n}": this branch never runs
+warning[semantic/unreachable-code] 23:5..23:6 "x": unreachable code
+  at 22:5..22:13 "return x": no path continues past this

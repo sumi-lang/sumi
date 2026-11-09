@@ -1,0 +1,76 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 3
+
+== graph ==
+fn divide<T>@1:1..1:45 (T ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param _x@1:14..1:16: T
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn forever<T>@2:1..2:43 (T ∈ ∅) -> int ∈ ∅
+  param x@2:15..2:16: T
+  result: copy : int @2:24..2:27
+    value: call forever@2:1..2:43 : int @2:30..2:43
+      arg[0]: read x@2:15..2:16 : T
+
+fn main@3:1..6:2 () -> int ∈ ∅
+  result: copy : int @3:14..3:17
+    value:
+      let a@4:9..4:10: int @4:5..4:76
+        initializer: eager + : int @4:13..4:76
+          lhs: eager + : int @4:13..4:54
+            lhs: call divide@1:1..1:45 : int @4:13..4:30
+              arg[0]: int 1 : int @4:25..4:26
+              arg[1]: int 0 : int @4:28..4:29
+            rhs: call divide@1:1..1:45 : int @4:33..4:54
+              arg[0]: bool true : bool @4:46..4:50
+              arg[1]: int 0 : int @4:52..4:53
+          rhs: call divide@1:1..1:45 : int @4:57..4:76
+            arg[0]: unit : unit @4:70..4:72
+            arg[1]: int 5 : int @4:74..4:75
+      tail: eager + : int @5:5..5:24
+        lhs: read a@4:9..4:10 : int
+        rhs: call forever@2:1..2:43 : int @5:9..5:24
+          arg[0]: int 1 : int @5:22..5:23
+
+fn divide<int>@1:1..1:45 (int ∈ [1, 1], int ∈ [0, 0]) -> int ∈ ∅
+  param _x@1:14..1:16: int
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn divide<bool>@1:1..1:45 (bool ∈ {true}, int ∈ [0, 0]) -> int ∈ ∅
+  param _x@1:14..1:16: bool
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn divide<unit>@1:1..1:45 (unit ∈ unit, int ∈ [5, 5]) -> int ∈ [20, 20]
+  param _x@1:14..1:16: unit
+  param d@1:21..1:22: int
+  result: copy : int @1:32..1:35
+    value: eager / : int @1:38..1:45
+      lhs: int 100 : int @1:38..1:41
+      rhs: read d@1:21..1:22 : int
+
+fn forever<int>@2:1..2:43 (int ∈ [1, 1]) -> int ∈ ∅
+  param x@2:15..2:16: int
+  result: copy : int @2:24..2:27
+    value: call forever@2:1..2:43 : int @2:30..2:43
+      arg[0]: read x@2:15..2:16 : int
+
+== semantic diagnostics ==
+error[semantic/division-by-zero] 1:38..1:45 "100 / d": division by zero
+  at 4:28..4:29 "0": argument is 0
+error[semantic/division-by-zero] 1:38..1:45 "100 / d": division by zero
+  at 4:52..4:53 "0": argument is 0
+error[semantic/unbounded-recursion] 2:4..2:11 "forever": recursion in `forever` has no argument that moves toward a bound on every call
+  at 2:30..2:43 "forever<T>(x)": argument passes `x` along

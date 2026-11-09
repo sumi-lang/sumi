@@ -9,7 +9,7 @@ use sumi_frontend::{Diagnostic, DiagnosticCode, Label, ParsedSource};
 use sumi_graph::{DeclId, FieldName, ShownTy, Ty, UnionId};
 use sumi_lexer::{LexedFile, RawIdx, SyntaxKind};
 use sumi_syntax::{
-    NodeIdx, SyntaxTree,
+    NodeIdx, NodeKind, SyntaxTree,
     ast::{self, AstNode, View},
 };
 use sumi_text::TextRange;
@@ -20,12 +20,28 @@ use crate::{Occurrence, Symbol};
 
 pub(super) type NameMap<'s, V> = HashMap<&'s str, V, FxBuildHasher>;
 
-/// A declared type by name, with its fields by name; both resolve names while lowering.
+/// A declared type's fields as the graph takes them, each with its type when that resolved.
+type Fields = Box<[(FieldName, Option<Ty>)]>;
+
+/// The most instances of generic types and functions one file may name: instances multiply
+/// with each generic item that names another at two types of its own.
+pub(crate) const MAX_INSTANCES: usize = 1 << 16;
+
+/// A declared type by name, with its fields by name; both resolve names while lowering. A type
+/// parameter is one with no fields.
 pub(crate) struct DeclNames<'s> {
+    /// The name an item declares, which its instances share.
     pub name: &'s str,
     pub name_node: Option<NodeIdx>,
+    /// The item or the type parameter.
+    pub origin: NodeIdx,
     /// Per field in declaration order.
-    pub fields: Vec<(&'s str, NodeIdx)>,
+    pub fields: Rc<[(&'s str, NodeIdx)]>,
+    /// The item's instance at its own type parameters, which every symbol of the type names;
+    /// itself for that instance and for a type parameter.
+    pub item: DeclId,
+    /// The type arguments of an instance of a generic item.
+    pub args: Rc<[Ty]>,
 }
 
 impl DeclNames<'_> {
@@ -34,12 +50,36 @@ impl DeclNames<'_> {
     }
 }
 
+/// A type item's parameters and the syntax its instances take their field types from.
+pub(crate) struct TypeItem<'s> {
+    pub params: Vec<&'s str>,
+    /// Per field of the item's declared type, its type as written.
+    pub field_types: Vec<Option<ast::Type>>,
+    /// Per field, whether its type holds the item itself, so no instance has it.
+    pub recursive: Vec<bool>,
+}
+
 pub(crate) struct Source<'s> {
     pub parsed: &'s ParsedSource,
     pub tree: &'s SyntaxTree,
     pub diagnostics: Vec<Diagnostic>,
-    /// By declared type ID.
+    /// By declared type ID: the type items first, each as its instance at its own parameters,
+    /// then every type parameter, then the other instances as they are named.
     pub decls: Vec<DeclNames<'s>>,
+    /// By type item, which its ID as a declared type indexes.
+    pub(super) type_items: Vec<TypeItem<'s>>,
+    /// By declared type ID, the fields the graph takes; none for an instance not yet settled.
+    fields: Vec<Option<Fields>>,
+    instances: HashMap<(DeclId, Rc<[Ty]>), DeclId, FxBuildHasher>,
+    /// Instances whose fields are yet to resolve.
+    unsettled: Vec<DeclId>,
+    /// The instances declared so far, of types and of functions.
+    pub(super) instance_count: usize,
+    /// The type parameters in scope, each with the type it stands for.
+    pub(super) scope: Vec<(&'s str, Ty)>,
+    /// Whether what is resolved now repeats, at other types, what was reported and recorded at a
+    /// generic item's own parameters.
+    pub(super) is_muted: bool,
     /// None for a name declared more than once, which resolves to nothing, like a function's.
     pub(super) type_names: NameMap<'s, Option<DeclId>>,
     /// By field name ID.
@@ -59,6 +99,13 @@ impl<'s> Source<'s> {
             tree: parsed.parse().tree(),
             diagnostics: Vec::new(),
             decls: Vec::new(),
+            type_items: Vec::new(),
+            fields: Vec::new(),
+            instances: HashMap::default(),
+            unsettled: Vec::new(),
+            instance_count: 0,
+            scope: Vec::new(),
+            is_muted: false,
             type_names: NameMap::default(),
             field_names: Vec::new(),
             field_ids: NameMap::default(),
@@ -74,6 +121,10 @@ impl<'s> Source<'s> {
 impl sumi_graph::Names for Source<'_> {
     fn decl(&self, id: DeclId) -> &str {
         self.decls[id.index()].name
+    }
+
+    fn type_args(&self, id: DeclId) -> &[Ty] {
+        &self.decls[id.index()].args
     }
 
     fn field(&self, name: FieldName) -> &str {
@@ -104,9 +155,162 @@ impl<'s> Source<'s> {
             .byte_range(node, self.lexed())
             .text(self.parsed.source())
     }
+    /// The name a `TypeRef` or a `NameRef` begins with.
+    pub(super) fn head(&self, node: NodeIdx) -> &'s str {
+        self.lexed()
+            .text(self.parsed.source(), self.tree.first_token(node))
+    }
     pub(super) fn name(&self, name: Option<ast::Name>) -> Option<(&'s str, NodeIdx)> {
         let node = name?.clean(self.tree, self.lexed())?.node();
         Some((self.text(node), node))
+    }
+    /// The type the type parameter `name` stands for, when one of that name is in scope.
+    pub(super) fn param(&self, name: &str) -> Option<Ty> {
+        self.scope
+            .iter()
+            .find(|&&(param, _)| param == name)
+            .map(|&(_, ty)| ty)
+    }
+    /// The type items `ty` names anywhere in it, a name of `params` aside.
+    pub(super) fn mentions(&self, ty: NodeIdx, params: &[&str]) -> Vec<DeclId> {
+        let end = ty.to_u32() + u32::try_from(self.tree.subtree_len(ty)).expect("node count");
+        ty.until(NodeIdx::new(end))
+            .filter(|&node| self.tree.kind(node) == NodeKind::TypeRef)
+            .map(|node| self.head(node))
+            .filter(|name| !params.contains(name))
+            .filter_map(|name| self.type_names.get(name).copied().flatten())
+            .collect()
+    }
+    /// Declares a type of no instance: an item's own, or a type parameter.
+    pub(super) fn declare(
+        &mut self,
+        name: &'s str,
+        name_node: Option<NodeIdx>,
+        origin: NodeIdx,
+    ) -> DeclId {
+        let id = DeclId::new(self.decls.len());
+        self.decls.push(DeclNames {
+            name,
+            name_node,
+            origin,
+            fields: Rc::from([]),
+            item: id,
+            args: Rc::from([]),
+        });
+        self.fields.push(Some(Box::from([])));
+        id
+    }
+    /// The fields of a type declared by [`declare`](Self::declare), and for a generic item the
+    /// parameters its own instance is at.
+    pub(super) fn define(
+        &mut self,
+        decl: DeclId,
+        names: Vec<(&'s str, NodeIdx)>,
+        fields: Vec<(FieldName, Option<Ty>)>,
+        params: Vec<Ty>,
+    ) {
+        let args: Rc<[Ty]> = params.into();
+        if !args.is_empty() {
+            self.instances.insert((decl, args.clone()), decl);
+        }
+        let entry = &mut self.decls[decl.index()];
+        entry.fields = names.into();
+        entry.args = args;
+        self.fields[decl.index()] = Some(fields.into());
+    }
+    /// A field loses its type where the declaration is reported for it.
+    pub(super) fn drop_field_type(&mut self, decl: DeclId, field: usize) {
+        self.fields[decl.index()]
+            .as_mut()
+            .expect("an item's own type is settled where it is declared")[field]
+            .1 = None;
+    }
+    /// The fields of `decl`, each with its type when that resolved.
+    pub fn fields(&mut self, decl: DeclId) -> &[(FieldName, Option<Ty>)] {
+        self.settle();
+        self.fields[decl.index()]
+            .as_deref()
+            .expect("every instance is settled")
+    }
+    /// Every declared type's fields, in ID order, for the graph.
+    pub(super) fn take_fields(&mut self) -> Vec<Fields> {
+        self.settle();
+        std::mem::take(&mut self.fields)
+            .into_iter()
+            .map(|fields| fields.expect("every instance is settled"))
+            .collect()
+    }
+    /// Resolves the fields of every instance named since the last call, and of those their fields
+    /// name in turn: off a stack, since a chain of generic types is as deep as it is long. Every
+    /// type item is defined by then.
+    pub(super) fn settle(&mut self) {
+        while let Some(decl) = self.unsettled.pop() {
+            let (item, args) = {
+                let names = &self.decls[decl.index()];
+                (names.item, names.args.clone())
+            };
+            let params = &self.type_items[item.index()].params;
+            let scope: Vec<_> = params.iter().copied().zip(args.iter().copied()).collect();
+            let scope = std::mem::replace(&mut self.scope, scope);
+            let was_muted = std::mem::replace(&mut self.is_muted, true);
+            let own = self.fields[item.index()]
+                .clone()
+                .expect("an item's own type is settled where it is declared");
+            let fields = own
+                .iter()
+                .enumerate()
+                .map(|(index, &(name, _))| {
+                    let info = &self.type_items[item.index()];
+                    let written = info.field_types[index].filter(|_| !info.recursive[index]);
+                    (name, written.and_then(|ty| self.ty(ty)))
+                })
+                .collect();
+            self.scope = scope;
+            self.is_muted = was_muted;
+            self.fields[decl.index()] = Some(fields);
+            // An instance named before its item's fields were takes their names here.
+            self.decls[decl.index()].fields = self.decls[item.index()].fields.clone();
+        }
+    }
+    /// The instance of the generic `item` at `args`, declared on first use; none past the limit
+    /// on instances, which is reported once.
+    pub(super) fn instantiate(&mut self, item: DeclId, args: Vec<Ty>) -> Option<DeclId> {
+        let args: Rc<[Ty]> = args.into();
+        if let Some(&decl) = self.instances.get(&(item, args.clone())) {
+            return Some(decl);
+        }
+        let own = &self.decls[item.index()];
+        let name = own.name;
+        if !self.count_instance(self.range(own.name_node.unwrap_or(own.origin)), name) {
+            return None;
+        }
+        let decl = DeclId::new(self.decls.len());
+        let own = &self.decls[item.index()];
+        self.decls.push(DeclNames {
+            name,
+            name_node: own.name_node,
+            origin: own.origin,
+            fields: own.fields.clone(),
+            item,
+            args: args.clone(),
+        });
+        self.fields.push(None);
+        self.unsettled.push(decl);
+        self.instances.insert((item, args), decl);
+        Some(decl)
+    }
+    /// Counts one more instance, of the generic item `name` declared at `at`; false past the limit.
+    pub(super) fn count_instance(&mut self, at: TextRange, name: &str) -> bool {
+        if self.instance_count == MAX_INSTANCES {
+            let message = format!(
+                "`{name}` is one instance too many: a file names at most {MAX_INSTANCES} \
+                 instances of generic types and functions"
+            );
+            self.diagnostics
+                .push(diagnostic(at, codes::TOO_MANY_INSTANCES, message, []));
+        }
+        self.instance_count += 1;
+        self.instance_count <= MAX_INSTANCES
     }
     pub fn error(
         &mut self,
@@ -125,8 +329,10 @@ impl<'s> Source<'s> {
         message: impl Into<Box<str>>,
         related: impl IntoIterator<Item = (TextRange, Box<str>)>,
     ) {
-        self.diagnostics
-            .push(diagnostic(primary, code, message, related));
+        if !self.is_muted {
+            self.diagnostics
+                .push(diagnostic(primary, code, message, related));
+        }
     }
     pub fn type_mismatch(
         &mut self,
@@ -202,9 +408,25 @@ impl<'s> Source<'s> {
                 is_valid = false;
                 continue;
             };
-            match self.named_ty(member).map(|ty| (ty, ty.as_decl())) {
-                Some((_, Some(decl))) => members.push(decl),
-                Some((ty, None)) => {
+            let Some(ty) = self.named_ty(member) else {
+                is_valid = false;
+                continue;
+            };
+            match ty.as_decl() {
+                Some(decl) if self.unions.borrow().joins(ty) => members.push(decl),
+                Some(_) => {
+                    self.error(
+                        member.node(),
+                        codes::INVALID_UNION_MEMBER,
+                        format!(
+                            "`{}` is a type parameter, so no member of a union",
+                            self.show(ty)
+                        ),
+                        None,
+                    );
+                    is_valid = false;
+                }
+                None => {
                     self.error(
                         member.node(),
                         codes::INVALID_UNION_MEMBER,
@@ -216,7 +438,6 @@ impl<'s> Source<'s> {
                     );
                     is_valid = false;
                 }
-                None => is_valid = false,
             }
         }
         if !is_valid {
@@ -235,26 +456,94 @@ impl<'s> Source<'s> {
         if self.tree.has_error(node.node()) {
             return None;
         }
-        let name = self.text(node.node());
-        if let Some(ty) = Ty::scalar(name) {
+        let name = self.head(node.node());
+        let list = node.type_args(self.tree);
+        let at = TextRange::new(
+            self.range(node.node()).start(),
+            self.lexed().range(self.tree.first_token(node.node())).end(),
+        );
+        let scalar = Ty::scalar(name);
+        let param = self.param(name).filter(|_| scalar.is_none());
+        if let Some(ty) = scalar.or(param) {
+            let (given, _) = self.type_args(list);
+            if given > 0 {
+                self.report(
+                    at,
+                    codes::TYPE_ARGUMENTS,
+                    format!("`{name}` takes no type arguments"),
+                    [],
+                );
+                return None;
+            }
+            if let Some(decl) = param.and_then(Ty::as_decl) {
+                self.refer(at, Symbol::Type(decl));
+            }
             return Some(ty);
         }
-        if let Some(&decl) = self.type_names.get(name) {
-            let decl = decl?;
-            self.references.push(Occurrence {
-                range: self.range(node.node()),
-                symbol: Symbol::Type(decl),
-                is_write: false,
-            });
-            return Some(Ty::decl(decl));
+        if let Some(&item) = self.type_names.get(name) {
+            let Some(item) = item else {
+                self.type_args(list);
+                return None;
+            };
+            self.refer(at, Symbol::Type(item));
+            return self.apply(item, list, at, false).map(Ty::decl);
         }
-        self.error(
-            node.node(),
+        self.type_args(list);
+        self.report(
+            at,
             codes::UNKNOWN_TYPE,
             format!("unknown type `{name}`"),
-            None,
+            [],
         );
         None
+    }
+    fn refer(&mut self, range: TextRange, symbol: Symbol) {
+        if !self.is_muted {
+            self.references.push(Occurrence {
+                range,
+                symbol,
+                is_write: false,
+            });
+        }
+    }
+    /// The count of type arguments written, and their types when every one resolved.
+    pub(super) fn type_args(&mut self, list: Option<ast::TypeArgList>) -> (usize, Option<Vec<Ty>>) {
+        let Some(list) = list else {
+            return (0, Some(Vec::new()));
+        };
+        let args: Vec<Option<Ty>> = list.args(self.tree).map(|arg| self.ty(arg)).collect();
+        (args.len(), args.into_iter().collect())
+    }
+    /// The type the item `item` is at the type arguments in `list`, one per type parameter; `at`
+    /// is the name they follow. A list the parser recovered around is not yet the wrong length.
+    pub(super) fn apply(
+        &mut self,
+        item: DeclId,
+        list: Option<ast::TypeArgList>,
+        at: TextRange,
+        is_damaged: bool,
+    ) -> Option<DeclId> {
+        let (given, args) = self.type_args(list);
+        let expected = self.type_items[item.index()].params.len();
+        if given != expected && is_damaged {
+            return None;
+        }
+        if given != expected {
+            let declared = self.decls[item.index()]
+                .name_node
+                .map(|node| (self.range(node), Box::from("declared here")));
+            self.report(
+                list.map_or(at, |list| self.range(list.node())),
+                codes::TYPE_ARGUMENTS,
+                format!("expected {expected} type arguments, found {given}"),
+                declared,
+            );
+            return None;
+        }
+        if expected == 0 {
+            return Some(item);
+        }
+        self.instantiate(item, args?)
     }
     pub(super) fn tokens(
         &self,

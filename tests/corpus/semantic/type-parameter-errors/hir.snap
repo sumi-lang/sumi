@@ -1,0 +1,145 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 13
+
+== graph ==
+fn repeated<A>@11:1..11:33 (A ∈ ∅) -> A ∈ ∅
+  param x@11:19..11:20: A
+  result: copy : A @11:28..11:29
+    value: read x@11:19..11:20 : A
+
+fn value<T>@12:1..12:27 (T ∈ ∅) -> T ∈ ∅
+  param x@12:13..12:14: T
+  result: copy : T @12:22..12:23
+    value: hole : ? @12:26..12:27
+
+fn called<T>@13:1..13:38 (T ∈ ∅) -> T ∈ ∅
+  param x@13:14..13:15: T
+  result: copy : T @13:23..13:24
+    value: hole : ? @13:27..13:38
+      part[0]: read x@13:14..13:15 : T
+
+fn member<T>@14:1..14:37 signature: unavailable
+  param x@14:14..14:15: ?
+  result: copy : int @14:30..14:33
+    value: int 0 : int @14:36..14:37
+
+fn arm<T>@15:1..18:2 (Box<T> | None ∈ ∅) -> int ∈ ∅
+  param x@15:11..15:12: Box<T> | None
+  result: copy : int @15:32..15:35
+    value: hole : ? @15:38..18:2
+      part[0]: read x@15:11..15:12 : Box<T> | None
+
+fn matched<T>@19:1..21:2 (T ∈ ∅) -> int ∈ ∅
+  param x@19:15..19:16: T
+  result: copy : int @19:24..19:27
+    value: match : int @19:30..21:2
+      scrutinee: read x@19:15..19:16 : T
+      _: int 1 : int @20:10..20:11
+
+fn compared<T>@22:1..22:44 (T ∈ ∅, T ∈ ∅) -> bool ∈ ∅
+  param x@22:16..22:17: T
+  param y@22:22..22:23: T
+  result: copy : bool @22:31..22:35
+    value: eager == : bool @22:38..22:44
+      lhs: read x@22:16..22:17 : T
+      rhs: read y@22:22..22:23 : T
+
+fn field<T>@23:1..23:35 (T ∈ ∅) -> int ∈ ∅
+  param x@23:13..23:14: T
+  result: copy : int @23:22..23:25
+    value: field value : ? @23:28..23:35
+      base: read x@23:13..23:14 : T
+
+fn arithmetic<T>@24:1..24:38 (T ∈ ∅) -> int ∈ ∅
+  param x@24:18..24:19: T
+  result: copy : int @24:27..24:30
+    value: eager + : int @24:33..24:38
+      lhs: read x@24:18..24:19 : T
+      rhs: int 1 : int @24:37..24:38
+
+fn mixed<A, B>@25:1..25:66 signature: unavailable
+  param flag@25:16..25:20: bool
+  param a@25:28..25:29: A
+  param b@25:34..25:35: B
+  body: if : ? @25:42..25:66
+    scrutinee: read flag@25:16..25:20 : bool
+    then: read a@25:28..25:29 : A
+    else: read b@25:34..25:35 : B
+
+fn returned<A, B>@26:1..26:39 (A ∈ ∅, B ∈ ∅) -> A ∈ ∅
+  param a@26:19..26:20: A
+  param b@26:25..26:26: B
+  result: copy : A @26:34..26:35
+    value: read b@26:25..26:26 : B
+
+fn shadowed<Box>@27:1..27:36 (Box ∈ ∅) -> Box ∈ ∅
+  param x@27:18..27:19: Box
+  result: copy : Box @27:29..27:32
+    value: read x@27:18..27:19 : Box
+
+fn uses@28:1..33:2 () -> int ∈ ∅
+  result: copy : int @28:14..28:17
+    value:
+      let a@29:9..29:10: int @29:5..29:29
+        initializer: call shadowed@27:1..27:36 : int @29:13..29:29
+          arg[0]: int 1 : int @29:27..29:28
+      let b@30:9..30:10: int @30:5..30:28
+        initializer: call matched@19:1..21:2 : int @30:13..30:28
+          arg[0]: int 2 : int @30:26..30:27
+      let c@31:9..31:10: ? @31:5..31:45
+        initializer: call mixed@25:1..25:66 : ? @31:13..31:45
+          arg[0]: bool true : bool @31:30..31:34
+          arg[1]: int 1 : int @31:36..31:37
+          arg[2]: bool false : bool @31:39..31:44
+      tail: eager + : int @32:5..32:10
+        lhs: read a@29:9..29:10 : int
+        rhs: read b@30:9..30:10 : int
+
+fn shadowed<int>@27:1..27:36 (int ∈ [1, 1]) -> int ∈ [1, 1]
+  param x@27:18..27:19: int
+  result: copy : int @27:29..27:32
+    value: read x@27:18..27:19 : int
+
+fn matched<int>@19:1..21:2 (int ∈ [2, 2]) -> int ∈ ∅
+  param x@19:15..19:16: int
+  result: copy : int @19:24..19:27
+    value: match : int @19:30..21:2
+      scrutinee: read x@19:15..19:16 : int
+      _: int 1 : int @20:10..20:11
+
+fn mixed<int, bool>@25:1..25:66 signature: unavailable
+  param flag@25:16..25:20: bool
+  param a@25:28..25:29: int
+  param b@25:34..25:35: bool
+  body: if : ? @25:42..25:66
+    scrutinee: read flag@25:16..25:20 : bool
+    then: read a@25:28..25:29 : int
+    else: read b@25:34..25:35 : bool
+
+== semantic diagnostics ==
+error[semantic/duplicate-name] 5:15..5:16 "T": duplicate type parameter `T`
+  at 5:12..5:13 "T": declared here
+error[semantic/duplicate-name] 8:13..8:16 "int": `int` is a built-in type
+error[semantic/duplicate-name] 11:16..11:17 "A": duplicate type parameter `A`
+  at 11:13..11:14 "A": declared here
+error[semantic/not-a-value] 12:26..12:27 "T": type parameter `T` is not a value
+error[semantic/not-callable] 13:27..13:28 "T": type parameter `T` is not callable
+error[semantic/invalid-union-member] 14:17..14:18 "T": `T` is a type parameter, so no member of a union
+error[semantic/invalid-union-member] 16:5..16:6 "T": `T` is a type parameter, so no member an arm can name
+error[semantic/type-mismatch] 19:36..19:37 "x": cannot match on T values; `match` takes a value of a declared type
+error[semantic/type-mismatch] 22:38..22:44 "x == y": T values cannot be compared
+error[semantic/unknown-field] 23:28..23:35 "x.value": `T` has no field `value`
+  at 23:10..23:11 "T": declared here
+error[semantic/type-mismatch] 24:33..24:34 "x": expected int, found T
+error[semantic/type-mismatch] 25:42..25:66 "if flag { a } else { b }": if branches are A and B
+  at 25:52..25:53 "a": A here
+  at 25:63..25:64 "b": B here
+warning[semantic/unused-name] 26:19..26:20 "a": parameter `a` is never read
+  fix: prefix the name with `_`
+    26:19 -> "_"
+error[semantic/type-mismatch] 26:38..26:39 "b": expected A, found B
+  at 26:34..26:35 "A": declared here
+warning[semantic/unused-name] 31:9..31:10 "c": local `c` is never read
+  fix: prefix the name with `_`
+    31:9 -> "_"

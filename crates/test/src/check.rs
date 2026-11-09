@@ -698,42 +698,56 @@ pub fn semantics(analysis: &Analysis) {
         let reversed = sumi_hir::analyze(parse_source(declarations.join("\n").into()).unwrap());
         assert!(reversed.parsed().diagnostics().is_empty());
         assert_eq!(analysis.functions().len(), reversed.functions().len());
-        let count = analysis.functions().len();
-        for (index, (a, b)) in analysis
-            .functions()
-            .iter()
-            .zip(reversed.functions().iter().rev())
-            .enumerate()
-        {
-            assert_eq!(
-                a.name().map(|name| analysis.text(name)),
-                b.name().map(|name| reversed.text(name))
-            );
-            // Declared types are numbered in declaration order, so they compare by name.
-            let shown = |analysis: &Analysis, id: FunctionId| {
-                let signature = analysis.signature(id)?;
-                let ranges = analysis.ranges(id)?;
-                let params: Vec<String> = signature
-                    .params
-                    .iter()
-                    .zip(&*ranges.params)
-                    .map(|(&ty, may)| {
-                        format!("{} ∈ {}", analysis.show(ty), may.shown(ty, analysis))
-                    })
-                    .collect();
-                Some(format!(
-                    "({}) -> {} ∈ {}",
-                    params.join(", "),
-                    analysis.show(signature.result),
-                    ranges.result.shown(signature.result, analysis)
-                ))
-            };
-            assert_eq!(
-                shown(analysis, FunctionId::new(index)),
-                shown(&reversed, FunctionId::new(count - 1 - index))
-            );
-            assert_eq!(a.is_complete(), b.is_complete());
-        }
+        // Declared types are numbered in declaration order, so they compare by name.
+        let shown = |analysis: &Analysis, id: FunctionId| {
+            let signature = analysis.signature(id)?;
+            let ranges = analysis.ranges(id)?;
+            let params: Vec<String> = signature
+                .params
+                .iter()
+                .zip(&*ranges.params)
+                .map(|(&ty, may)| format!("{} ∈ {}", analysis.show(ty), may.shown(ty, analysis)))
+                .collect();
+            Some(format!(
+                "({}) -> {} ∈ {}",
+                params.join(", "),
+                analysis.show(signature.result),
+                ranges.result.shown(signature.result, analysis)
+            ))
+        };
+        // The function items keep their order, reversed; the instances of the generic ones come
+        // in the order calls name them, so they compare as a set.
+        let facts = |analysis: &Analysis, is_item: bool| {
+            let mut facts: Vec<_> = analysis
+                .functions()
+                .iter()
+                .enumerate()
+                .filter(|&(index, function)| {
+                    (function.generic() == FunctionId::new(index)) == is_item
+                })
+                .map(|(index, function)| {
+                    let type_args: Vec<String> = function
+                        .type_args()
+                        .iter()
+                        .map(|&ty| analysis.show(ty).to_string())
+                        .collect();
+                    (
+                        function.name().map(|name| analysis.text(name).to_owned()),
+                        type_args,
+                        shown(analysis, FunctionId::new(index)),
+                        function.is_complete(),
+                    )
+                })
+                .collect();
+            if !is_item {
+                facts.sort();
+            }
+            facts
+        };
+        let mut items = facts(&reversed, true);
+        items.reverse();
+        assert_eq!(facts(analysis, true), items);
+        assert_eq!(facts(analysis, false), facts(&reversed, false));
         graph(&reversed);
     }
     assert_eq!(

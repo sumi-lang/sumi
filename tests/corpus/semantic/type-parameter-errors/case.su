@@ -1,0 +1,33 @@
+type Box<T> {
+    value: T,
+}
+type None {}
+type Twice<T, T> {
+    value: T,
+}
+type Scalar<int> {
+    value: int,
+}
+fn repeated<A, A>(x: A) -> A = x
+fn value<T>(x: T) -> T = T
+fn called<T>(x: T) -> T = T(value: x)
+fn member<T>(x: T | None) -> int = 0
+fn arm<T>(x: Box<T> | None) -> int = match x {
+    T(inner) => 1,
+    _ => 2,
+}
+fn matched<T>(x: T) -> int = match x {
+    _ => 1,
+}
+fn compared<T>(x: T, y: T) -> bool = x == y
+fn field<T>(x: T) -> int = x.value
+fn arithmetic<T>(x: T) -> int = x + 1
+fn mixed<A, B>(flag: bool, a: A, b: B) = if flag { a } else { b }
+fn returned<A, B>(a: A, b: B) -> A = b
+fn shadowed<Box>(x: Box) -> Box = x
+fn uses() -> int {
+    let a = shadowed<int>(1)
+    let b = matched<int>(2)
+    let c = mixed<int, bool>(true, 1, false)
+    a + b
+}

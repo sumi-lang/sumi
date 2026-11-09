@@ -26,8 +26,8 @@ use lsp_types::{
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, ParsedSource, Severity, parse_source};
 use sumi_hir::{
-    Analysis, BindingKind, Dead, DeadCause, FunctionId, Occurrence, Op, Signature, Symbol, Ty,
-    analyze,
+    Analysis, BindingKind, Dead, DeadCause, DeclId, FunctionId, Occurrence, Op, Signature, Symbol,
+    Ty, analyze,
 };
 use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::ast::{self, AstNode, View};
@@ -1368,6 +1368,10 @@ fn values(analysis: &Analysis, offset: TextSize, has_snippets: bool) -> Vec<Comp
             .iter()
             .enumerate()
             .filter_map(|(index, function)| {
+                // An instance of a generic function is its item, which is listed once.
+                if function.generic() != FunctionId::new(index) {
+                    return None;
+                }
                 let name = function.name()?.text(text);
                 let signature = analysis.signature(FunctionId::new(index));
                 let (insert_text, insert_text_format) = match signature {
@@ -1504,19 +1508,23 @@ fn rename(
     if old_name == new_name {
         return Ok(None);
     }
+    // The items and the type parameters, each once: an instance is declared where its item is.
     let items = || {
-        analysis
-            .functions()
-            .iter()
-            .filter_map(|function| function.name().map(|name| ("function", name)))
+        let functions = analysis.functions().iter().enumerate();
+        let decls = analysis.decls().iter().enumerate();
+        functions
+            .filter(|&(index, function)| function.generic() == FunctionId::new(index))
+            .filter_map(|(_, function)| function.name().map(|name| ("function", name)))
             .chain(
-                analysis
-                    .decls()
-                    .iter()
-                    .filter_map(|decl| decl.name().map(|name| ("type", name))),
+                decls
+                    .filter(|&(index, decl)| decl.generic() == DeclId::new(index))
+                    .filter_map(|(_, decl)| decl.name().map(|name| ("type", name))),
             )
     };
+    // Two items may each declare a type parameter of one name.
+    let is_param = matches!(occurrence.symbol, Symbol::Type(id) if analysis.unions().is_param(id));
     if matches!(occurrence.symbol, Symbol::Function(_) | Symbol::Type(_))
+        && !is_param
         && items()
             .filter(|&(_, range)| analysis.text(range) == old_name)
             .count()
@@ -1575,12 +1583,20 @@ fn rename(
     }))
 }
 
-/// `fn name(x: int) -> int`, or `fn name` for a declaration without a signature.
+/// `fn name<T>(x: T) -> int`, or `fn name` for a declaration without a signature.
 fn signature_line(analysis: &Analysis, id: FunctionId) -> String {
-    let name = analysis
-        .function(id)
-        .name()
-        .map_or("_", |name| analysis.text(name));
+    let function = analysis.function(id);
+    let name = function.name().map_or("_", |name| analysis.text(name));
+    let type_params: Vec<String> = function
+        .type_args()
+        .iter()
+        .map(|&ty| analysis.show(ty).to_string())
+        .collect();
+    let name = if type_params.is_empty() {
+        name.to_owned()
+    } else {
+        format!("{name}<{}>", type_params.join(", "))
+    };
     let Some(Signature { params, result }) = analysis.signature(id) else {
         return format!("fn {name}");
     };
@@ -1648,9 +1664,12 @@ fn hover(
             }
             signature_line(analysis, id)
         }
+        Symbol::Type(id) if analysis.unions().is_param(id) => {
+            analysis.show(Ty::decl(id)).to_string()
+        }
         Symbol::Type(id) => {
             let decl = analysis.decl(id);
-            let name = decl.name().map_or("<missing>", |name| analysis.text(name));
+            let name = analysis.show(Ty::decl(id));
             let graph = analysis.graph();
             let fields: Vec<String> = decl
                 .fields()
@@ -1668,7 +1687,7 @@ fn hover(
             let field = &decl.fields()[index as usize];
             let ty = analysis.graph().decl(id).fields()[index as usize].1;
             let ty = ty.map_or("?".to_owned(), |ty| analysis.show(ty).to_string());
-            let owner = decl.name().map_or("<missing>", |name| analysis.text(name));
+            let owner = analysis.show(Ty::decl(id));
             format!("{owner}.{}: {ty}", field.text())
         }
     };
@@ -3248,6 +3267,51 @@ fn main() -> int = sum(origin())
         assert_eq!(
             rename(at(2, 28), "y"),
             Err("a field is already named `y`".into())
+        );
+    }
+
+    #[test]
+    fn generic_items_hover_and_rename_as_one_item_and_type_parameters_in_their_scope() {
+        let text = "type Box<T> { value: T }
+fn id<T>(x: T) -> T = x
+fn main() -> int = id<Box<int>>(Box<int>(value: id<int>(1))).value
+";
+        let uri: Uri = "file:///generic.su".parse().unwrap();
+        let at = |line, character| Position::new(line, character);
+        let range = |line, start, end| Range::new(at(line, start), at(line, end));
+        let analysis = analyzed(text);
+        let value = |position| match hover(&analysis, position, Encoding::Utf16, false)
+            .unwrap()
+            .contents
+        {
+            HoverContents::Markup(MarkupContent { value, .. }) => value,
+            _ => unreachable!(),
+        };
+        assert_eq!(value(at(2, 19)), "fn id<T>(x: T) -> T");
+        assert_eq!(value(at(2, 32)), "type Box<T> { value: T }");
+        assert_eq!(value(at(2, 61)), "Box<T>.value: T");
+        assert_eq!(value(at(1, 12)), "T");
+        let rename = |position, new_name| {
+            let edits = rename(&analysis, uri.clone(), position, Encoding::Utf16, new_name)?;
+            let mut edits = edits.unwrap().changes.unwrap().remove(&uri).unwrap();
+            edits.sort_by_key(|edit| (edit.range.start.line, edit.range.start.character));
+            Ok::<_, String>(edits.into_iter().map(|edit| edit.range).collect::<Vec<_>>())
+        };
+        assert_eq!(
+            rename(at(1, 6), "U"),
+            Ok(vec![range(1, 6, 7), range(1, 12, 13), range(1, 18, 19)])
+        );
+        assert_eq!(
+            rename(at(1, 3), "same"),
+            Ok(vec![range(1, 3, 5), range(2, 19, 21), range(2, 48, 50)])
+        );
+        assert_eq!(
+            rename(at(0, 5), "Cell"),
+            Ok(vec![range(0, 5, 8), range(2, 22, 25), range(2, 32, 35)])
+        );
+        assert_eq!(
+            rename(at(0, 5), "T"),
+            Err("a type is already named `T`".into())
         );
     }
 

@@ -1,6 +1,8 @@
 //! Semantic checking of one file, over the graph lowering built: the types, then the values over
 //! them, then the verdicts that read both.
 
+use std::collections::HashSet;
+
 use sumi_frontend::{Diagnostic, ParsedSource};
 use sumi_graph::{DeclId, FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
@@ -21,23 +23,18 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         .unwrap()
         .items(tree)
         .collect();
-    let functions: Vec<_> = items
-        .iter()
-        .filter_map(|item| match item {
-            ast::Item::FnItem(item) => Some(*item),
-            ast::Item::TypeItem(_) => None,
-        })
-        .collect();
     let mut graph = GraphBuilder::new(tree.len());
     let declared = lower::declare(&mut source, &items, &mut graph);
-    let (graph, spans, lowered) = lower::lower(&mut source, &functions, &declared, graph);
+    let (graph, spans, lowered, declared) = lower::lower(&mut source, declared, graph);
     let headers = declared.headers;
-    let types = declared.types;
     let mut functions: Vec<Function> = headers
         .iter()
-        .map(|header| Function {
+        .zip(&declared.type_args)
+        .map(|(header, type_args)| Function {
             name: header.name,
             origin: source.range(header.item),
+            generic: header.generic,
+            type_args: type_args.iter().copied().collect(),
             result: None,
             is_complete: false,
             depth: None,
@@ -49,7 +46,6 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &spans,
         &lowered,
         &headers,
-        &types,
         &mut functions,
     );
     let values = Values::delivered(&graph, &lowered);
@@ -88,21 +84,22 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         )
     };
     drop(any);
-    let decls = types
+    let decls: Vec<TypeDecl> = source
+        .decls
         .iter()
-        .zip(&source.decls)
-        .map(|(header, names)| TypeDecl {
-            name: header.name,
-            origin: source.range(header.item),
+        .map(|names| TypeDecl {
+            name: names.name_node.map(|node| source.range(node)),
+            origin: source.range(names.origin),
             fields: names
                 .fields
                 .iter()
-                .zip(&header.fields)
-                .map(|(&(name, _), &range)| FieldDecl {
-                    name: range,
+                .map(|&(name, node)| FieldDecl {
+                    name: source.range(node),
                     text: name.into(),
                 })
                 .collect(),
+            generic: names.item,
+            type_args: names.args.iter().copied().collect(),
         })
         .collect();
     let field_names = source.field_names.iter().map(|&name| name.into()).collect();
@@ -117,7 +114,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         {
             references.push(Occurrence {
                 range,
-                symbol: Symbol::Field(decl, index as u32),
+                symbol: Symbol::Field(decls[decl.index()].generic, index as u32),
                 is_write: false,
             });
         }
@@ -125,7 +122,10 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     if references.len() > sorted {
         references.sort_unstable_by_key(|occurrence| occurrence.range.start());
     }
+    // Two instances of one generic function may each prove the same of its body.
+    let mut reported = HashSet::new();
     let mut diagnostics = source.diagnostics;
+    diagnostics.retain(|diagnostic| reported.insert(diagnostic.clone()));
     diagnostics.splice(0..0, parsed.diagnostics().iter().cloned());
     diagnostics.sort_by_key(|d| d.primary.start());
     let analysis = Analysis {
@@ -200,7 +200,7 @@ fn exhaustive(
         }
         let names: Vec<String> = missing
             .iter()
-            .map(|&decl| format!("`{}`", source.decls[decl.index()].name))
+            .map(|&decl| format!("`{}`", source.show(Ty::decl(decl))))
             .collect();
         source.report(
             spans.origin(node),

@@ -162,7 +162,7 @@ impl fmt::Display for ShownValue<'_> {
             Value::Bool(value) => write!(f, "{value}"),
             Value::Unit => f.write_str("unit"),
             Value::Decl(record) => {
-                write!(f, "{}(", self.1.decl(record.decl()))?;
+                write!(f, "{}(", Ty::decl(record.decl()).shown(self.1))?;
                 for (index, field) in record.fields().iter().enumerate() {
                     if index > 0 {
                         f.write_str(", ")?;

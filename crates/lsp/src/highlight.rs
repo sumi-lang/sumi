@@ -24,6 +24,7 @@ enum Kind {
     Punctuation,
     Invalid,
     Property,
+    TypeParameter,
 }
 
 const DECLARATION: u32 = 1 << 0;
@@ -44,6 +45,7 @@ pub(crate) fn legend() -> SemanticTokensLegend {
             SemanticTokenType::new("punctuation"),
             SemanticTokenType::new("invalid"),
             SemanticTokenType::PROPERTY,
+            SemanticTokenType::TYPE_PARAMETER,
         ],
         token_modifiers: vec![
             SemanticTokenModifier::DECLARATION,
@@ -109,6 +111,11 @@ pub(crate) fn tokens(
                 Kind::Type,
                 DECLARATION,
             ),
+            NodeKind::TypeParamList => {
+                for param in ast::TypeParamList::cast(tree, node).unwrap().params(tree) {
+                    name(Some(param.node()), Kind::TypeParameter, DECLARATION);
+                }
+            }
             NodeKind::Param => name(
                 ast::Param::cast(tree, node)
                     .and_then(|param| param.name(tree))
@@ -186,6 +193,7 @@ pub(crate) fn tokens(
         for reference in analysis.references() {
             let style = match reference.symbol {
                 Symbol::Function(_) => (Kind::Function, 0),
+                Symbol::Type(id) if analysis.unions().is_param(id) => (Kind::TypeParameter, 0),
                 Symbol::Type(_) => (Kind::Type, 0),
                 Symbol::Field(..) => (Kind::Property, 0),
                 Symbol::Local(id) => match analysis.binding(id).kind() {
@@ -316,6 +324,7 @@ fn main() -> int = pick(origin())
                     Kind::Variable,
                     Kind::Type,
                     Kind::Property,
+                    Kind::TypeParameter,
                 ];
                 named
                     .iter()
@@ -326,6 +335,52 @@ fn main() -> int = pick(origin())
                     })
             })
             .collect()
+    }
+
+    #[test]
+    fn type_parameters_are_named_where_declared_and_where_the_analysis_resolves_them() {
+        let (function, parameter, ty, property, type_parameter) = (
+            Kind::Function as u32,
+            Kind::Parameter as u32,
+            Kind::Type as u32,
+            Kind::Property as u32,
+            Kind::TypeParameter as u32,
+        );
+        let text = "type Box<T> { value: T }
+fn id<T>(x: T) -> T = x
+fn main() -> int = id<Box<int>>(Box<int>(value: 1)).value
+";
+        let declared = [
+            ("Box", ty, DECLARATION),
+            ("T", type_parameter, DECLARATION),
+            ("value", property, DECLARATION),
+        ];
+        assert_eq!(names(text, false)[..3], declared);
+        assert_eq!(names(text, false)[3], ("T", ty, 0));
+        assert_eq!(
+            names(text, true),
+            [
+                ("Box", ty, DECLARATION),
+                ("T", type_parameter, DECLARATION),
+                ("value", property, DECLARATION),
+                ("T", type_parameter, 0),
+                ("id", function, DECLARATION),
+                ("T", type_parameter, DECLARATION),
+                ("x", parameter, DECLARATION | READONLY),
+                ("T", type_parameter, 0),
+                ("T", type_parameter, 0),
+                ("x", parameter, READONLY),
+                ("main", function, DECLARATION),
+                ("int", ty, 0),
+                ("id", function, 0),
+                ("Box", ty, 0),
+                ("int", ty, 0),
+                ("Box", ty, 0),
+                ("int", ty, 0),
+                ("value", property, 0),
+                ("value", property, 0),
+            ]
+        );
     }
 
     #[test]

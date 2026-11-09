@@ -1,0 +1,36 @@
+type Box<T> {
+    value: T,
+}
+type Point {
+    x: int,
+}
+fn id<T>(x: T) -> T = x
+fn plain(x: int) -> int = x
+fn bare(b: Box) -> int = 0
+fn extra(b: Box<int, bool>) -> int = 0
+fn on_plain(p: Point<int>) -> int = p.x
+fn on_scalar(n: int<bool>) -> int = 0
+fn on_param<T>(x: T<int>) -> int = 0
+fn unknown_argument(b: Box<Missing>) -> int = 0
+fn unknown_head(b: Missing<Lost>) -> int = 0
+fn calls() -> int {
+    let a = id(1)
+    let b = id<int, int>(1)
+    let c = plain<int>(1)
+    let d = Box(value: 1)
+    let e = Point<int>(x: 1)
+    let f = id<Missing>(1)
+    let g = Box<Missing>(value: 1)
+    let h = missing<Lost>(1)
+    a + b + c
+}
+fn arms(b: Box<int> | Point) -> int = match b {
+    Box(inner) => 1,
+    Point<int>(p) => 2,
+}
+fn mismatched() -> int {
+    let a = id<bool>(1)
+    let b: Box<bool> = Box<int>(value: 1)
+    let c = Box<int>(value: true)
+    id<int>(a)
+}

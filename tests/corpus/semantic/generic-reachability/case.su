@@ -1,0 +1,29 @@
+type Box<T> {
+    value: T,
+}
+type None {}
+fn count<T>(x: T, n: int) -> int = if n == 0 {
+    0
+} else {
+    1 + count<T>(x, n - 1)
+}
+fn unused<T>(x: T) -> T = x
+fn only_generic<T>(x: T) -> T = unused<T>(x)
+fn narrow<T>(x: Box<T> | None) -> int = match x {
+    Box<T>(_b) => 1,
+    None => 2,
+}
+fn constant<T>(_x: T) -> int = if true {
+    1
+} else {
+    2
+}
+fn stops<T>(x: T) -> T {
+    return x
+    x
+}
+fn main() -> int {
+    let b = count<int>(1, 10) + count<bool>(true, 20)
+    let d = narrow<int>(Box<int>(value: 1)) + narrow<bool>(Box<bool>(value: true))
+    b + d + constant<int>(1) + constant<bool>(true) + stops<int>(1)
+}

@@ -1,0 +1,30 @@
+type Box<T> {
+    value: T,
+}
+type Pair<A, B> {
+    first: A,
+    second: B,
+}
+type None {}
+fn id<T>(x: T) -> T = x
+fn swap<A, B>(p: Pair<A, B>) -> Pair<B, A> = Pair<B, A>(first: p.second, second: p.first)
+fn unwrap_or<T>(v: Box<T> | None, fallback: T) -> T = match v {
+    Box<T>(b) => b.value,
+    None => fallback,
+}
+fn twice<T>(x: T) -> Pair<T, T> {
+    let same: T = id<T>(x)
+    Pair<T, T>(first: same, second: x)
+}
+fn inferred<T>(x: T) = Box<T>(value: x)
+fn nested() -> int = id<Box<Box<int>>>(Box<Box<int>>(value: inferred<int>(7))).value.value
+fn swapped() -> Pair<bool, int> = swap<int, bool>(Pair<int, bool>(first: 20, second: true))
+fn fallbacks() -> int {
+    let p = swapped()
+    let n = unwrap_or<int>(Box<int>(value: id<int>(p.second)), 0)
+    let m = unwrap_or<int>(None(), 22)
+    if id<bool>(p.first) { n + m } else { 0 }
+}
+fn shared() -> int = twice<int>(4).first + twice<int>(5).second
+fn flags() -> bool = twice<bool>(true).first
+fn generic_entry<T>() -> int = id<int>(3)

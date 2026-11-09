@@ -40,21 +40,50 @@ impl Decl {
 }
 
 /// The unions by ID: each a sorted set of two or more declared types, interned, so equal sets
-/// share an ID.
+/// share an ID. A type parameter is a declared type that is a member of none.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Unions(Vec<Box<[DeclId]>>);
+pub struct Unions {
+    sets: Vec<Box<[DeclId]>>,
+    params: Range<u32>,
+}
 
 impl Unions {
     pub const fn new() -> Self {
-        Self(Vec::new())
+        Self {
+            sets: Vec::new(),
+            params: 0..0,
+        }
+    }
+
+    /// With the `count` declared types from `first` on as the type parameters.
+    pub fn with_params(first: DeclId, count: usize) -> Self {
+        let end = first.0 + u32::try_from(count).expect("declared type count fits u32");
+        Self {
+            sets: Vec::new(),
+            params: first.0..end,
+        }
+    }
+
+    pub fn is_param(&self, decl: DeclId) -> bool {
+        self.params.contains(&decl.0)
+    }
+
+    /// Whether values of `ty` are of declared types a union may hold: no scalar's are, and no
+    /// type parameter's.
+    pub fn joins(&self, ty: Ty) -> bool {
+        match ty.kind() {
+            TyKind::Decl(decl) => !self.is_param(decl),
+            TyKind::Union(_) => true,
+            TyKind::Int | TyKind::Bool | TyKind::Unit => false,
+        }
     }
 
     pub fn get(&self, id: UnionId) -> &[DeclId] {
-        &self.0[id.index()]
+        &self.sets[id.index()]
     }
 
-    /// The ID of the union of `members`, minted if new; `members` need not be sorted or distinct.
-    /// None for fewer than two distinct members, which are no union.
+    /// The ID of the union of `members`, minted if new; `members` need not be sorted or distinct,
+    /// and none is a type parameter. None for fewer than two distinct members, which are no union.
     pub fn intern(&mut self, members: impl IntoIterator<Item = DeclId>) -> Option<UnionId> {
         let mut members: Vec<DeclId> = members.into_iter().collect();
         members.sort_unstable();
@@ -62,14 +91,18 @@ impl Unions {
         if members.len() < 2 {
             return None;
         }
+        assert!(
+            members.iter().all(|&member| !self.is_param(member)),
+            "a type parameter joins no union"
+        );
         let members = members.into_boxed_slice();
         let index = self
-            .0
+            .sets
             .iter()
             .position(|union| *union == members)
             .unwrap_or_else(|| {
-                self.0.push(members);
-                self.0.len() - 1
+                self.sets.push(members);
+                self.sets.len() - 1
             });
         Some(UnionId::new(index))
     }
@@ -100,11 +133,11 @@ impl Unions {
     }
 
     pub fn len(&self) -> usize {
-        self.0.len()
+        self.sets.len()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
+        self.sets.is_empty()
     }
 }
 

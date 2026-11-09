@@ -45,7 +45,7 @@ fn run(source: &str) -> Result<String, String> {
     .unwrap();
     out.push_str("\n== functions ==\n");
     for (id, function) in program.functions() {
-        let name = analysis.text(function.name().expect("a valid file names its functions"));
+        let name = named_function(&analysis, function);
         if !program.signature(id).params.is_empty() {
             continue;
         }
@@ -107,9 +107,7 @@ fn snapshot(source: &str) -> String {
         write!(
             out,
             "fn {}{}",
-            function
-                .name()
-                .map_or("<missing>", |name| analysis.text(name)),
+            named_function(&analysis, function),
             shape.at(function.origin())
         )
         .unwrap();
@@ -146,6 +144,22 @@ fn snapshot(source: &str) -> String {
         }
     }
     out
+}
+
+/// A function's name, with the type arguments an instance of a generic one is at.
+fn named_function(analysis: &Analysis, function: &sumi_hir::Function) -> String {
+    let name = function
+        .name()
+        .map_or("<missing>", |name| analysis.text(name));
+    if function.type_args().is_empty() {
+        return name.to_owned();
+    }
+    let type_args: Vec<String> = function
+        .type_args()
+        .iter()
+        .map(|&ty| analysis.show(ty).to_string())
+        .collect();
+    format!("{name}<{}>", type_args.join(", "))
 }
 
 struct Rendering<'a> {

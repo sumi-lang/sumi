@@ -1,0 +1,12 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 1
+
+== graph ==
+fn main@68:1..68:31 signature: unavailable
+  param t@68:9..68:10: ?
+  result: copy : int @68:24..68:27
+    value: int 0 : int @68:30..68:31
+
+== semantic diagnostics ==
+error[semantic/too-many-instances] 1:6..1:7 "L": `L` is one instance too many: a file names at most 65536 instances of generic types and functions

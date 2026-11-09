@@ -1,0 +1,68 @@
+type L<A, B> {}
+type R<A, B> {}
+type T0<A> {
+    l: T1<L<A, A>>,
+    r: T1<R<A, A>>,
+}
+type T1<A> {
+    l: T2<L<A, A>>,
+    r: T2<R<A, A>>,
+}
+type T2<A> {
+    l: T3<L<A, A>>,
+    r: T3<R<A, A>>,
+}
+type T3<A> {
+    l: T4<L<A, A>>,
+    r: T4<R<A, A>>,
+}
+type T4<A> {
+    l: T5<L<A, A>>,
+    r: T5<R<A, A>>,
+}
+type T5<A> {
+    l: T6<L<A, A>>,
+    r: T6<R<A, A>>,
+}
+type T6<A> {
+    l: T7<L<A, A>>,
+    r: T7<R<A, A>>,
+}
+type T7<A> {
+    l: T8<L<A, A>>,
+    r: T8<R<A, A>>,
+}
+type T8<A> {
+    l: T9<L<A, A>>,
+    r: T9<R<A, A>>,
+}
+type T9<A> {
+    l: T10<L<A, A>>,
+    r: T10<R<A, A>>,
+}
+type T10<A> {
+    l: T11<L<A, A>>,
+    r: T11<R<A, A>>,
+}
+type T11<A> {
+    l: T12<L<A, A>>,
+    r: T12<R<A, A>>,
+}
+type T12<A> {
+    l: T13<L<A, A>>,
+    r: T13<R<A, A>>,
+}
+type T13<A> {
+    l: T14<L<A, A>>,
+    r: T14<R<A, A>>,
+}
+type T14<A> {
+    l: T15<L<A, A>>,
+    r: T15<R<A, A>>,
+}
+type T15<A> {
+    l: T16<L<A, A>>,
+    r: T16<R<A, A>>,
+}
+type T16<A> {}
+fn main(t: T0<int>) -> int = 0

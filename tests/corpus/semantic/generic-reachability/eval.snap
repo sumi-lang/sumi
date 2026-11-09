@@ -1,0 +1,6 @@
+file: accepted
+optimized: nodes 95 of 155, regions 23 of 33, calls 6 of 11
+
+== functions ==
+fn main = 35
+  steps: 352, optimized steps: 263, depth: 22, bound: 22

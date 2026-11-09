@@ -1,0 +1,178 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn id<T>@9:1..9:24 (T ∈ ∅) -> T ∈ ∅
+  param x@9:10..9:11: T
+  result: copy : T @9:19..9:20
+    value: read x@9:10..9:11 : T
+
+fn swap<A, B>@10:1..10:90 (Pair<A, B> ∈ ∅) -> Pair<B, A> ∈ ∅
+  param p@10:15..10:16: Pair<A, B>
+  result: copy : Pair<B, A> @10:33..10:43
+    value: make Pair : Pair<B, A> @10:46..10:90
+      first: field second : B @10:64..10:72
+        base: read p@10:15..10:16 : Pair<A, B>
+      second: field first : A @10:82..10:89
+        base: read p@10:15..10:16 : Pair<A, B>
+
+fn unwrap_or<T>@11:1..14:2 (Box<T> | None ∈ ∅, T ∈ ∅) -> T ∈ ∅
+  param v@11:17..11:18: Box<T> | None
+  param fallback@11:35..11:43: T
+  result: copy : T @11:51..11:52
+    value: match : T @11:55..14:2
+      scrutinee: read v@11:17..11:18 : Box<T> | None
+      Box<T>:
+        let b@12:12..12:13: narrow to Box<T> : Box<T> @12:12..12:13
+          scrutinee: read v@11:17..11:18 : Box<T> | None
+        tail: field value : T @12:18..12:25
+          base: read b@12:12..12:13 : Box<T>
+      None: read fallback@11:35..11:43 : T
+
+fn twice<T>@15:1..18:2 (T ∈ ∅) -> Pair<T, T> ∈ ∅
+  param x@15:13..15:14: T
+  result: copy : Pair<T, T> @15:22..15:32
+    value:
+      let same@16:9..16:13: T @16:5..16:27
+        initializer: call id@9:1..9:24 : T @16:19..16:27
+          arg[0]: read x@15:13..15:14 : T
+      tail: make Pair : Pair<T, T> @17:5..17:39
+        first: read same@16:9..16:13 : T
+        second: read x@15:13..15:14 : T
+
+fn inferred<T>@19:1..19:40 (T ∈ ∅) -> Box<T> ∈ ∅
+  param x@19:16..19:17: T
+  body: make Box : Box<T> @19:24..19:40
+    value: read x@19:16..19:17 : T
+
+fn nested@20:1..20:91 () -> int ∈ [7, 7]
+  result: copy : int @20:16..20:19
+    value: field value : int @20:22..20:91
+      base: field value : Box<int> @20:22..20:85
+        base: call id@9:1..9:24 : Box<Box<int>> @20:22..20:79
+          arg[0]: make Box : Box<Box<int>> @20:40..20:78
+            value: call inferred@19:1..19:40 : Box<int> @20:61..20:77
+              arg[0]: int 7 : int @20:75..20:76
+
+fn swapped@21:1..21:92 () -> Pair<bool, int> ∈ Pair<bool, int>({true}, [20, 20])
+  result: copy : Pair<bool, int> @21:17..21:32
+    value: call swap@10:1..10:90 : Pair<bool, int> @21:35..21:92
+      arg[0]: make Pair : Pair<int, bool> @21:51..21:91
+        first: int 20 : int @21:74..21:76
+        second: bool true : bool @21:86..21:90
+
+fn fallbacks@22:1..27:2 () -> int ∈ [0, 44]
+  result: copy : int @22:19..22:22
+    value:
+      let p@23:9..23:10: Pair<bool, int> @23:5..23:22
+        initializer: call swapped@21:1..21:92 : Pair<bool, int> @23:13..23:22
+      let n@24:9..24:10: int @24:5..24:66
+        initializer: call unwrap_or@11:1..14:2 : int @24:13..24:66
+          arg[0]: make Box : Box<int> @24:28..24:62
+            value: call id@9:1..9:24 : int @24:44..24:61
+              arg[0]: field second : int @24:52..24:60
+                base: read p@23:9..23:10 : Pair<bool, int>
+          arg[1]: int 0 : int @24:64..24:65
+      let m@25:9..25:10: int @25:5..25:39
+        initializer: call unwrap_or@11:1..14:2 : int @25:13..25:39
+          arg[0]: make None : None @25:28..25:34
+          arg[1]: int 22 : int @25:36..25:38
+      tail: if : int @26:5..26:46
+        scrutinee: call id@9:1..9:24 : bool @26:8..26:25
+          arg[0]: field first : bool @26:17..26:24
+            base: read p@23:9..23:10 : Pair<bool, int>
+        then: eager + : int @26:28..26:33
+          lhs: read n@24:9..24:10 : int
+          rhs: read m@25:9..25:10 : int
+        else: int 0 : int @26:43..26:44
+
+fn shared@28:1..28:64 () -> int ∈ [7, 25]
+  result: copy : int @28:16..28:19
+    value: eager + : int @28:22..28:64
+      lhs: field first : int @28:22..28:41
+        base: call twice@15:1..18:2 : Pair<int, int> @28:22..28:35
+          arg[0]: int 4 : int @28:33..28:34
+      rhs: field second : int @28:44..28:64
+        base: call twice@15:1..18:2 : Pair<int, int> @28:44..28:57
+          arg[0]: int 5 : int @28:55..28:56
+
+fn flags@29:1..29:45 () -> bool ∈ {true}
+  result: copy : bool @29:15..29:19
+    value: field first : bool @29:22..29:45
+      base: call twice@15:1..18:2 : Pair<bool, bool> @29:22..29:39
+        arg[0]: bool true : bool @29:34..29:38
+
+fn generic_entry<T>@30:1..30:42 () -> int ∈ [3, 20]
+  result: copy : int @30:26..30:29
+    value: call id@9:1..9:24 : int @30:32..30:42
+      arg[0]: int 3 : int @30:40..30:41
+
+fn id<T>@9:1..9:24 (T ∈ ∅) -> T ∈ ∅
+  param x@9:10..9:11: T
+  result: copy : T @9:19..9:20
+    value: read x@9:10..9:11 : T
+
+fn id<Box<Box<int>>>@9:1..9:24 (Box<Box<int>> ∈ Box<Box<int>>(Box<int>([7, 7]))) -> Box<Box<int>> ∈ Box<Box<int>>(Box<int>([7, 7]))
+  param x@9:10..9:11: Box<Box<int>>
+  result: copy : Box<Box<int>> @9:19..9:20
+    value: read x@9:10..9:11 : Box<Box<int>>
+
+fn inferred<int>@19:1..19:40 (int ∈ [7, 7]) -> Box<int> ∈ Box<int>([7, 7])
+  param x@19:16..19:17: int
+  body: make Box : Box<int> @19:24..19:40
+    value: read x@19:16..19:17 : int
+
+fn swap<int, bool>@10:1..10:90 (Pair<int, bool> ∈ Pair<int, bool>([20, 20], {true})) -> Pair<bool, int> ∈ Pair<bool, int>({true}, [20, 20])
+  param p@10:15..10:16: Pair<int, bool>
+  result: copy : Pair<bool, int> @10:33..10:43
+    value: make Pair : Pair<bool, int> @10:46..10:90
+      first: field second : bool @10:64..10:72
+        base: read p@10:15..10:16 : Pair<int, bool>
+      second: field first : int @10:82..10:89
+        base: read p@10:15..10:16 : Pair<int, bool>
+
+fn unwrap_or<int>@11:1..14:2 (Box<int> | None ∈ Box<int>([3, 20]) ∪ None(), int ∈ [0, 22]) -> int ∈ [0, 22]
+  param v@11:17..11:18: Box<int> | None
+  param fallback@11:35..11:43: int
+  result: copy : int @11:51..11:52
+    value: match : int @11:55..14:2
+      scrutinee: read v@11:17..11:18 : Box<int> | None
+      Box<int>:
+        let b@12:12..12:13: narrow to Box<int> : Box<int> @12:12..12:13
+          scrutinee: read v@11:17..11:18 : Box<int> | None
+        tail: field value : int @12:18..12:25
+          base: read b@12:12..12:13 : Box<int>
+      None: read fallback@11:35..11:43 : int
+
+fn id<int>@9:1..9:24 (int ∈ [3, 20]) -> int ∈ [3, 20]
+  param x@9:10..9:11: int
+  result: copy : int @9:19..9:20
+    value: read x@9:10..9:11 : int
+
+fn id<bool>@9:1..9:24 (bool ∈ {true}) -> bool ∈ {true}
+  param x@9:10..9:11: bool
+  result: copy : bool @9:19..9:20
+    value: read x@9:10..9:11 : bool
+
+fn twice<int>@15:1..18:2 (int ∈ [4, 5]) -> Pair<int, int> ∈ Pair<int, int>([3, 20], [4, 5])
+  param x@15:13..15:14: int
+  result: copy : Pair<int, int> @15:22..15:32
+    value:
+      let same@16:9..16:13: int @16:5..16:27
+        initializer: call id@9:1..9:24 : int @16:19..16:27
+          arg[0]: read x@15:13..15:14 : int
+      tail: make Pair : Pair<int, int> @17:5..17:39
+        first: read same@16:9..16:13 : int
+        second: read x@15:13..15:14 : int
+
+fn twice<bool>@15:1..18:2 (bool ∈ {true}) -> Pair<bool, bool> ∈ Pair<bool, bool>({true}, {true})
+  param x@15:13..15:14: bool
+  result: copy : Pair<bool, bool> @15:22..15:32
+    value:
+      let same@16:9..16:13: bool @16:5..16:27
+        initializer: call id@9:1..9:24 : bool @16:19..16:27
+          arg[0]: read x@15:13..15:14 : bool
+      tail: make Pair : Pair<bool, bool> @17:5..17:39
+        first: read same@16:9..16:13 : bool
+        second: read x@15:13..15:14 : bool

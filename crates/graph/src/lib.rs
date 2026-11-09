@@ -184,28 +184,70 @@ impl fmt::Debug for Ty {
     }
 }
 
-/// A type as the source names it: a union as its members joined by ` | `, in name order, which
-/// no declaration order changes.
+/// A type as the source names it: a declared type with its type arguments, and a union as its
+/// members joined by ` | `, in name order, which no declaration order changes.
 pub struct ShownTy<'a>(Ty, &'a dyn Names);
+
+impl ShownTy<'_> {
+    /// The most type names one type spells out; an argument past them reads `…`, since an
+    /// argument that names its own twice doubles with each nesting.
+    const NAMES: usize = 32;
+
+    fn write(ty: Ty, names: &dyn Names, left: &mut usize, out: &mut String) {
+        if *left == 0 {
+            out.push('…');
+            return;
+        }
+        *left -= 1;
+        match ty.kind() {
+            TyKind::Decl(id) => {
+                out.push_str(names.decl(id));
+                let args = names.type_args(id);
+                if !args.is_empty() {
+                    out.push('<');
+                    for (index, &arg) in args.iter().enumerate() {
+                        if index > 0 {
+                            out.push_str(", ");
+                        }
+                        Self::write(arg, names, left, out);
+                    }
+                    out.push('>');
+                }
+            }
+            TyKind::Union(id) => {
+                let mut members: Vec<String> = names
+                    .members(id)
+                    .iter()
+                    .map(|&member| {
+                        let mut shown = String::new();
+                        Self::write(Ty::decl(member), names, left, &mut shown);
+                        shown
+                    })
+                    .collect();
+                members.sort_unstable();
+                out.push_str(&members.join(" | "));
+            }
+            TyKind::Int | TyKind::Bool | TyKind::Unit => {
+                out.push_str(ty.scalar_name().expect("a scalar has a name"));
+            }
+        }
+    }
+}
 
 impl fmt::Display for ShownTy<'_> {
     fn fmt(&self, f: &'_ mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0.kind() {
-            TyKind::Decl(id) => f.write_str(self.1.decl(id)),
-            TyKind::Union(id) => {
-                let mut names: Vec<&str> =
-                    self.1.members(id).iter().map(|&m| self.1.decl(m)).collect();
-                names.sort_unstable();
-                f.write_str(&names.join(" | "))
-            }
-            _ => f.write_str(self.0.scalar_name().expect("a scalar has a name")),
-        }
+        let mut shown = String::new();
+        Self::write(self.0, self.1, &mut { Self::NAMES }, &mut shown);
+        f.write_str(&shown)
     }
 }
 
 /// What the source calls a declared type and its fields, and what a union holds.
 pub trait Names {
+    /// The name the type is declared with, which every instance of a generic one shares.
     fn decl(&self, id: DeclId) -> &str;
+    /// The type arguments `id` is its generic type's instance at; none for a type that takes none.
+    fn type_args(&self, id: DeclId) -> &[Ty];
     fn field(&self, name: FieldName) -> &str;
     /// Owned, so a table behind a cell can answer.
     fn members(&self, id: UnionId) -> Vec<DeclId>;
@@ -257,7 +299,7 @@ impl FieldName {
 
 /// A function's index in its file, in declaration order; an ID from one analysis names nothing in
 /// another.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct FunctionId(u32);
 
 impl FunctionId {
