@@ -128,9 +128,8 @@ impl<'s> Declarations<'s> {
     }
 }
 
-/// The function items in the order their bodies are built: grouped by the inferred results each
-/// reads, a group after every group it reads, so a result is settled before a body outside its
-/// group reads it. Items that read no inferred result keep their own order.
+/// The order the function items' bodies are built in: grouped by the inferred results each reads,
+/// a group after every group it reads. Items that read none keep their own order.
 pub(crate) struct Order {
     groups: Components,
     /// By item, the members of its group whose bodies call it.

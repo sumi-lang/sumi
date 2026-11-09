@@ -39,12 +39,10 @@ pub(crate) fn lower<'s>(
     for group in 0..builder.order.groups() {
         let is_recursive = builder.order.is_recursive(group);
         for member in 0..builder.order.members(group).len() {
-            let member = builder.order.members(group)[member];
-            builder.build(member as usize, !is_recursive);
+            builder.build(builder.order.members(group)[member] as usize, !is_recursive);
         }
         if is_recursive {
-            let members = builder.order.members(group).to_vec();
-            builder.checker().settle(&members);
+            builder.checker().settle(group);
         }
     }
     let generic_calls = std::mem::take(&mut builder.generic_calls);
@@ -68,6 +66,7 @@ pub(crate) fn lower<'s>(
     let spans = builder.spans.finish(&graph);
     let declared = builder.declared;
     let mut lowered = builder.lowered;
+    lowered.calls.sort_by_key(|call| call.caller.index());
     lowered.references.append(&mut source.references);
     lowered
         .references
@@ -319,7 +318,8 @@ impl<'a, 's> Builder<'a, 's> {
         checker.resolve(node)
     }
 
-    /// Builds the body of `owner` and walks its types; `is_final` unless its group settles them.
+    /// Builds the body of `owner` beside the walk of its types, which reports and settles it when
+    /// `is_final`.
     fn build(&mut self, owner: usize, is_final: bool) {
         self.owner = u32::try_from(owner).expect("function count fits u32");
         self.is_final = is_final;
@@ -455,8 +455,9 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph.close_run(run, region, value);
         let is_whole = !self.has_failed && root_node.is_some() && body.is_valid;
         self.lowered.built[owner] = is_whole;
-        self.checker()
-            .close(FunctionId::new(owner), value, is_final);
+        if is_final {
+            self.checker().close(FunctionId::new(owner), value);
+        }
         if is_whole && !self.source.is_muted {
             self.unused();
         }
