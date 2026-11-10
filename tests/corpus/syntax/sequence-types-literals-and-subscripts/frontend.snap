@@ -1,0 +1,221 @@
+== tree ==
+SourceFile 1:1..28:1
+  TypeItem 1:1..1:48
+    Name 1:6..1:10 "Grid"
+    FieldList 1:11..1:48
+      Field 1:13..1:27
+        Name 1:13..1:18 "cells"
+        ArrayType 1:20..1:27
+          ArrayType 1:21..1:26
+            TypeRef 1:22..1:25 "int"
+      Field 1:29..1:46
+        Name 1:29..1:34 "names"
+        TypeRef 1:36..1:46
+          TypeArgList 1:39..1:46
+            ArrayType 1:40..1:45
+              TypeRef 1:41..1:44 "int"
+  FnItem 3:1..13:2
+    Name 3:4..3:9 "build"
+    ParamList 3:9..3:41
+      Param 3:11..3:23
+        Name 3:11..3:13 "xs"
+        ArrayType 3:16..3:23
+          TypeRef 3:18..3:21 "int"
+      Param 3:26..3:40
+        Name 3:26..3:30 "grid"
+        ArrayType 3:32..3:40
+          ArrayType 3:33..3:39
+            TypeRef 3:34..3:38 "bool"
+    ArrayType 3:45..3:50
+      TypeRef 3:46..3:49 "int"
+    Block 3:51..13:2
+      LetStmt 4:5..4:27
+        Name 4:9..4:14 "empty"
+        ArrayType 4:16..4:21
+          TypeRef 4:17..4:20 "int"
+        ArrayExpr 4:24..4:27 "[ ]"
+      LetStmt 5:5..5:19
+        Name 5:9..5:12 "one"
+        ArrayExpr 5:15..5:19
+          LiteralExpr 5:16..5:17 "1"
+      LetStmt 6:5..7:10
+        Name 6:9..6:13 "many"
+        ArrayExpr 6:16..7:10
+          LiteralExpr 6:18..6:19 "1"
+          LiteralExpr 6:22..6:23 "2"
+          LiteralExpr 7:7..7:8 "3"
+      LetStmt 8:5..8:35
+        Name 8:9..8:15 "nested"
+        ArrayExpr 8:18..8:35
+          ArrayExpr 8:19..8:25
+            LiteralExpr 8:20..8:21 "1"
+            LiteralExpr 8:23..8:24 "2"
+          ArrayExpr 8:27..8:29 "[]"
+          ArrayExpr 8:31..8:34
+            LiteralExpr 8:32..8:33 "3"
+      AssignStmt 9:5..9:37
+        IndexExpr 9:5..9:10
+          NameRef 9:5..9:7 "xs"
+          Subscript 9:7..9:10
+            LiteralExpr 9:8..9:9 "0"
+        BinaryExpr 9:13..9:37
+          IndexExpr 9:13..9:22
+            NameRef 9:13..9:17 "many"
+            Subscript 9:17..9:22
+              LiteralExpr 9:19..9:20 "1"
+          IndexExpr 9:25..9:37
+            IndexExpr 9:25..9:34
+              NameRef 9:25..9:31 "nested"
+              Subscript 9:31..9:34
+                LiteralExpr 9:32..9:33 "0"
+            Subscript 9:34..9:37
+              LiteralExpr 9:35..9:36 "1"
+      AssignStmt 10:5..10:22
+        IndexExpr 10:5..10:15
+          IndexExpr 10:5..10:12
+            NameRef 10:5..10:9 "grid"
+            Subscript 10:9..10:12
+              LiteralExpr 10:10..10:11 "0"
+          Subscript 10:12..10:15
+            LiteralExpr 10:13..10:14 "1"
+        LiteralExpr 10:18..10:22 "true"
+      LetStmt 11:5..11:45
+        Name 11:9..11:14 "value"
+        IndexExpr 11:17..11:45
+          FieldExpr 11:17..11:38
+            IndexExpr 11:17..11:32
+              CallExpr 11:17..11:29
+                NameRef 11:17..11:18 "f"
+                TypeArgList 11:18..11:25
+                  ArrayType 11:19..11:24
+                    TypeRef 11:20..11:23 "int"
+                ArgList 11:25..11:29
+                  Arg 11:26..11:28
+                    NameRef 11:26..11:28 "xs"
+              Subscript 11:29..11:32
+                LiteralExpr 11:30..11:31 "0"
+            NameRef 11:33..11:38 "first"
+          Subscript 11:38..11:45
+            BinaryExpr 11:39..11:44
+              LiteralExpr 11:39..11:40 "1"
+              LiteralExpr 11:43..11:44 "2"
+      ArrayExpr 12:5..12:39
+        IndexExpr 12:6..12:11
+          NameRef 12:6..12:8 "xs"
+          Subscript 12:8..12:11
+            LiteralExpr 12:9..12:10 "0"
+        PrefixExpr 12:13..12:19
+          IndexExpr 12:14..12:19
+            NameRef 12:14..12:16 "xs"
+            Subscript 12:16..12:19
+              LiteralExpr 12:17..12:18 "1"
+        IndexExpr 12:21..12:28
+          ParenExpr 12:21..12:25
+            NameRef 12:22..12:24 "xs"
+          Subscript 12:25..12:28
+            LiteralExpr 12:26..12:27 "2"
+        MethodCallExpr 12:30..12:38
+          FieldExpr 12:30..12:36
+            NameRef 12:30..12:32 "xs"
+            NameRef 12:33..12:36 "len"
+          ArgList 12:36..12:38 "()"
+  FnItem 15:1..15:160
+    Name 15:4..15:8 "long"
+    ParamList 15:8..15:46
+      Param 15:9..15:45
+        Name 15:9..15:38 "some_quite_long_sequence_name"
+        ArrayType 15:40..15:45
+          TypeRef 15:41..15:44 "int"
+    ArrayType 15:50..15:55
+      TypeRef 15:51..15:54 "int"
+    ArrayExpr 15:58..15:160
+      IndexExpr 15:59..15:91
+        NameRef 15:59..15:88 "some_quite_long_sequence_name"
+        Subscript 15:88..15:91
+          LiteralExpr 15:89..15:90 "0"
+      IndexExpr 15:93..15:125
+        NameRef 15:93..15:122 "some_quite_long_sequence_name"
+        Subscript 15:122..15:125
+          LiteralExpr 15:123..15:124 "1"
+      IndexExpr 15:127..15:159
+        NameRef 15:127..15:156 "some_quite_long_sequence_name"
+        Subscript 15:156..15:159
+          LiteralExpr 15:157..15:158 "2"
+  FnItem 17:1..22:2
+    Name 17:4..17:13 "commented"
+    ParamList 17:13..18:8
+      Param 17:14..17:25
+        Name 17:14..17:16 "xs"
+        ArrayType 17:18..17:25
+          ArrayType 17:19..17:24
+            TypeRef 17:20..17:23 "int"
+      Param 17:27..18:7
+        Name 17:27..17:29 "ys"
+        ArrayType 17:31..18:7
+          TypeRef 18:2..18:5 "int"
+    TypeRef 18:12..18:15 "int"
+    Block 18:16..22:2
+      BinaryExpr 19:5..21:17
+        IndexExpr 19:5..21:9
+          IndexExpr 19:5..21:6
+            NameRef 19:5..19:7 "xs"
+            Subscript 19:7..21:6
+              LiteralExpr 20:9..20:10 "0"
+          Subscript 21:6..21:9
+            LiteralExpr 21:7..21:8 "1"
+        IndexExpr 21:12..21:17
+          NameRef 21:12..21:14 "ys"
+          Subscript 21:14..21:17
+            LiteralExpr 21:15..21:16 "0"
+  FnItem 24:1..27:2
+    Name 24:4..24:9 "lines"
+    ParamList 24:9..24:11 "()"
+    Block 24:12..27:2
+      NameRef 25:5..25:7 "xs"
+      ArrayExpr 26:5..26:11
+        LiteralExpr 26:6..26:7 "1"
+        LiteralExpr 26:9..26:10 "2"
+
+== formatted ==
+type Grid {
+    cells: [[int]],
+    names: Box<[int]>
+}
+
+fn build(xs: [int], grid: [[bool]]) -> [int] {
+    let empty: [int] = []
+    let one = [1]
+    let many = [1, 2, 3]
+    let nested = [[1, 2], [], [3]]
+    xs[0] = many[1] + nested[0][1]
+    grid[0][1] = true
+    let value = f<[int]>(xs)[0].first[1 + 2]
+    [xs[0], -xs[1], (xs)[2], xs.len()]
+}
+
+fn long(
+    some_quite_long_sequence_name: [int],
+) -> [
+    int
+] = [
+    some_quite_long_sequence_name[0],
+    some_quite_long_sequence_name[1],
+    some_quite_long_sequence_name[2],
+]
+
+fn commented(
+    xs: [[int]],
+    ys: [ // of what
+        int
+    ],
+) -> int {
+    xs[ // which
+        0
+    ][1]
+        + ys[0]
+}
+
+fn lines() {
+    xs
+    [1, 2]
+}

@@ -1,0 +1,56 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn first@1:1..7:2 () -> int ∈ [1, 1]
+  result: result : int @1:15..1:18
+    outcome[0]:
+      discard: after : ? @3:9..3:17
+        control: return : int @3:9..3:17
+        context: entry : ? @1:1..7:2
+      let q@2:9..2:10: [int] @2:5..5:7
+        initializer: array : [int] @2:13..5:7
+          element: int 7 : int @2:14..2:15
+          element: int 0 : int @4:9..4:10
+      tail: index : int @6:5..6:9
+        sequence: read q@2:9..2:10 : [int]
+        index: int 0 : int @6:7..6:8
+    outcome[1]: return : int @3:9..3:17
+      payload: int 1 : int @3:16..3:17
+
+fn counted@8:1..15:2 () -> int ∈ [2, 2]
+  result: result : int @8:17..8:20
+    outcome[0]:
+      let q@9:13..9:14: [int] @9:5..12:7
+        initializer: array : [int] @9:17..12:7
+          element: int 0 : int @11:9..11:10
+      assignment: assign q@9:13..9:14 : [int] @13:5..13:14
+        value: push : [int] @13:5..13:14
+          sequence: read q@9:13..9:14 : [int]
+          element: int 1 : int @13:12..13:13
+      discard: unit : unit @13:5..13:14
+      assignment: assign q@9:13..9:14 : [int] @14:15..14:22
+        value: pop : [int] @14:15..14:22
+          sequence: read q@9:13..9:14 (assigned @13:5..13:14) : [int]
+      tail: eager + : int @14:5..14:22
+        lhs: len : int @14:5..14:12
+          sequence: read q@9:13..9:14 (assigned @13:5..13:14) : [int]
+        rhs: index : int @14:15..14:22
+          sequence: read q@9:13..9:14 (assigned @13:5..13:14) : [int]
+          index: eager - : int @14:15..14:22
+            lhs: len : int @14:15..14:22
+              sequence: read q@9:13..9:14 (assigned @13:5..13:14) : [int]
+            rhs: int 1 : int @14:15..14:22
+    outcome[1]: return : int @10:9..10:17
+      payload: int 2 : int @10:16..10:17
+
+== semantic diagnostics ==
+warning[semantic/unreachable-code] 4:9..4:10 "0": unreachable code
+  at 3:9..3:17 "return 1": no path continues past this
+warning[semantic/unreachable-code] 6:5..6:9 "q[0]": unreachable code
+  at 2:5..5:7 "let q = [7, {\n        return 1\n        0\n    }]": no path continues past this
+warning[semantic/unreachable-code] 11:9..11:10 "0": unreachable code
+  at 10:9..10:17 "return 2": no path continues past this
+warning[semantic/unreachable-code] 13:5..14:22 "q.push(1)\n    q.len() + q.pop()": unreachable code
+  at 9:5..12:7 "let mut q = [{\n        return 2\n        0\n    }]": no path continues past this

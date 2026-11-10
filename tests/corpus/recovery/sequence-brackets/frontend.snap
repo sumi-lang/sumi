@@ -1,0 +1,161 @@
+== tree ==
+SourceFile! 1:1..20:1
+  FnItem! 1:1..5:2
+    Name 1:4..1:12 "unclosed"
+    ParamList 1:12..1:14 "()"
+    Block! 1:15..5:2
+      LetStmt! 2:5..2:19
+        Name 2:9..2:11 "xs"
+        ArrayExpr! 2:14..2:19
+          LiteralExpr 2:15..2:16 "1"
+          LiteralExpr 2:18..2:19 "2"
+      LetStmt! 3:5..3:18
+        Name 3:9..3:11 "ys"
+        IndexExpr! 3:14..3:18
+          NameRef 3:14..3:16 "xs"
+          Subscript! 3:16..3:18
+            LiteralExpr 3:17..3:18 "0"
+      NameRef 4:5..4:7 "ys"
+  FnItem! 7:1..13:2
+    Name 7:4..7:9 "stray"
+    ParamList 7:9..7:11 "()"
+    Block! 7:12..13:2
+      LetStmt! 8:5..8:22
+        Name 8:9..8:11 "xs"
+        ArrayExpr! 8:14..8:22
+          LiteralExpr 8:15..8:16 "1"
+          LiteralExpr 8:20..8:21 "2"
+      LetStmt! 9:5..9:19
+        Name 9:9..9:11 "ys"
+        ArrayExpr! 9:14..9:19
+          Error! 9:15..9:18 "let"
+      IndexExpr! 10:5..10:9
+        NameRef 10:5..10:7 "xs"
+        Subscript! 10:7..10:9 "[]"
+      NameRef 11:5..11:7 "xs"
+      Error! 11:7..11:8 "]"
+      AssignStmt 12:5..12:15
+        IndexExpr 12:5..12:11
+          NameRef 12:5..12:7 "xs"
+          Subscript 12:8..12:11
+            LiteralExpr 12:9..12:10 "0"
+        LiteralExpr 12:14..12:15 "1"
+  FnItem! 15:1..17:2
+    Name 15:4..15:9 "types"
+    ParamList! 15:9..15:31
+      Param! 15:10..15:14
+        Name 15:10..15:11 "a"
+        ArrayType! 15:13..15:14 "["
+      Param! 15:16..15:23
+        Name 15:16..15:17 "b"
+        ArrayType! 15:19..15:23
+          TypeRef 15:20..15:23 "int"
+      Param! 15:25..15:30
+        Name 15:25..15:26 "c"
+        ArrayType! 15:28..15:30 "[]"
+    ArrayType! 15:35..15:36 "["
+    Block 15:37..17:2
+      NameRef 16:5..16:6 "a"
+  FnItem 19:1..19:36
+    Name 19:4..19:10 "closed"
+    ParamList 19:10..19:21
+      Param 19:11..19:20
+        Name 19:11..19:13 "xs"
+        ArrayType 19:15..19:20
+          TypeRef 19:16..19:19 "int"
+    TypeRef 19:25..19:28 "int"
+    IndexExpr 19:31..19:36
+      NameRef 19:31..19:33 "xs"
+      Subscript 19:33..19:36
+        LiteralExpr 19:34..19:35 "0"
+
+== evidence ==
+Expected(RBracket) at 3:5
+Expected(RBracket) at 4:5
+ExpectedExpression at 8:18
+Expected(Comma) at 8:20
+ExpectedExpression at 9:15
+ExpectedExpression at 10:8
+ExpectedStatement at 11:7
+SpacedListOpener at 12:8
+ExpectedType at 15:14
+Expected(RBracket) at 15:14
+Expected(RBracket) at 15:23
+ExpectedType at 15:29
+ExpectedType at 15:37
+Expected(RBracket) at 15:37
+
+== diagnostics ==
+error[syntax/expected-token] 3:5: expected `]`
+  at 2:14..2:15 "[": opening delimiter is here
+  fix: insert `]`
+    2:19 -> "]"
+error[syntax/expected-token] 4:5: expected `]`
+  at 3:16..3:17 "[": opening delimiter is here
+  fix: insert `]`
+    3:18 -> "]"
+error[syntax/expected-expression] 8:18: expected an expression
+error[syntax/expected-token] 8:20: expected `,`
+error[syntax/expected-expression] 9:15..9:18 "let": expected an expression
+error[syntax/expected-expression] 10:8: expected an expression
+error[syntax/expected-statement] 11:7..11:8 "]": expected a statement
+error[syntax/spaced-list-opener] 12:8..12:9 "[": opening `[` must be adjacent to what it indexes
+error[syntax/expected-type] 15:14: expected a type
+error[syntax/expected-token] 15:14: expected `]`
+  at 15:13..15:14 "[": opening delimiter is here
+  fix: insert `]`
+    15:14 -> "]"
+error[syntax/expected-token] 15:23: expected `]`
+  at 15:19..15:20 "[": opening delimiter is here
+  fix: insert `]`
+    15:23 -> "]"
+error[syntax/expected-type] 15:29: expected a type
+error[syntax/expected-type] 15:37: expected a type
+error[syntax/expected-token] 15:37: expected `]`
+  at 15:35..15:36 "[": opening delimiter is here
+  fix: insert `]`
+    15:36 -> "]"
+
+== fixed ==
+remaining: syntax/expected-expression, syntax/expected-statement, syntax/expected-token, syntax/expected-type, syntax/spaced-list-opener
+
+fn unclosed() {
+    let xs = [1, 2]
+    let ys = xs[0]
+    ys
+}
+
+fn stray() {
+    let xs = [1, , 2]
+    let ys = [let]
+    xs[]
+    xs]
+    xs [0] = 1
+}
+
+fn types(a: [], b: [int], c: []) -> [] {
+    a
+}
+
+fn closed(xs: [int]) -> int = xs[0]
+
+== formatted ==
+fn unclosed() {
+    let xs = [1, 2
+    let ys = xs[0
+    ys
+}
+
+fn stray() {
+    let xs = [1, , 2]
+    let ys = [let]
+    xs[]
+    xs]
+    xs[0] = 1
+}
+
+fn types(a: [, b: [int, c: []) -> [ {
+    a
+}
+
+fn closed(xs: [int]) -> int = xs[0]

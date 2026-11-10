@@ -1,0 +1,39 @@
+type P {
+    n: int,
+}
+
+impl P {
+    fn grow(mut self, by: int) {
+        self.n += by
+    }
+}
+
+fn bump(mut x: int, by: int) {
+    x += by
+}
+
+fn shrink(mut row: [int], mut other: int) {
+    _ = row.pop()
+    other += 1
+}
+
+fn main() -> int {
+    let mut xs = [1, 2]
+    bump(mut xs[0], {
+        _ = xs.pop()
+        5
+    })
+    let mut grid = [[1], [2]]
+    grid[0].push({
+        _ = grid.pop()
+        3
+    })
+    let mut ps = [P(n: 1), P(n: 2)]
+    ps[0].grow({
+        _ = ps.pop()
+        1
+    })
+    let mut rows = [[1, 2], [3, 4]]
+    shrink(mut rows[0], mut rows[1][0])
+    xs[0] + grid[0].len() + ps[0].n + rows[0].len() + rows[1][0]
+}

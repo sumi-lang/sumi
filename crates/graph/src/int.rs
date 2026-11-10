@@ -128,6 +128,10 @@ impl fmt::Display for OutOfRange {
 
 impl std::error::Error for OutOfRange {}
 
+impl Int {
+    pub const ZERO: Self = Self(Repr::Small(0));
+}
+
 impl From<i64> for Int {
     fn from(value: i64) -> Self {
         Self(Repr::Small(value))

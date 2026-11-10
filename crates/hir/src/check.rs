@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use sumi_frontend::{Diagnostic, ParsedSource};
-use sumi_graph::{DeclId, FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
+use sumi_graph::{DeclId, Domain, FunctionId, Graph, GraphBuilder, Int, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
 
@@ -57,6 +57,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let any = AnyValues::new(&graph, &lowered, &summaries);
     let typing = Typing::new(checked.types, values);
     divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
+    accesses(&mut source, &graph, &spans, &typing, &lowered, &failed);
     exhaustive(
         &mut source,
         &graph,
@@ -293,6 +294,77 @@ fn divisions(
     }
 }
 
+/// Each read of a sequence is inside it: an index from 0 to below every length it may have, and
+/// a last element only of one that is never empty.
+fn accesses(
+    source: &mut Source<'_>,
+    graph: &Graph,
+    spans: &Spans,
+    typing: &Typing,
+    lowered: &Lowered,
+    failed: &[bool],
+) {
+    // A place is read and written at one index, and by every instance of its function.
+    let mut reported = std::collections::HashSet::new();
+    for access in &lowered.accesses {
+        if failed[access.owner as usize]
+            || !typing.may(access.context).is_live()
+            || reported.contains(&access.node)
+        {
+            continue;
+        }
+        let Ok(len) = typing.may(access.array).length();
+        let len = len.ints;
+        // No length reaches a read that no sequence does.
+        let Some(least) = len.lo() else { continue };
+        let at = source.range(access.node);
+        let Some(index) = access.index else {
+            if least < Int::from(1) {
+                let message = if len.is_zero() {
+                    "the sequence is empty, and has no last element".to_owned()
+                } else {
+                    format!("the sequence may be empty: its length is {len}")
+                };
+                source.report(at, codes::INDEX_OUT_OF_BOUNDS, message, []);
+                reported.insert(access.node);
+            }
+            continue;
+        };
+        let index_ints = &typing.may(index).ints;
+        if index_ints.is_empty() {
+            continue;
+        }
+        let is_low = index_ints.lo().is_none_or(|lo| lo < Int::ZERO);
+        let is_high = index_ints.hi().is_none_or(|hi| hi >= least);
+        if !is_low && !is_high {
+            continue;
+        }
+        // Outside every length the sequence may have, or only some.
+        let is_never = index_ints.hi().is_some_and(|hi| hi < Int::ZERO)
+            || index_ints
+                .lo()
+                .zip(len.hi())
+                .is_some_and(|(lo, most)| lo >= most);
+        let may = if is_never { "is" } else { "may be" };
+        let message = format!(
+            "index {may} outside the sequence: it is {index_ints}, and the length is {len}"
+        );
+        let labels = explain(
+            graph,
+            spans,
+            typing.values(),
+            Some(&lowered.calls),
+            index,
+            |ints| {
+                ints.lo().is_none_or(|lo| lo < Int::ZERO) || ints.hi().is_none_or(|hi| hi >= least)
+            },
+            |ints, where_| format!("is {ints}{where_}"),
+        );
+        source.report(at, codes::INDEX_OUT_OF_BOUNDS, message, labels);
+        reported.insert(access.node);
+    }
+}
+
 /// Labels where `start`'s integers come from, crossing at most `HOPS` flows and none into a node
 /// whose integers `relevant` rejects. A parameter leads to its callers' arguments only with `calls`.
 pub(crate) fn explain(
@@ -327,7 +399,7 @@ pub(crate) fn explain(
             }
         };
         match entry.op {
-            Op::Int(_) | Op::Neg | Op::Binary(_) | Op::Field(_) => {
+            Op::Int(_) | Op::Neg | Op::Binary(_) | Op::Field(_) | Op::Len | Op::Index => {
                 labels.push((spans.origin(node), describe(&may.ints, "").into()));
             }
             Op::Copy { .. } | Op::Assign => follow(&mut queue, inputs[0], 0),
@@ -424,6 +496,10 @@ pub(crate) fn explain(
             Op::Bool(_)
             | Op::Unit
             | Op::Make(_)
+            | Op::Array(_)
+            | Op::Store
+            | Op::Push
+            | Op::Pop
             | Op::Loop { .. }
             | Op::Unused
             | Op::Hole

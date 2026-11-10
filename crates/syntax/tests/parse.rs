@@ -174,6 +174,10 @@ fn nesting_is_bounded() {
     assert_unclosed(&evidence_kinds(&next_item), "NestingTooDeep");
     assert_eq!(items(&next_item), 2);
     assert_eq!(evidence_kinds(&deep(100_000)), ["NestingTooDeep"]);
+    let sequences = format!("fn f(x: {}int{}) {{}}", "[".repeat(300), "]".repeat(300));
+    assert_eq!(evidence_kinds(&sequences), ["NestingTooDeep"]);
+    let held = format!("fn f(x: {}[int]{}) {{}}", "P<".repeat(126), ">".repeat(126));
+    assert_eq!(evidence_kinds(&held), ["NestingTooDeep"]);
     assert_eq!(
         evidence_kinds(&format!("fn f() {{ {}x }}", "!".repeat(100_000))),
         ["NestingTooDeep"]

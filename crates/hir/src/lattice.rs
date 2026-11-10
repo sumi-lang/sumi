@@ -5,8 +5,8 @@
 use std::rc::Rc;
 
 use sumi_graph::{
-    BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, FunctionId, Ints, May, Thresholds,
-    Unions,
+    BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Fields, FunctionId, Ints, May,
+    Thresholds, Unions,
 };
 
 use crate::solver::{Carry, Lattice};
@@ -28,6 +28,10 @@ pub(crate) enum Edge {
     Field(FieldName),
     /// An arm's binding: the values of the type among the scrutinee's.
     Narrow(sumi_graph::Ty),
+    /// How many elements a sequence holds.
+    Len,
+    /// A sequence without its last element.
+    Pop,
 }
 
 /// A flow from two providers. The second of `Binary`, `Lazy`, and `Refine` is the other operand;
@@ -53,6 +57,10 @@ pub(crate) enum Pair {
     Argument,
     Backedge,
     Range,
+    /// An element of a sequence, at the index that is second.
+    Index,
+    /// A sequence with the element that is second after its last.
+    Push,
 }
 
 /// A flow from several providers in order.
@@ -62,6 +70,10 @@ pub(crate) enum Many {
     Make(DeclId),
     /// The callee's result, then the call's arguments: the result as those arguments decide it.
     Call(FunctionId),
+    /// Every element of a sequence of the type, in order.
+    Array(DeclId),
+    /// A sequence, an index, and the element it holds there instead.
+    Store,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -99,6 +111,24 @@ impl Context {
     }
 }
 
+/// The sequences of `values` with each one's elements narrowed to its element type, which bounds
+/// nesting as a field's type does.
+fn typed_elements(values: May, cx: &Context) -> May {
+    let decls = values.decls.iter().map(|(decl, fields)| {
+        let fields = match (fields, cx.decls[decl.index()].element()) {
+            (Fields::Elements(len, element), Some(ty)) => {
+                Fields::Elements(len.clone(), Box::new(element.narrow(ty, &cx.unions)))
+            }
+            _ => fields.clone(),
+        };
+        (decl, fields)
+    });
+    May {
+        decls: decls.collect(),
+        ..values
+    }
+}
+
 /// Every value cycle crosses a call, an argument, or a loop backedge; rounding there keeps every
 /// ascending chain finite.
 fn rounded(values: &May, cyclic: bool, cx: &Context) -> May {
@@ -127,8 +157,10 @@ impl Lattice for May {
     fn carries(edge: &Edge) -> Carry {
         match edge {
             Edge::Not | Edge::Enter | Edge::ShortCircuit(_) | Edge::Exactly(_) => Carry::Nothing,
-            Edge::Neg => Carry::Grows,
-            Edge::Call | Edge::Values | Edge::Field(_) | Edge::Narrow(_) => Carry::Passes,
+            Edge::Neg | Edge::Pop => Carry::Grows,
+            Edge::Call | Edge::Values | Edge::Field(_) | Edge::Narrow(_) | Edge::Len => {
+                Carry::Passes
+            }
         }
     }
 
@@ -136,7 +168,7 @@ impl Lattice for May {
     /// may raise as far as the result reaches.
     fn carries_many(many: &Many) -> [Carry; 2] {
         match many {
-            Many::Make(_) => [Carry::Passes; 2],
+            Many::Make(_) | Many::Array(_) | Many::Store => [Carry::Passes; 2],
             Many::Call(_) => [Carry::Passes, Carry::Grows],
         }
     }
@@ -148,6 +180,8 @@ impl Lattice for May {
             Pair::Binary(BinaryOp::Arith(_)) => [Carry::Grows; 2],
             Pair::Binary(BinaryOp::Cmp(_)) => [Carry::Nothing; 2],
             Pair::Refine { .. } | Pair::Range => [Carry::Passes; 2],
+            Pair::Index => [Carry::Passes, Carry::Nothing],
+            Pair::Push => [Carry::Grows, Carry::Passes],
             Pair::Branch | Pair::Argument | Pair::Backedge => [Carry::Passes, Carry::Nothing],
         }
     }
@@ -171,6 +205,14 @@ impl Lattice for May {
                 field
             }
             Edge::Narrow(ty) => self.narrow(ty, &cx.unions),
+            Edge::Len => {
+                let Ok(len) = self.length();
+                len
+            }
+            Edge::Pop => {
+                let Ok(rest) = self.pop();
+                rest
+            }
         }
     }
 
@@ -203,6 +245,14 @@ impl Lattice for May {
                 second.is_live() && self.decls.iter().any(|(decl, _)| cx.selects(case, decl)),
             ),
             Pair::Range => Self::ints(Ints::range(&self.ints, &second.ints)),
+            Pair::Index => {
+                let Ok(element) = self.index(second, &cx.decls, &cx.unions);
+                element
+            }
+            Pair::Push => {
+                let Ok(pushed) = self.push(second);
+                typed_elements(pushed, cx)
+            }
             Pair::Branch => {
                 if second.is_live() {
                     self.clone()
@@ -230,6 +280,17 @@ impl Lattice for May {
     ) -> Self {
         let decl = match *many {
             Many::Make(decl) => decl,
+            Many::Array(decl) => {
+                let elements = std::iter::once(self).chain(others).cloned().collect();
+                return typed_elements(May::array(decl, elements), cx);
+            }
+            Many::Store => {
+                let [index, value] = others.collect::<Vec<_>>()[..] else {
+                    unreachable!("a store reads its sequence, an index, and a value")
+                };
+                let Ok(stored) = self.store(index, value);
+                return typed_elements(stored, cx);
+            }
             Many::Call(callee) => {
                 let args: Vec<&Self> = others.collect();
                 let types = Types {

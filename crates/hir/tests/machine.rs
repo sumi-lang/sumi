@@ -53,6 +53,9 @@ enum Kind {
     Rec,
     /// `R | S`, with `type S { c: int }` declared beside `R`.
     Shape,
+    /// `[int]`, every value of which the generator gives two elements or more, and never
+    /// fewer after: indices 0 and 1 are then inside it.
+    Seq,
 }
 
 impl Kind {
@@ -62,6 +65,7 @@ impl Kind {
             Self::Bool => "bool",
             Self::Rec => "R",
             Self::Shape => "R | S",
+            Self::Seq => "[int]",
         }
     }
 
@@ -72,8 +76,10 @@ impl Kind {
             Self::Bool
         } else if rng.chance(1, 2) {
             Self::Rec
-        } else {
+        } else if rng.chance(1, 2) {
             Self::Shape
+        } else {
+            Self::Seq
         }
     }
 }
@@ -138,6 +144,7 @@ impl Gen<'_> {
             Kind::Bool => "p",
             Kind::Rec => "r",
             Kind::Shape => "s",
+            Kind::Seq => "q",
         };
         let name = format!("{prefix}{}", self.fresh);
         self.fresh += 1;
@@ -197,6 +204,10 @@ impl Gen<'_> {
                     format!("S(c: {c})")
                 }
             }
+            Kind::Seq => {
+                let (a, b) = (self.literal(Kind::Int), self.literal(Kind::Int));
+                format!("[{a}, {b}]")
+            }
         }
     }
 
@@ -209,7 +220,19 @@ impl Gen<'_> {
             Kind::Bool => self.bool(fuel),
             Kind::Rec => self.rec(fuel),
             Kind::Shape => self.shape(fuel),
+            Kind::Seq => self.seq(fuel),
         }
+    }
+
+    fn seq(&mut self, fuel: u32) -> String {
+        if fuel == 0 || self.rng.chance(1, 2) {
+            return self.leaf(Kind::Seq);
+        }
+        let count = self.rng.between(2, 3);
+        let elements: Vec<String> = (0..count)
+            .map(|_| self.operand(Kind::Int, fuel - 1))
+            .collect();
+        format!("[{}]", elements.join(", "))
     }
 
     /// A value of `kind` through the prelude: an instance of a generic function that hands it
@@ -266,6 +289,7 @@ impl Gen<'_> {
                 format!("R(a: {s}.c, b: {})", self.literal(Kind::Bool)),
             ),
             Kind::Shape => (r.clone(), s.clone()),
+            Kind::Seq => (format!("[{r}.a, 0]"), format!("[{s}.c, 1, 2]")),
         };
         let rest = if fuel > 0 && self.rng.chance(1, 3) {
             let value = self.expr(kind, fuel - 1);
@@ -365,6 +389,12 @@ impl Gen<'_> {
     }
 
     fn leaf(&mut self, kind: Kind) -> String {
+        let sequences = self.locals(Kind::Seq);
+        if kind == Kind::Int && !sequences.is_empty() && self.rng.chance(1, 4) {
+            let sequence = self.rng.pick(&sequences).clone();
+            let read = *self.rng.pick(&["[0]", "[1]", ".len()"]);
+            return format!("{sequence}{read}");
+        }
         let locals = self.locals(kind);
         if !locals.is_empty() && self.rng.chance(1, 2) {
             return self.rng.pick(&locals).clone();
@@ -618,7 +648,42 @@ impl Gen<'_> {
         let depth = self.scope.len();
         let mut lines = Vec::new();
         for _ in 0..self.rng.between(1, 3) {
-            let line = match self.rng.below(13) {
+            let line = match self.rng.below(14) {
+                13 => {
+                    let sequences: Vec<String> = self
+                        .mutable_locals()
+                        .into_iter()
+                        .filter_map(|(name, kind)| (kind == Kind::Seq).then_some(name))
+                        .collect();
+                    if sequences.is_empty() {
+                        format!("_ = {}", self.expr(Kind::Seq, fuel))
+                    } else {
+                        let name = self.rng.pick(&sequences).clone();
+                        let value = self.expr(Kind::Int, fuel);
+                        match self.rng.below(8) {
+                            // An index that may return first is still read once, in order.
+                            pick @ 6..=7 => {
+                                let condition = self.bool(fuel);
+                                let result = self.functions[self.current].result;
+                                let exit = self.expr(result, fuel);
+                                let place = format!(
+                                    "{name}[if {condition} {{ return {exit} }} else {{ 0 }}]"
+                                );
+                                if pick == 6 {
+                                    format!("{place} = {value}")
+                                } else {
+                                    self.compound(&place, fuel)
+                                }
+                            }
+                            0 => format!("{name}.push({value})"),
+                            1 => format!("{name}[0] = {value}"),
+                            2 => self.compound(&format!("{name}[1]"), fuel),
+                            3 => format!("exchange(mut {name}[0], mut {name}[1])"),
+                            4 => format!("{name}.push({value})\n_ = {name}.pop()"),
+                            _ => format!("{name}[{name}.len() - 1] = {value}"),
+                        }
+                    }
+                }
                 11 => {
                     let records: Vec<String> = self
                         .mutable_locals()
@@ -673,7 +738,7 @@ impl Gen<'_> {
                     let bindings: Vec<String> = self
                         .locals(kind)
                         .into_iter()
-                        .filter(|name| name.starts_with(['v', 'p', 'r', 's']))
+                        .filter(|name| name.starts_with(['v', 'p', 'r', 's', 'q']))
                         .collect();
                     let name = if !bindings.is_empty() && self.rng.chance(1, 4) {
                         self.rng.pick(&bindings).clone()
@@ -1080,7 +1145,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
                 source.contains("let mut ")
                     && source.lines().any(|line| {
                         let line = line.trim_start();
-                        line.starts_with(['v', 'p', 'r', 's']) && line.contains(" = ")
+                        line.starts_with(['v', 'p', 'r', 's', 'q']) && line.contains(" = ")
                     })
                     && outcome.finished != 0,
             );

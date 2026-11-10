@@ -309,6 +309,17 @@ fn solve(graph: &Graph, lowered: &Lowered, summaries: &Summaries, arguments: Arg
                     None => values.expect(node, &May::make(*decl, Vec::new())),
                 },
                 Op::Field(name) => values.flow(inputs[0], node, Edge::Field(*name)),
+                Op::Array(decl) => match inputs.split_first() {
+                    Some((&first, others)) => {
+                        values.derive_many(first, others, node, Many::Array(*decl));
+                    }
+                    None => values.expect(node, &May::array(*decl, Vec::new())),
+                },
+                Op::Len => values.flow(inputs[0], node, Edge::Len),
+                Op::Pop => values.flow(inputs[0], node, Edge::Pop),
+                Op::Index => values.derive(inputs[0], inputs[1], node, Pair::Index),
+                Op::Push => values.derive(inputs[0], inputs[1], node, Pair::Push),
+                Op::Store => values.derive_many(inputs[0], &inputs[1..], node, Many::Store),
                 // Drawn once every run is passed; the callee's run may come later.
                 Op::Call(_) => {}
             }

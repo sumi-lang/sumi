@@ -1,0 +1,35 @@
+tree: omitted
+
+== formatted ==
+type P {
+    n: int,
+}
+
+impl P {
+    fn grow(mut self, by: int) {
+        self.n += by
+    }
+}
+
+fn bump(mut x: int, by: int) {
+    x += by
+}
+
+fn main() -> int {
+    let mut xs = [1, 2]
+    bump(mut xs[1], {
+        _ = xs.pop()
+        5
+    })
+    let mut grid = [[1], [2]]
+    grid[1].push({
+        _ = grid.pop()
+        3
+    })
+    let mut ps = [P(n: 1), P(n: 2)]
+    ps[1].grow({
+        _ = ps.pop()
+        1
+    })
+    xs[0] + grid[0].len() + ps[0].n
+}

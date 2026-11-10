@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 1:1..106:1
+SourceFile 1:1..113:1
   FnItem 3:1..15:2
     Name 3:4..3:8 "main"
     ParamList 3:8..3:10 "()"
@@ -483,3 +483,56 @@ SourceFile 1:1..106:1
             NameRef 104:34..104:39 "value"
           NameRef 104:40..104:43 "sum"
         ArgList 104:43..104:45 "()"
+  FnItem 107:1..112:2
+    Name 107:4..107:13 "sequences"
+    ParamList 107:13..107:28
+      Param 107:14..107:27
+        Name 107:14..107:18 "grid"
+        ArrayType 107:20..107:27
+          ArrayType 107:21..107:26
+            TypeRef 107:22..107:25 "int"
+    ArrayType 107:32..107:37
+      TypeRef 107:33..107:36 "int"
+    Block 107:38..112:2
+      LetStmt 108:5..108:27
+        Name 108:13..108:15 "xs"
+        ArrayType 108:17..108:22
+          TypeRef 108:18..108:21 "int"
+        ArrayExpr 108:25..108:27 "[]"
+      MethodCallExpr 109:5..109:24
+        FieldExpr 109:5..109:12
+          NameRef 109:5..109:7 "xs"
+          NameRef 109:8..109:12 "push"
+        ArgList 109:12..109:24
+          Arg 109:13..109:23
+            IndexExpr 109:13..109:23
+              IndexExpr 109:13..109:20
+                NameRef 109:13..109:17 "grid"
+                Subscript 109:17..109:20
+                  LiteralExpr 109:18..109:19 "0"
+              Subscript 109:20..109:23
+                LiteralExpr 109:21..109:22 "0"
+      AssignStmt 110:5..110:29
+        IndexExpr 110:5..110:10
+          NameRef 110:5..110:7 "xs"
+          Subscript 110:7..110:10
+            LiteralExpr 110:8..110:9 "0"
+        MethodCallExpr 110:14..110:29
+          FieldExpr 110:14..110:27
+            ArrayExpr 110:14..110:23
+              LiteralExpr 110:15..110:16 "1"
+              LiteralExpr 110:18..110:19 "2"
+              LiteralExpr 110:21..110:22 "3"
+            NameRef 110:24..110:27 "len"
+          ArgList 110:27..110:29 "()"
+      ArrayExpr 111:5..111:25
+        MethodCallExpr 111:6..111:14
+          FieldExpr 111:6..111:12
+            NameRef 111:6..111:8 "xs"
+            NameRef 111:9..111:12 "pop"
+          ArgList 111:12..111:14 "()"
+        MethodCallExpr 111:16..111:24
+          FieldExpr 111:16..111:22
+            NameRef 111:16..111:18 "xs"
+            NameRef 111:19..111:22 "len"
+          ArgList 111:22..111:24 "()"

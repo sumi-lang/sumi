@@ -1,0 +1,218 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn grow@6:5..8:6 (P ∈ P([1, 2]), int ∈ [1, 1]) -> unit ∈ unit
+  param self@6:17..6:21: P
+  param by@6:23..6:25: int
+  body:
+    assignment: assign self@6:17..6:21 : P @7:9..7:21
+      value: make P : P @7:9..7:21
+        n: eager + : int @7:9..7:21
+          lhs: field n : int @7:9..7:15
+            base: read self@6:17..6:21 : P
+          rhs: read by@6:23..6:25 : int
+    tail: make <missing> : <missing> @6:32..8:6
+
+fn bump@11:1..13:2 (int ∈ [1, 2], int ∈ [5, 5]) -> unit ∈ unit
+  param x@11:13..11:14: int
+  param by@11:21..11:23: int
+  body:
+    assignment: assign x@11:13..11:14 : int @12:5..12:12
+      value: eager + : int @12:5..12:12
+        lhs: read x@11:13..11:14 : int
+        rhs: read by@11:21..11:23 : int
+    tail: make <missing> : <missing> @11:30..13:2
+
+fn shrink@15:1..18:2 ([int] ∈ [[1, 4]; [2, 2]], int ∈ [1, 4]) -> unit ∈ unit
+  param row@15:15..15:18: [int]
+  param other@15:31..15:36: int
+  body:
+    discard: index : int @16:9..16:18
+      sequence: read row@15:15..15:18 : [int]
+      index: eager - : int @16:9..16:18
+        lhs: len : int @16:9..16:18
+          sequence: read row@15:15..15:18 : [int]
+        rhs: int 1 : int @16:9..16:18
+    assignment: assign row@15:15..15:18 : [int] @16:9..16:18
+      value: pop : [int] @16:9..16:18
+        sequence: read row@15:15..15:18 : [int]
+    assignment: assign other@15:31..15:36 : int @17:5..17:15
+      value: eager + : int @17:5..17:15
+        lhs: read other@15:31..15:36 : int
+        rhs: int 1 : int @17:14..17:15
+    tail: make <missing> : <missing> @15:43..18:2
+
+fn main@20:1..39:2 () -> int ∈ [5, 19]
+  result: copy : int @20:14..20:17
+    value:
+      let xs@21:13..21:15: [int] @21:5..21:24
+        initializer: array : [int] @21:18..21:24
+          element: int 1 : int @21:19..21:20
+          element: int 2 : int @21:22..21:23
+      discard: index : int @22:14..22:19
+        sequence: read xs@21:13..21:15 : [int]
+        index: int 0 : int @22:17..22:18
+      discard: index : int @23:13..23:21
+        sequence: read xs@21:13..21:15 : [int]
+        index: eager - : int @23:13..23:21
+          lhs: len : int @23:13..23:21
+            sequence: read xs@21:13..21:15 : [int]
+          rhs: int 1 : int @23:13..23:21
+      assignment: assign xs@21:13..21:15 : [int] @23:13..23:21
+        value: pop : [int] @23:13..23:21
+          sequence: read xs@21:13..21:15 : [int]
+      assignment: assign xs@21:13..21:15 : [int] @22:14..22:19
+        value: store : [int] @22:14..22:19
+          sequence: read xs@21:13..21:15 (assigned @23:13..23:21) : [int]
+          index: int 0 : int @22:17..22:18
+          element: field x : int @22:14..22:19
+            base: call bump@11:1..13:2 : <missing> @22:5..25:7
+              arg[0]: index : int @22:14..22:19
+                sequence: read xs@21:13..21:15 (assigned @23:13..23:21) : [int]
+                index: int 0 : int @22:17..22:18
+              arg[1]: int 5 : int @24:9..24:10
+      discard: field return : unit @22:5..25:7
+        base: call bump@11:1..13:2 : <missing> @22:5..25:7
+          arg[0]: index : int @22:14..22:19
+            sequence: read xs@21:13..21:15 (assigned @23:13..23:21) : [int]
+            index: int 0 : int @22:17..22:18
+          arg[1]: int 5 : int @24:9..24:10
+      let grid@26:13..26:17: [[int]] @26:5..26:30
+        initializer: array : [[int]] @26:20..26:30
+          element: array : [int] @26:21..26:24
+            element: int 1 : int @26:22..26:23
+          element: array : [int] @26:26..26:29
+            element: int 2 : int @26:27..26:28
+      discard: index : [int] @27:5..27:12
+        sequence: read grid@26:13..26:17 : [[int]]
+        index: int 0 : int @27:10..27:11
+      discard: index : [int] @28:13..28:23
+        sequence: read grid@26:13..26:17 : [[int]]
+        index: eager - : int @28:13..28:23
+          lhs: len : int @28:13..28:23
+            sequence: read grid@26:13..26:17 : [[int]]
+          rhs: int 1 : int @28:13..28:23
+      assignment: assign grid@26:13..26:17 : [[int]] @28:13..28:23
+        value: pop : [[int]] @28:13..28:23
+          sequence: read grid@26:13..26:17 : [[int]]
+      assignment: assign grid@26:13..26:17 : [[int]] @27:5..30:7
+        value: store : [[int]] @27:5..30:7
+          sequence: read grid@26:13..26:17 (assigned @28:13..28:23) : [[int]]
+          index: int 0 : int @27:10..27:11
+          element: push : [int] @27:5..30:7
+            sequence: index : [int] @27:5..27:12
+              sequence: read grid@26:13..26:17 (assigned @28:13..28:23) : [[int]]
+              index: int 0 : int @27:10..27:11
+            element: int 3 : int @29:9..29:10
+      discard: unit : unit @27:5..30:7
+      let ps@31:13..31:15: [P] @31:5..31:36
+        initializer: array : [P] @31:18..31:36
+          element: make P : P @31:19..31:26
+            n: int 1 : int @31:24..31:25
+          element: make P : P @31:28..31:35
+            n: int 2 : int @31:33..31:34
+      discard: index : P @32:5..32:10
+        sequence: read ps@31:13..31:15 : [P]
+        index: int 0 : int @32:8..32:9
+      discard: index : P @33:13..33:21
+        sequence: read ps@31:13..31:15 : [P]
+        index: eager - : int @33:13..33:21
+          lhs: len : int @33:13..33:21
+            sequence: read ps@31:13..31:15 : [P]
+          rhs: int 1 : int @33:13..33:21
+      assignment: assign ps@31:13..31:15 : [P] @33:13..33:21
+        value: pop : [P] @33:13..33:21
+          sequence: read ps@31:13..31:15 : [P]
+      assignment: assign ps@31:13..31:15 : [P] @32:5..32:10
+        value: store : [P] @32:5..32:10
+          sequence: read ps@31:13..31:15 (assigned @33:13..33:21) : [P]
+          index: int 0 : int @32:8..32:9
+          element: field self : P @32:5..32:10
+            base: call grow@6:5..8:6 : <missing> @32:5..35:7
+              arg[0]: index : P @32:5..32:10
+                sequence: read ps@31:13..31:15 (assigned @33:13..33:21) : [P]
+                index: int 0 : int @32:8..32:9
+              arg[1]: int 1 : int @34:9..34:10
+      discard: field return : unit @32:5..35:7
+        base: call grow@6:5..8:6 : <missing> @32:5..35:7
+          arg[0]: index : P @32:5..32:10
+            sequence: read ps@31:13..31:15 (assigned @33:13..33:21) : [P]
+            index: int 0 : int @32:8..32:9
+          arg[1]: int 1 : int @34:9..34:10
+      let rows@36:13..36:17: [[int]] @36:5..36:36
+        initializer: array : [[int]] @36:20..36:36
+          element: array : [int] @36:21..36:27
+            element: int 1 : int @36:22..36:23
+            element: int 2 : int @36:25..36:26
+          element: array : [int] @36:29..36:35
+            element: int 3 : int @36:30..36:31
+            element: int 4 : int @36:33..36:34
+      assignment: assign rows@36:13..36:17 : [[int]] @37:16..37:23
+        value: store : [[int]] @37:16..37:23
+          sequence: read rows@36:13..36:17 : [[int]]
+          index: int 0 : int @37:21..37:22
+          element: field row : [int] @37:16..37:23
+            base: call shrink@15:1..18:2 : <missing> @37:5..37:40
+              arg[0]: index : [int] @37:16..37:23
+                sequence: read rows@36:13..36:17 : [[int]]
+                index: int 0 : int @37:21..37:22
+              arg[1]: index : int @37:29..37:39
+                sequence: index : [int] @37:29..37:36
+                  sequence: read rows@36:13..36:17 : [[int]]
+                  index: int 1 : int @37:34..37:35
+                index: int 0 : int @37:37..37:38
+      assignment: assign rows@36:13..36:17 : [[int]] @37:29..37:39
+        value: store : [[int]] @37:29..37:39
+          sequence: read rows@36:13..36:17 (assigned @37:16..37:23) : [[int]]
+          index: int 1 : int @37:34..37:35
+          element: store : [int] @37:29..37:39
+            sequence: index : [int] @37:29..37:36
+              sequence: read rows@36:13..36:17 (assigned @37:16..37:23) : [[int]]
+              index: int 1 : int @37:34..37:35
+            index: int 0 : int @37:37..37:38
+            element: field other : int @37:29..37:39
+              base: call shrink@15:1..18:2 : <missing> @37:5..37:40
+                arg[0]: index : [int] @37:16..37:23
+                  sequence: read rows@36:13..36:17 : [[int]]
+                  index: int 0 : int @37:21..37:22
+                arg[1]: index : int @37:29..37:39
+                  sequence: index : [int] @37:29..37:36
+                    sequence: read rows@36:13..36:17 : [[int]]
+                    index: int 1 : int @37:34..37:35
+                  index: int 0 : int @37:37..37:38
+      discard: field return : unit @37:5..37:40
+        base: call shrink@15:1..18:2 : <missing> @37:5..37:40
+          arg[0]: index : [int] @37:16..37:23
+            sequence: read rows@36:13..36:17 : [[int]]
+            index: int 0 : int @37:21..37:22
+          arg[1]: index : int @37:29..37:39
+            sequence: index : [int] @37:29..37:36
+              sequence: read rows@36:13..36:17 : [[int]]
+              index: int 1 : int @37:34..37:35
+            index: int 0 : int @37:37..37:38
+      tail: eager + : int @38:5..38:65
+        lhs: eager + : int @38:5..38:52
+          lhs: eager + : int @38:5..38:36
+            lhs: eager + : int @38:5..38:26
+              lhs: index : int @38:5..38:10
+                sequence: read xs@21:13..21:15 (assigned @22:14..22:19) : [int]
+                index: int 0 : int @38:8..38:9
+              rhs: len : int @38:13..38:26
+                sequence: index : [int] @38:13..38:20
+                  sequence: read grid@26:13..26:17 (assigned @27:5..30:7) : [[int]]
+                  index: int 0 : int @38:18..38:19
+            rhs: field n : int @38:29..38:36
+              base: index : P @38:29..38:34
+                sequence: read ps@31:13..31:15 (assigned @32:5..32:10) : [P]
+                index: int 0 : int @38:32..38:33
+          rhs: len : int @38:39..38:52
+            sequence: index : [int] @38:39..38:46
+              sequence: read rows@36:13..36:17 (assigned @37:29..37:39) : [[int]]
+              index: int 0 : int @38:44..38:45
+        rhs: index : int @38:55..38:65
+          sequence: index : [int] @38:55..38:62
+            sequence: read rows@36:13..36:17 (assigned @37:29..37:39) : [[int]]
+            index: int 1 : int @38:60..38:61
+          index: int 0 : int @38:63..38:64

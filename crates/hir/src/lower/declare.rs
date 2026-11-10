@@ -421,8 +421,9 @@ pub(crate) fn declare<'s>(
             }
         }
     }
+    source.array = source.declare(sumi_graph::ARRAY, None, tree.root());
     // Every type parameter is declared before any type resolves, so one range of IDs holds them.
-    let first_param = DeclId::new(type_items.len());
+    let first_param = DeclId::new(type_items.len() + 1);
     let declare_params = |source: &mut Source<'s>, list: Option<ast::TypeParamList>| {
         type_params(source, list)
             .into_iter()
@@ -433,6 +434,8 @@ pub(crate) fn declare<'s>(
         .iter()
         .map(|item| declare_params(source, item.type_params(tree)))
         .collect();
+    // The sequence type's own element, which no source names.
+    let element = Ty::decl(source.declare("T", None, tree.root()));
     let fn_scopes: Vec<Vec<(&'s str, Ty)>> = fn_items
         .iter()
         .map(|(item, _)| declare_params(source, item.type_params(tree)))
@@ -451,6 +454,11 @@ pub(crate) fn declare<'s>(
             field_types: Vec::new(),
         })
         .collect();
+    source.type_items.push(TypeItem {
+        params: vec!["T"],
+        field_types: Vec::new(),
+    });
+    source.define(source.array, Vec::new(), Vec::new(), vec![element]);
     // Per type item and field, its type as written where that resolved: one without a type holds
     // nothing and names no instance.
     let mut resolved: Vec<Vec<Option<ast::Type>>> = Vec::with_capacity(type_items.len());
@@ -782,6 +790,11 @@ fn held(
             ast::Type::UnionType(union) => {
                 rest = union.lhs(tree);
                 union.rhs(tree)
+            }
+            // A sequence holds what its elements do.
+            ast::Type::ArrayType(array) => {
+                rest = array.element(tree);
+                None
             }
         };
         let Some(named) = named else { continue };

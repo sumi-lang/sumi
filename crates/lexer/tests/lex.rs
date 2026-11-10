@@ -144,7 +144,7 @@ fn unused_punctuation_is_an_error_token() {
             r#"RParen 2..3 ")""#,
         ],
     );
-    check("[", &[r#"Error 0..1 "[""#]);
+    check("@", &[r#"Error 0..1 "@""#]);
     assert_eq!(
         lex("(;)").unwrap().errors(),
         &[error(1, 1, 2, LexErrorKind::UnknownPunctuation)],

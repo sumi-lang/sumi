@@ -1,0 +1,26 @@
+file: accepted
+optimized: nodes 246 of 388, regions 23 of 29, calls 15 of 19
+
+== functions ==
+fn build = [1, 2, 3]
+  steps: 12, optimized steps: 7, depth: 1, bound: 1
+fn nested = 16
+  steps: 37, optimized steps: 33, depth: 1, bound: 1
+fn records = 19
+  steps: 31, optimized steps: 27, depth: 1, bound: 1
+fn places = 331
+  steps: 47, optimized steps: 36, depth: 2, bound: 2
+fn pops = 112
+  steps: 28, optimized steps: 18, depth: 1, bound: 1
+fn empty = []
+  steps: 2, optimized steps: 1, depth: 1, bound: 1
+fn boxed = Box<[int]>([])
+  steps: 3, optimized steps: 2, depth: 1, bound: 1
+fn loops = 4
+  steps: 25, optimized steps: 20, depth: 1, bound: 1
+fn methods = 23
+  steps: 52, optimized steps: 1, depth: 2, bound: 2
+fn values = [[1, 2, 3], [5, 5], [], [1], [0, 0, 2, 3]]
+  steps: 75, optimized steps: 47, depth: 2, bound: 2
+fn total = 508
+  steps: 248, optimized steps: 156, depth: 3, bound: 3

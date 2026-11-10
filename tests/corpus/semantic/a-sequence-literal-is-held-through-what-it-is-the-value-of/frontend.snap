@@ -1,0 +1,51 @@
+tree: omitted
+
+== formatted ==
+type Stack<T> {
+    items: [T],
+}
+
+impl Stack<T> {
+    fn put(mut self, x: T) {
+        self.items.push(x)
+    }
+
+    fn fill<U>(mut self, x: [T], u: U) -> U {
+        self.items = x
+        u
+    }
+}
+
+fn pick<U>(xs: [int], u: U) -> U = u
+
+fn f() -> [int] {
+    let a = 1
+    []
+}
+
+fn h() -> [int] = ([])
+
+fn g(c: bool) -> [int] {
+    if c {
+        []
+    } else {
+        [1]
+    }
+}
+
+fn k(c: bool) -> int {
+    let xs: [int] = if c {
+        []
+    } else {
+        [1]
+    }
+    let ys: [[int]] = [[], [2]]
+    xs.len() + ys.len()
+}
+
+fn main() -> int {
+    let mut s = Stack<[int]>(items: [[1]])
+    s.put([])
+    let n = s.fill([], 1)
+    f().len() + h().len() + g(true).len() + k(false) + pick([], 4) + n + s.items.len()
+}

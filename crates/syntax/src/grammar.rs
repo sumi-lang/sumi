@@ -106,7 +106,14 @@ pub fn starts_expression(kind: SyntaxKind) -> bool {
         || is_prefix_operator(kind)
         || matches!(
             kind,
-            T::Ident | T::SelfKw | T::IfKw | T::ForKw | T::MatchKw | T::LParen | T::LBrace
+            T::Ident
+                | T::SelfKw
+                | T::IfKw
+                | T::ForKw
+                | T::MatchKw
+                | T::LParen
+                | T::LBrace
+                | T::LBracket
         )
 }
 
@@ -123,7 +130,14 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
     is_literal(kind)
         || matches!(
             kind,
-            T::Ident | T::SelfKw | T::ReturnKw | T::Underscore | T::RParen | T::RBrace | T::Error
+            T::Ident
+                | T::SelfKw
+                | T::ReturnKw
+                | T::Underscore
+                | T::RParen
+                | T::RBrace
+                | T::RBracket
+                | T::Error
         )
 }
 
@@ -148,6 +162,7 @@ pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool 
 pub enum Pair {
     Paren,
     Brace,
+    Bracket,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -157,12 +172,13 @@ pub enum Side {
 }
 
 impl Pair {
-    pub(crate) const ALL: [Self; 2] = [Self::Paren, Self::Brace];
+    pub(crate) const ALL: [Self; 3] = [Self::Paren, Self::Brace, Self::Bracket];
 
     pub fn opener(self) -> Fixed {
         match self {
             Self::Paren => Fixed::LParen,
             Self::Brace => Fixed::LBrace,
+            Self::Bracket => Fixed::LBracket,
         }
     }
 
@@ -170,13 +186,14 @@ impl Pair {
         match self {
             Self::Paren => Fixed::RParen,
             Self::Brace => Fixed::RBrace,
+            Self::Bracket => Fixed::RBracket,
         }
     }
 
     /// Whether a line break inside ends a statement.
     pub fn encloses_statements(self) -> bool {
         match self {
-            Self::Paren => false,
+            Self::Paren | Self::Bracket => false,
             Self::Brace => true,
         }
     }
@@ -186,6 +203,7 @@ impl Pair {
         match self {
             Self::Paren => 0,
             Self::Brace => 1,
+            Self::Bracket => 2,
         }
     }
 }

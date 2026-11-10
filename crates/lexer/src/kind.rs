@@ -142,6 +142,8 @@ tokens! {
 
     LParen: punct '(',
     RParen: punct ')',
+    LBracket: punct '[',
+    RBracket: punct ']',
     LBrace: punct '{',
     RBrace: punct '}',
     Comma: punct ',',

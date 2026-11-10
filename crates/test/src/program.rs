@@ -101,6 +101,10 @@ fn type_text() -> BoxedStrategy<String> {
             "P<int>",
             "Q<T, bool,>",
             "P<> | Q<P<U> | Q>",
+            "[int]",
+            "[[P]]",
+            "Q<[T]>",
+            "[P | Q]",
         ][..],
     )
     .prop_map(str::to_owned)
@@ -152,7 +156,7 @@ fn signature_tail(
 
 /// What a call calls: a name, or a method of a receiver, which may stand on the line before.
 fn callee() -> BoxedStrategy<String> {
-    let receiver = prop::sample::select(&["a", "self", "foo.b", "x1()", "(a)"][..]);
+    let receiver = prop::sample::select(&["a", "self", "foo.b", "x1()", "(a)", "a[0]"][..]);
     prop_oneof![
         2 => name(),
         1 => (receiver, any::<bool>(), name()).prop_map(|(receiver, leading, method)| {
@@ -205,6 +209,18 @@ fn expr() -> BoxedStrategy<String> {
                 }),
             1 => (name(), prop::collection::vec(name(), 1..3))
                 .prop_map(|(base, fields)| format!("{base}.{}", fields.join("."))),
+            1 => (prop::sample::select(&["a", "foo.b", "x1()", "[a]"][..]), expr.clone())
+                .prop_map(|(base, index)| format!("{base}[{index}]")),
+            1 => (prop::collection::vec(expr.clone(), 0..3), any::<bool>(), any::<bool>()).prop_map(
+                |(elements, trailing, multiline)| {
+                    let comma = if trailing && !elements.is_empty() { "," } else { "" };
+                    if multiline && !elements.is_empty() {
+                        format!("[\n  {}{comma}\n]", elements.join(",\n  "))
+                    } else {
+                        format!("[{}{comma}]", elements.join(", "))
+                    }
+                },
+            ),
             2 => (
                 expr.clone(),
                 prop::collection::vec(

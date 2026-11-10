@@ -1,0 +1,161 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn put<T>@7:5..9:6 (Stack<T> ∈ ∅, T ∈ ∅) -> unit ∈ ∅
+  param self@7:16..7:20: Stack<T>
+  param x@7:22..7:23: T
+  body:
+    assignment: assign self@7:16..7:20 : Stack<T> @8:9..8:27
+      value: make Stack : Stack<T> @8:9..8:27
+        items: push : [T] @8:9..8:27
+          sequence: field items : [T] @8:9..8:19
+            base: read self@7:16..7:20 : Stack<T>
+          element: read x@7:22..7:23 : T
+    tail: make <missing> : <missing> @8:9..8:27
+
+fn fill<T, U>@11:5..14:6 (Stack<T> ∈ ∅, [T] ∈ ∅, U ∈ ∅) -> U ∈ ∅
+  param self@11:20..11:24: Stack<T>
+  param x@11:26..11:27: [T]
+  param u@11:34..11:35: U
+  body:
+    assignment: assign self@11:20..11:24 : Stack<T> @12:9..12:23
+      value: make Stack : Stack<T> @12:9..12:23
+        items: read x@11:26..11:27 : [T]
+    tail: make <missing> : <missing> @13:9..13:10
+
+fn pick<U>@17:1..17:37 ([int] ∈ ∅, U ∈ ∅) -> U ∈ ∅
+  param xs@17:12..17:14: [int]
+  param u@17:23..17:24: U
+  result: copy : U @17:32..17:33
+    value: read u@17:23..17:24 : U
+
+fn f@19:1..22:2 () -> [int] ∈ [∅; [0, 0]]
+  result: copy : [int] @19:11..19:16
+    value:
+      let a@20:9..20:10: int @20:5..20:14
+        initializer: int 1 : int @20:13..20:14
+      tail: array : [int] @21:5..21:7
+
+fn h@24:1..24:23 () -> [int] ∈ [∅; [0, 0]]
+  result: copy : [int] @24:11..24:16
+    value: array : [int] @24:20..24:22
+
+fn g@26:1..32:2 (bool ∈ {true}) -> [int] ∈ [∅; [0, 0]]
+  param c@26:6..26:7: bool
+  result: copy : [int] @26:18..26:23
+    value: if : [int] @27:5..31:6
+      scrutinee: read c@26:6..26:7 : bool
+      then: array : [int] @28:9..28:11
+      else: array : [int] @30:9..30:12
+        element: int 1 : int @30:10..30:11
+
+fn k@34:1..38:2 (bool ∈ {false}) -> int ∈ [3, 3]
+  param c@34:6..34:7: bool
+  result: copy : int @34:18..34:21
+    value:
+      let xs@35:9..35:11: [int] @35:5..35:45
+        initializer: if : [int] @35:21..35:45
+          scrutinee: read c@34:6..34:7 : bool
+          then: array : [int] @35:28..35:30
+          else: array : [int] @35:40..35:43
+            element: int 1 : int @35:41..35:42
+      let ys@36:9..36:11: [[int]] @36:5..36:32
+        initializer: array : [[int]] @36:23..36:32
+          element: array : [int] @36:24..36:26
+          element: array : [int] @36:28..36:31
+            element: int 2 : int @36:29..36:30
+      tail: eager + : int @37:5..37:24
+        lhs: len : int @37:5..37:13
+          sequence: read xs@35:9..35:11 : [int]
+        rhs: len : int @37:16..37:24
+          sequence: read ys@36:9..36:11 : [[int]]
+
+fn main@40:1..45:2 () -> int ∈ [8, 8]
+  result: copy : int @40:14..40:17
+    value:
+      let s@41:13..41:14: Stack<[int]> @41:5..41:43
+        initializer: make Stack : Stack<[int]> @41:17..41:43
+          items: array : [[int]] @41:37..41:42
+            element: array : [int] @41:38..41:41
+              element: int 1 : int @41:39..41:40
+      assignment: assign s@41:13..41:14 : Stack<[int]> @42:5..42:6
+        value: field self : Stack<[int]> @42:5..42:6
+          base: call put@7:5..9:6 : <missing> @42:5..42:14
+            arg[0]: read s@41:13..41:14 : Stack<[int]>
+            arg[1]: array : [int] @42:11..42:13
+      discard: field return : unit @42:5..42:14
+        base: call put@7:5..9:6 : <missing> @42:5..42:14
+          arg[0]: read s@41:13..41:14 : Stack<[int]>
+          arg[1]: array : [int] @42:11..42:13
+      assignment: assign s@41:13..41:14 : Stack<[int]> @43:13..43:14
+        value: field self : Stack<[int]> @43:13..43:14
+          base: call fill@11:5..14:6 : <missing> @43:13..43:26
+            arg[0]: read s@41:13..41:14 (assigned @42:5..42:6) : Stack<[int]>
+            arg[1]: array : [[int]] @43:20..43:22
+            arg[2]: int 1 : int @43:24..43:25
+      let n@43:9..43:10: int @43:5..43:26
+        initializer: field return : int @43:13..43:26
+          base: call fill@11:5..14:6 : <missing> @43:13..43:26
+            arg[0]: read s@41:13..41:14 (assigned @42:5..42:6) : Stack<[int]>
+            arg[1]: array : [[int]] @43:20..43:22
+            arg[2]: int 1 : int @43:24..43:25
+      tail: eager + : int @44:5..44:87
+        lhs: eager + : int @44:5..44:71
+          lhs: eager + : int @44:5..44:67
+            lhs: eager + : int @44:5..44:53
+              lhs: eager + : int @44:5..44:42
+                lhs: eager + : int @44:5..44:26
+                  lhs: len : int @44:5..44:14
+                    sequence: call f@19:1..22:2 : [int] @44:5..44:8
+                  rhs: len : int @44:17..44:26
+                    sequence: call h@24:1..24:23 : [int] @44:17..44:20
+                rhs: len : int @44:29..44:42
+                  sequence: call g@26:1..32:2 : [int] @44:29..44:36
+                    arg[0]: bool true : bool @44:31..44:35
+              rhs: call k@34:1..38:2 : int @44:45..44:53
+                arg[0]: bool false : bool @44:47..44:52
+            rhs: call pick@17:1..17:37 : int @44:56..44:67
+              arg[0]: array : [int] @44:61..44:63
+              arg[1]: int 4 : int @44:65..44:66
+          rhs: read n@43:9..43:10 : int
+        rhs: len : int @44:74..44:87
+          sequence: field items : [[int]] @44:74..44:81
+            base: read s@41:13..41:14 (assigned @43:13..43:14) : Stack<[int]>
+
+fn put<[int]>@7:5..9:6 (Stack<[int]> ∈ Stack<[int]>([[[1, 1]; [1, 1]]; [1, 1]]), [int] ∈ [∅; [0, 0]]) -> unit ∈ unit
+  param self@7:16..7:20: Stack<[int]>
+  param x@7:22..7:23: [int]
+  body:
+    assignment: assign self@7:16..7:20 : Stack<[int]> @8:9..8:27
+      value: make Stack : Stack<[int]> @8:9..8:27
+        items: push : [[int]] @8:9..8:27
+          sequence: field items : [[int]] @8:9..8:19
+            base: read self@7:16..7:20 : Stack<[int]>
+          element: read x@7:22..7:23 : [int]
+    tail: make <missing> : <missing> @8:9..8:27
+
+fn fill<[int], int>@11:5..14:6 (Stack<[int]> ∈ Stack<[int]>([[[1, 1]; [0, 1]]; [2, 2]]), [[int]] ∈ [∅; [0, 0]], int ∈ [1, 1]) -> int ∈ [1, 1]
+  param self@11:20..11:24: Stack<[int]>
+  param x@11:26..11:27: [[int]]
+  param u@11:34..11:35: int
+  body:
+    assignment: assign self@11:20..11:24 : Stack<[int]> @12:9..12:23
+      value: make Stack : Stack<[int]> @12:9..12:23
+        items: read x@11:26..11:27 : [[int]]
+    tail: make <missing> : <missing> @13:9..13:10
+
+fn pick<int>@17:1..17:37 ([int] ∈ [∅; [0, 0]], int ∈ [4, 4]) -> int ∈ [4, 4]
+  param xs@17:12..17:14: [int]
+  param u@17:23..17:24: int
+  result: copy : int @17:32..17:33
+    value: read u@17:23..17:24 : int
+
+== semantic diagnostics ==
+warning[semantic/unused-name] 17:12..17:14 "xs": parameter `xs` is never read
+  fix: prefix the name with `_`
+    17:12 -> "_"
+warning[semantic/unused-name] 20:9..20:10 "a": local `a` is never read
+  fix: prefix the name with `_`
+    20:9 -> "_"

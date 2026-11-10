@@ -493,7 +493,11 @@ grammar! {
     struct Name {}
     tokens { Ident }
 
-    enum Type as CleanType { TypeRef, UnionType }
+    enum Type as CleanType { TypeRef, UnionType, ArrayType }
+
+    /// `'[' element:Type ']'`: a sequence of the element type.
+    struct ArrayType { element: Type }
+    tokens { LBracket, RBracket }
 
     /// `Ident TypeArgList?`.
     struct TypeRef { type_args: Option<TypeArgList> }
@@ -536,6 +540,8 @@ grammar! {
         CallExpr,
         MethodCallExpr,
         FieldExpr,
+        ArrayExpr,
+        IndexExpr,
         IfExpr,
         MatchExpr,
         ForExpr,
@@ -581,6 +587,17 @@ grammar! {
     /// `base:Expr '.' field:NameRef`.
     struct FieldExpr { base: Expr, field: NameRef }
     tokens { Dot }
+
+    /// `'[' (Expr (',' Expr)* ','?)? ']'`: a sequence of its elements.
+    struct ArrayExpr { elements: [Expr] }
+    tokens { LBracket, Comma?, RBracket }
+
+    /// `base:Expr Subscript`: the element of `base` at the subscript's index.
+    struct IndexExpr { base: Expr, subscript: Subscript }
+
+    /// `'[' index:Expr ']'`, its `[` on the line of what it follows.
+    struct Subscript { index: Expr }
+    tokens { LBracket, RBracket }
 
     /// `'if' condition:Expr then_branch:Block ('else' else_branch:ElseBranch)?`.
     struct IfExpr { condition: Expr, then_branch: Block, else_branch: Option<ElseBranch> }

@@ -1,0 +1,226 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn grow@6:5..8:6 (P ∈ P([1, 1]), int ∈ [1, 1]) -> unit ∈ unit
+  param self@6:17..6:21: P
+  param by@6:23..6:25: int
+  body:
+    assignment: assign self@6:17..6:21 : P @7:9..7:21
+      value: make P : P @7:9..7:21
+        n: eager + : int @7:9..7:21
+          lhs: field n : int @7:9..7:15
+            base: read self@6:17..6:21 : P
+          rhs: read by@6:23..6:25 : int
+    tail: make <missing> : <missing> @6:32..8:6
+
+fn get@10:5..10:33 (P ∈ P([1, 2])) -> int ∈ [1, 2]
+  param self@10:12..10:16: P
+  result: copy : int @10:21..10:24
+    value: field n : int @10:27..10:33
+      base: read self@10:12..10:16 : P
+
+fn bump@13:1..15:2 (int ∈ [1, 7]) -> unit ∈ unit
+  param x@13:13..13:14: int
+  body:
+    assignment: assign x@13:13..13:14 : int @14:5..14:11
+      value: eager + : int @14:5..14:11
+        lhs: read x@13:13..13:14 : int
+        rhs: int 1 : int @14:10..14:11
+    tail: make <missing> : <missing> @13:21..15:2
+
+fn a@17:1..21:2 (bool ∈ {true, false}) -> int ∈ [1, 7]
+  param c@17:6..17:7: bool
+  result: result : int @17:18..17:21
+    outcome[0]:
+      let xs@18:13..18:15: [int] @18:5..18:24
+        initializer: array : [int] @18:18..18:24
+          element: int 1 : int @18:19..18:20
+          element: int 2 : int @18:22..18:23
+      discard: after : ? @19:8..19:36
+        control: observe : ? @19:8..19:36
+        context: entry : ? @17:1..21:2
+      assignment: assign xs@18:13..18:15 : [int] @19:5..19:41
+        value: store : [int] @19:5..19:41
+          sequence: read xs@18:13..18:15 : [int]
+          index: if : int @19:8..19:36
+            scrutinee: read c@17:6..17:7 : bool
+            then: unit : unit @19:13..19:25
+            else: int 0 : int @19:33..19:34
+          element: int 5 : int @19:40..19:41
+      tail: index : int @20:5..20:10
+        sequence: read xs@18:13..18:15 (assigned @19:5..19:41) : [int]
+        index: int 0 : int @20:8..20:9
+    outcome[1]: return : int @19:15..19:23
+      payload: int 7 : int @19:22..19:23
+
+fn b@23:1..28:2 (bool ∈ {true, false}) -> int ∈ [2, 16]
+  param c@23:6..23:7: bool
+  result: result : int @23:18..23:21
+    outcome[0]:
+      let xs@24:13..24:15: [int] @24:5..24:24
+        initializer: array : [int] @24:18..24:24
+          element: int 1 : int @24:19..24:20
+          element: int 2 : int @24:22..24:23
+      assignment: assign xs@24:13..24:15 : [int] @25:5..25:42
+        value: store : [int] @25:5..25:42
+          sequence: read xs@24:13..24:15 : [int]
+          index: if : int @25:8..25:36
+            scrutinee: read c@23:6..23:7 : bool
+            then: unit : unit @25:13..25:25
+            else: int 0 : int @25:33..25:34
+          element: eager + : int @25:5..25:42
+            lhs: index : int @25:5..25:37
+              sequence: read xs@24:13..24:15 : [int]
+              index: if : int @25:8..25:36
+                scrutinee: read c@23:6..23:7 : bool
+                then: unit : unit @25:13..25:25
+                else: int 0 : int @25:33..25:34
+            rhs: int 5 : int @25:41..25:42
+      discard: after : ? @26:17..26:45
+        control: observe : ? @26:17..26:45
+        context: after : ? @25:8..25:36
+          control: observe : ? @25:8..25:36
+          context: entry : ? @23:1..28:2
+      assignment: assign xs@24:13..24:15 : [int] @26:14..26:46
+        value: store : [int] @26:14..26:46
+          sequence: read xs@24:13..24:15 (assigned @25:5..25:42) : [int]
+          index: if : int @26:17..26:45
+            scrutinee: read c@23:6..23:7 [is false] : bool
+            then: unit : unit @26:22..26:34
+            else: int 1 : int @26:42..26:43
+          element: field x : int @26:14..26:46
+            base: call bump@13:1..15:2 : <missing> @26:5..26:47
+              arg[0]: index : int @26:14..26:46
+                sequence: read xs@24:13..24:15 (assigned @25:5..25:42) : [int]
+                index: if : int @26:17..26:45
+                  scrutinee: read c@23:6..23:7 [is false] : bool
+                  then: unit : unit @26:22..26:34
+                  else: int 1 : int @26:42..26:43
+      discard: field return : unit @26:5..26:47
+        base: call bump@13:1..15:2 : <missing> @26:5..26:47
+          arg[0]: index : int @26:14..26:46
+            sequence: read xs@24:13..24:15 (assigned @25:5..25:42) : [int]
+            index: if : int @26:17..26:45
+              scrutinee: read c@23:6..23:7 [is false] : bool
+              then: unit : unit @26:22..26:34
+              else: int 1 : int @26:42..26:43
+      tail: eager + : int @27:5..27:18
+        lhs: index : int @27:5..27:10
+          sequence: read xs@24:13..24:15 (assigned @26:14..26:46) : [int]
+          index: int 0 : int @27:8..27:9
+        rhs: index : int @27:13..27:18
+          sequence: read xs@24:13..24:15 (assigned @26:14..26:46) : [int]
+          index: int 1 : int @27:16..27:17
+    outcome[1]: return : int @25:15..25:23
+      payload: int 7 : int @25:22..25:23
+    outcome[2]: return : int @26:24..26:32
+      payload: int 8 : int @26:31..26:32
+
+fn d@30:1..36:2 (bool ∈ {true, false}) -> int ∈ [2, 9]
+  param c@30:6..30:7: bool
+  result: result : int @30:18..30:21
+    outcome[0]:
+      let ps@31:13..31:15: [P] @31:5..31:27
+        initializer: array : [P] @31:18..31:27
+          element: make P : P @31:19..31:26
+            n: int 1 : int @31:24..31:25
+      assignment: assign ps@31:13..31:15 : [P] @32:5..32:37
+        value: store : [P] @32:5..32:37
+          sequence: read ps@31:13..31:15 : [P]
+          index: if : int @32:8..32:36
+            scrutinee: read c@30:6..30:7 : bool
+            then: unit : unit @32:13..32:25
+            else: int 0 : int @32:33..32:34
+          element: field self : P @32:5..32:37
+            base: call grow@6:5..8:6 : <missing> @32:5..32:45
+              arg[0]: index : P @32:5..32:37
+                sequence: read ps@31:13..31:15 : [P]
+                index: if : int @32:8..32:36
+                  scrutinee: read c@30:6..30:7 : bool
+                  then: unit : unit @32:13..32:25
+                  else: int 0 : int @32:33..32:34
+              arg[1]: int 1 : int @32:43..32:44
+      discard: field return : unit @32:5..32:45
+        base: call grow@6:5..8:6 : <missing> @32:5..32:45
+          arg[0]: index : P @32:5..32:37
+            sequence: read ps@31:13..31:15 : [P]
+            index: if : int @32:8..32:36
+              scrutinee: read c@30:6..30:7 : bool
+              then: unit : unit @32:13..32:25
+              else: int 0 : int @32:33..32:34
+          arg[1]: int 1 : int @32:43..32:44
+      let qs@33:13..33:15: [[int]] @33:5..33:23
+        initializer: array : [[int]] @33:18..33:23
+          element: array : [int] @33:19..33:22
+            element: int 1 : int @33:20..33:21
+      assignment: assign qs@33:13..33:15 : [[int]] @34:5..34:46
+        value: store : [[int]] @34:5..34:46
+          sequence: read qs@33:13..33:15 : [[int]]
+          index: if : int @34:8..34:37
+            scrutinee: read c@30:6..30:7 [is false] : bool
+            then: unit : unit @34:13..34:26
+            else: int 0 : int @34:34..34:35
+          element: push : [int] @34:5..34:46
+            sequence: index : [int] @34:5..34:38
+              sequence: read qs@33:13..33:15 : [[int]]
+              index: if : int @34:8..34:37
+                scrutinee: read c@30:6..30:7 [is false] : bool
+                then: unit : unit @34:13..34:26
+                else: int 0 : int @34:34..34:35
+            element: int 3 : int @34:44..34:45
+      discard: unit : unit @34:5..34:46
+      discard: after : ? @35:8..35:37
+        control: observe : ? @35:8..35:37
+        context: after : ? @34:8..34:37
+          control: observe : ? @34:8..34:37
+          context: after : ? @32:8..32:36
+            control: observe : ? @32:8..32:36
+            context: entry : ? @30:1..36:2
+      tail: eager + : int @35:5..35:58
+        lhs: call get@10:5..10:33 : int @35:5..35:44
+          arg[0]: index : P @35:5..35:38
+            sequence: read ps@31:13..31:15 (assigned @32:5..32:37) : [P]
+            index: if : int @35:8..35:37
+              scrutinee: read c@30:6..30:7 [is false, is false] : bool
+              then: unit : unit @35:13..35:26
+              else: int 0 : int @35:34..35:35
+        rhs: len : int @35:47..35:58
+          sequence: index : [int] @35:47..35:52
+            sequence: read qs@33:13..33:15 (assigned @34:5..34:46) : [[int]]
+            index: int 0 : int @35:50..35:51
+    outcome[1]: return : int @32:15..32:23
+      payload: int 9 : int @32:22..32:23
+    outcome[2]: return : int @34:15..34:24
+      payload: int 10 : int @34:22..34:24
+    outcome[3]: return : int @35:15..35:24
+      payload: int 11 : int @35:22..35:24
+
+fn main@38:1..38:80 () -> int ∈ [10, 64]
+  result: copy : int @38:14..38:17
+    value: eager + : int @38:20..38:80
+      lhs: eager + : int @38:20..38:69
+        lhs: eager + : int @38:20..38:59
+          lhs: eager + : int @38:20..38:48
+            lhs: eager + : int @38:20..38:38
+              lhs: call a@17:1..21:2 : int @38:20..38:27
+                arg[0]: bool true : bool @38:22..38:26
+              rhs: call a@17:1..21:2 : int @38:30..38:38
+                arg[0]: bool false : bool @38:32..38:37
+            rhs: call b@23:1..28:2 : int @38:41..38:48
+              arg[0]: bool true : bool @38:43..38:47
+          rhs: call b@23:1..28:2 : int @38:51..38:59
+            arg[0]: bool false : bool @38:53..38:58
+        rhs: call d@30:1..36:2 : int @38:62..38:69
+          arg[0]: bool true : bool @38:64..38:68
+      rhs: call d@30:1..36:2 : int @38:72..38:80
+        arg[0]: bool false : bool @38:74..38:79
+
+== semantic diagnostics ==
+warning[semantic/constant-condition] 26:20..26:21 "c": condition is always false
+  at 26:22..26:34 "{ return 8 }": this branch never runs
+warning[semantic/constant-condition] 34:11..34:12 "c": condition is always false
+  at 34:13..34:26 "{ return 10 }": this branch never runs
+warning[semantic/constant-condition] 35:11..35:12 "c": condition is always false
+  at 35:13..35:26 "{ return 11 }": this branch never runs

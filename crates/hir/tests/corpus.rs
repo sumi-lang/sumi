@@ -465,6 +465,12 @@ fn dump_header(
         Op::Result { .. } => "result".into(),
         Op::Make(decl) => format!("make {}", Names::decl(analysis, *decl)),
         Op::Field(name) => format!("field {}", Names::field(analysis, *name)),
+        Op::Array(_) => "array".into(),
+        Op::Len => "len".into(),
+        Op::Index => "index".into(),
+        Op::Store => "store".into(),
+        Op::Push => "push".into(),
+        Op::Pop => "pop".into(),
     };
     writeln!(
         out,
@@ -505,6 +511,22 @@ fn dump_definition(
         }
         Op::Copy { .. } | Op::Assign => dump_node(analysis, shape, "value", inputs[0], child, out),
         Op::Field(_) => dump_node(analysis, shape, "base", inputs[0], child, out),
+        Op::Array(_) => {
+            for &input in inputs {
+                dump_node(analysis, shape, "element", input, child, out);
+            }
+        }
+        Op::Len | Op::Index | Op::Store | Op::Push | Op::Pop => {
+            let roles = match entry.op {
+                Op::Index => &["sequence", "index"][..],
+                Op::Store => &["sequence", "index", "element"],
+                Op::Push => &["sequence", "element"],
+                _ => &["sequence"],
+            };
+            for (role, &input) in roles.iter().zip(inputs) {
+                dump_node(analysis, shape, role, input, child, out);
+            }
+        }
         Op::Make(decl) => {
             for (field, &input) in analysis.decl(*decl).fields().iter().zip(inputs) {
                 dump_node(analysis, shape, field.text(), input, child, out);

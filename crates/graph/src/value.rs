@@ -3,11 +3,15 @@
 use std::fmt;
 use std::sync::Arc;
 
-use crate::{ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, FieldName, Int, Names, Op, Ty, Unions};
+use crate::{
+    ARRAY, ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, FieldName, Int, Names, Op, Ty, Unions,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Fault {
     Division,
+    /// An index outside its sequence, or the last element of an empty one.
+    Bounds,
     Type,
 }
 
@@ -34,6 +38,16 @@ pub trait Domain: Clone {
     fn field(&self, name: FieldName, decls: &[Decl], unions: &Unions) -> Result<Self, Self::Fault>;
     /// `self` narrowed to the values of `ty`.
     fn narrow(&self, ty: Ty, unions: &Unions) -> Self;
+    /// A sequence of `decl` from its elements, in order.
+    fn array(decl: DeclId, elements: Vec<Self>) -> Self;
+    fn length(&self) -> Result<Self, Self::Fault>;
+    /// The element of `self` at `index`, which faults outside it.
+    fn index(&self, index: &Self, decls: &[Decl], unions: &Unions) -> Result<Self, Self::Fault>;
+    /// `self` with the element at `index`, which faults outside it, replaced by `value`.
+    fn store(&self, index: &Self, value: &Self) -> Result<Self, Self::Fault>;
+    fn push(&self, value: &Self) -> Result<Self, Self::Fault>;
+    /// `self` without its last element, which faults on an empty one.
+    fn pop(&self) -> Result<Self, Self::Fault>;
 }
 
 impl Op {
@@ -60,6 +74,14 @@ impl Op {
             Self::Binary(op) => D::binary(*op, inputs[0], inputs[1])?,
             Self::Make(decl) => D::make(*decl, inputs.iter().map(|&input| input.clone()).collect()),
             Self::Field(name) => inputs[0].field(*name, decls, unions)?,
+            Self::Array(decl) => {
+                D::array(*decl, inputs.iter().map(|&input| input.clone()).collect())
+            }
+            Self::Len => inputs[0].length()?,
+            Self::Index => inputs[0].index(inputs[1], decls, unions)?,
+            Self::Store => inputs[0].store(inputs[1], inputs[2])?,
+            Self::Push => inputs[0].push(inputs[1])?,
+            Self::Pop => inputs[0].pop()?,
             Self::Param { .. }
             | Self::LoopIndex
             | Self::Carry
@@ -106,9 +128,26 @@ impl Record {
         self.0.decl
     }
 
-    /// The fields in declaration order.
+    /// The fields in declaration order; of a sequence, its elements in theirs.
     pub fn fields(&self) -> &[Value] {
         &self.0.fields
+    }
+
+    /// The position `index` names among the elements, when it is one of theirs.
+    fn position(&self, index: &Value) -> Result<usize, Fault> {
+        let Value::Int(index) = index else {
+            return Err(Fault::Type);
+        };
+        let position = i64::try_from(index)
+            .ok()
+            .and_then(|at| usize::try_from(at).ok());
+        position
+            .filter(|&at| at < self.fields().len())
+            .ok_or(Fault::Bounds)
+    }
+
+    fn with(&self, fields: Vec<Value>) -> Value {
+        Value::record(self.decl(), fields)
     }
 }
 
@@ -162,14 +201,19 @@ impl fmt::Display for ShownValue<'_> {
             Value::Bool(value) => write!(f, "{value}"),
             Value::Unit => f.write_str("unit"),
             Value::Decl(record) => {
-                write!(f, "{}(", Ty::decl(record.decl()).shown(self.1))?;
+                let is_array = self.1.decl(record.decl()) == ARRAY;
+                if is_array {
+                    f.write_str("[")?;
+                } else {
+                    write!(f, "{}(", Ty::decl(record.decl()).shown(self.1))?;
+                }
                 for (index, field) in record.fields().iter().enumerate() {
                     if index > 0 {
                         f.write_str(", ")?;
                     }
                     write!(f, "{}", field.shown(self.1))?;
                 }
-                f.write_str(")")
+                f.write_str(if is_array { "]" } else { ")" })
             }
         }
     }
@@ -261,6 +305,51 @@ impl Domain for Value {
 
     fn narrow(&self, _: Ty, _: &Unions) -> Self {
         self.clone()
+    }
+
+    fn array(decl: DeclId, elements: Vec<Self>) -> Self {
+        Self::record(decl, elements)
+    }
+
+    fn length(&self) -> Result<Self, Fault> {
+        match self {
+            Self::Decl(record) => Ok(Self::Int(Int::from(record.fields().len() as i64))),
+            _ => Err(Fault::Type),
+        }
+    }
+
+    fn index(&self, index: &Self, _: &[Decl], _: &Unions) -> Result<Self, Fault> {
+        match self {
+            Self::Decl(record) => Ok(record.fields()[record.position(index)?].clone()),
+            _ => Err(Fault::Type),
+        }
+    }
+
+    fn store(&self, index: &Self, value: &Self) -> Result<Self, Fault> {
+        let Self::Decl(record) = self else {
+            return Err(Fault::Type);
+        };
+        let position = record.position(index)?;
+        let mut elements = record.fields().to_vec();
+        elements[position] = value.clone();
+        Ok(record.with(elements))
+    }
+
+    fn push(&self, value: &Self) -> Result<Self, Fault> {
+        let Self::Decl(record) = self else {
+            return Err(Fault::Type);
+        };
+        let mut elements = record.fields().to_vec();
+        elements.push(value.clone());
+        Ok(record.with(elements))
+    }
+
+    fn pop(&self) -> Result<Self, Fault> {
+        let Self::Decl(record) = self else {
+            return Err(Fault::Type);
+        };
+        let (_, rest) = record.fields().split_last().ok_or(Fault::Bounds)?;
+        Ok(record.with(rest.to_vec()))
     }
 }
 

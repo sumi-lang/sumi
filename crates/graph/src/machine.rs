@@ -100,6 +100,7 @@ struct Frame<'a> {
 pub enum Refusal {
     Hole(NodeId),
     Division(NodeId),
+    Bounds(NodeId),
     Type(NodeId),
     /// A call with other than one argument per parameter.
     Arity(NodeId),
@@ -110,6 +111,7 @@ impl Refusal {
     fn of(fault: Fault, node: NodeId) -> Self {
         match fault {
             Fault::Division => Self::Division(node),
+            Fault::Bounds => Self::Bounds(node),
             Fault::Type => Self::Type(node),
         }
     }

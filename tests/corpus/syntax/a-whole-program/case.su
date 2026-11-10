@@ -103,3 +103,10 @@ fn methods() -> int {
     p.shift(3)
     Box(value: p).with<Point>(p).value.sum()
 }
+
+fn sequences(grid: [[int]]) -> [int] {
+    let mut xs: [int] = []
+    xs.push(grid[0][0])
+    xs[0] += [1, 2, 3].len()
+    [xs.pop(), xs.len()]
+}

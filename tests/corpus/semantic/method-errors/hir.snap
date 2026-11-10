@@ -243,7 +243,7 @@ error[semantic/invalid-self] 48:14..48:18 "self": `self` is a method's receiver,
 error[semantic/immutable-assignment] 52:5..52:6 "p": `shift` changes its receiver, and `p` is immutable
   at 50:9..50:10 "p": declared here
   at 13:14..13:22 "mut self": the receiver is `mut` here
-error[semantic/invalid-assignment-target] 53:5..53:22 "Point(x: 1, y: 2)": `shift` changes its receiver, which is no place: a place is a `mut` name, or a field under one
+error[semantic/invalid-assignment-target] 53:5..53:22 "Point(x: 1, y: 2)": `shift` changes its receiver, which is no place: a place is a `mut` name, or a field or an element under one
   at 13:14..13:22 "mut self": the receiver is `mut` here
 error[semantic/unknown-method] 54:9..54:14 "shift": `int` has no method `shift`
 error[semantic/unknown-method] 55:7..55:11 "nope": `Point` has no method `nope`
@@ -265,7 +265,7 @@ error[semantic/labeled-argument] 63:13..63:15 "dx": a function's arguments take 
   at 13:5..15:6 "fn shift(mut self, dx: int) {\n        self.x += dx\n    }": declared here
 error[semantic/type-arguments] 64:12..64:17 "<int>": expected 0 type arguments, found 1
   at 13:8..13:13 "shift": declared here
-error[semantic/invalid-assignment-target] 65:17..65:18 "1": this is no place: a place is a `mut` name, or a field under one
+error[semantic/invalid-assignment-target] 65:17..65:18 "1": this is no place: a place is a `mut` name, or a field or an element under one
 error[semantic/mut-argument] 65:17..65:18 "1": parameter `dx` of `shift` is not `mut`
   at 13:24..13:31 "dx: int": declared here
 error[semantic/mut-argument] 66:12..66:13 "q": parameter `other` of `swap` is `mut`; write `mut` before the place it changes

@@ -539,6 +539,7 @@ pub fn diagnostics(parsed: &ParsedSource) {
                 let kind = match edit.replacement() {
                     ")" => SyntaxKind::RParen,
                     "}" => SyntaxKind::RBrace,
+                    "]" => SyntaxKind::RBracket,
                     other => panic!("unexpected closer {other:?}"),
                 };
                 let mut fixed = source.to_owned();
@@ -1064,6 +1065,42 @@ fn typed(analysis: &Analysis) {
                         assert_eq!(own, decl.fields()[index].1);
                     }
                 }
+                Op::Array(decl) => {
+                    assert!(fits(Some(Ty::decl(*decl)), own));
+                    let element = graph.decl(*decl).element();
+                    assert!(element.is_some(), "a sequence is of a sequence type");
+                    for (index, &input) in inputs.iter().enumerate() {
+                        if values[index] {
+                            assert!(fits(ty(input), element));
+                        }
+                    }
+                }
+                // Each reads a sequence first, an index of it second, an element of it last.
+                Op::Len | Op::Index | Op::Store | Op::Push | Op::Pop => {
+                    if values[0] {
+                        let base = ty(inputs[0]).expect("a read sequence has a type");
+                        let decl = base.as_decl().expect("a sequence type is declared");
+                        let element = graph.decl(decl).element();
+                        assert!(element.is_some(), "a sequence is of a sequence type");
+                        let (index, stored) = match entry.op {
+                            Op::Index => (Some(1), None),
+                            Op::Store => (Some(1), Some(2)),
+                            Op::Push => (None, Some(1)),
+                            _ => (None, None),
+                        };
+                        if let Some(index) = index.filter(|&index| values[index]) {
+                            assert_eq!(ty(inputs[index]), Some(Ty::INT));
+                        }
+                        if let Some(stored) = stored.filter(|&stored| values[stored]) {
+                            assert!(fits(ty(inputs[stored]), element));
+                        }
+                        match entry.op {
+                            Op::Len => assert_eq!(own, Some(Ty::INT)),
+                            Op::Index => assert_eq!(own, element),
+                            _ => assert_eq!(own, Some(base)),
+                        }
+                    }
+                }
             }
             assert!(own.is_some() || values.iter().any(|&value| !value));
         }
@@ -1220,9 +1257,11 @@ fn graph_shape(graph: &sumi_hir::Graph) {
             | Op::Return
             | Op::Sequence
             | Op::After => Some(2),
-            Op::Field(_) | Op::Narrow(_) => Some(1),
+            Op::Field(_) | Op::Narrow(_) | Op::Len | Op::Pop => Some(1),
+            Op::Index | Op::Push => Some(2),
+            Op::Store => Some(3),
             Op::Make(decl) => Some(graph.decl(decl).fields().len()),
-            Op::Hole | Op::Call(_) | Op::Result { .. } => None,
+            Op::Hole | Op::Call(_) | Op::Result { .. } | Op::Array(_) => None,
         };
         if let Some(arity) = arity {
             assert_eq!(inputs.len(), arity);
@@ -1394,6 +1433,11 @@ pub fn run(program: Program<'_>) -> Runs {
                     .iter()
                     .zip(record.fields().iter())
                     .all(|(field, value)| holds(field, value)),
+                Some(Fields::Elements(len, element)) => {
+                    let elements = record.fields();
+                    contains(len, &Int::from(elements.len() as i64))
+                        && elements.iter().all(|value| holds(element, value))
+                }
             },
         }
     }
@@ -1414,10 +1458,30 @@ pub fn run(program: Program<'_>) -> Runs {
                 .flat_map(|&decl| values_within(graph, Ty::decl(decl), may))
                 .take(TUPLES)
                 .collect(),
+            TyKind::Decl(decl) if graph.decl(decl).element().is_some() => {
+                let element = graph.decl(decl).element().expect("a sequence type");
+                let (len, fact) = match may.decls.get(decl) {
+                    None | Some(Fields::Known(_)) => return Vec::new(),
+                    Some(Fields::Any) => (Ints::LENGTHS, May::every(element, graph.unions())),
+                    Some(Fields::Elements(len, fact)) => (len.clone(), (**fact).clone()),
+                };
+                // A few lengths, each filled by the element's values in turn.
+                let values = values_within(graph, element, &fact);
+                let lengths = points(&len)
+                    .into_iter()
+                    .filter_map(|len| usize::try_from(i64::try_from(&len).ok()?).ok());
+                lengths
+                    .filter(|&len| len <= 4 && (len == 0 || !values.is_empty()))
+                    .map(|len| {
+                        let elements = values.iter().cycle().take(len).cloned();
+                        Value::record(decl, elements.collect())
+                    })
+                    .collect()
+            }
             TyKind::Decl(decl) => {
                 let fields = graph.decl(decl).fields();
                 let facts: Vec<May> = match may.decls.get(decl) {
-                    None => return Vec::new(),
+                    None | Some(Fields::Elements(..)) => return Vec::new(),
                     Some(Fields::Any) => fields
                         .iter()
                         .map(|&(_, ty)| {

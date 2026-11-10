@@ -7,8 +7,8 @@ use std::collections::{HashMap, HashSet};
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::Fix;
 use sumi_graph::{
-    ArithOp, Arms, BinaryOp, Carried, Case, CmpOp, Decl, DeclId, FunctionId, Graph, GraphBuilder,
-    Int, NodeId, Op, References, RegionId, Ty,
+    ArithOp, Arms, BinaryOp, Carried, Case, CmpOp, DeclId, FunctionId, Graph, GraphBuilder, Int,
+    NodeId, Op, References, RegionId, Ty,
 };
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
@@ -20,7 +20,7 @@ use sumi_text::{TextEdit, TextRange, TextSize};
 use super::declare::{Declarations, HeaderResult, Named, Order, RESULT, SELF, unbounded_calls};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
-use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
+use super::{Access, Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
 use crate::codes;
 use crate::spans::{Spans, SpansBuilder};
 use crate::typing::{Checked, Checker, Read, Types};
@@ -57,8 +57,8 @@ pub(crate) fn lower<'s>(
     let checked = builder
         .types
         .finish(builder.source, builder.declared.headers.len());
-    let fields = builder.source.take_fields();
-    builder.graph.declare(fields.into_iter().map(Decl::new));
+    let decls = builder.source.take_decls();
+    builder.graph.declare(decls);
     builder
         .graph
         .set_unions(builder.source.unions.borrow().clone());
@@ -157,23 +157,65 @@ enum Decides {
 /// Whether what is no place has a place's shape, a name and fields, so its name is resolved.
 struct IsShaped(bool);
 
-/// The records a place's fields are of, outermost first: each one's value, its type, and the
-/// field's position in it.
-type Path = Vec<(NodeId, DeclId, usize)>;
+/// What a place's step is read from, by step: a record's value, its type, and the field's
+/// position in it; or a sequence's value and the index into it.
+#[derive(Clone, Copy)]
+enum Hop {
+    Field(NodeId, DeclId, usize),
+    Index(NodeId, (NodeId, TextRange)),
+}
 
-/// A place: a mutable local and the fields under it, outermost first, each with its name.
+type Path = Vec<Hop>;
+
+/// One step under a place's local: a field by its name, or the element at an index, which is
+/// read once, where the place is named, and is the integer `constant` when it is written as one.
+enum Step<'s> {
+    Field(&'s str, NodeIdx),
+    Index {
+        node: NodeIdx,
+        index: (NodeId, TextRange),
+        constant: Option<Int>,
+    },
+}
+
+impl Step<'_> {
+    /// The syntax the place through this step ends with.
+    fn node(&self) -> NodeIdx {
+        match *self {
+            Self::Field(_, node) | Self::Index { node, .. } => node,
+        }
+    }
+}
+
+/// A place: a mutable local and the steps under it, outermost first.
 struct Place<'s> {
     local: LocalId,
     root: NodeIdx,
-    fields: Vec<(&'s str, NodeIdx)>,
+    steps: Vec<Step<'s>>,
+    /// What reading its indices does to the control around it.
+    control: Option<NodeId>,
 }
 
 impl Place<'_> {
-    /// Whether a write to one is a write to the other, or to a part of it.
+    /// Whether a write to one is a write to the other, or to a part of it: two elements are
+    /// apart only at indices written as different integers.
     fn overlaps(&self, other: &Self) -> bool {
-        let shared = self.fields.iter().zip(&other.fields);
-        self.local == other.local && shared.into_iter().all(|(a, b)| a.0 == b.0)
+        let shared = self.steps.iter().zip(&other.steps);
+        self.local == other.local
+            && shared.into_iter().all(|steps| match steps {
+                (Step::Field(a, _), Step::Field(b, _)) => a == b,
+                (Step::Index { constant: a, .. }, Step::Index { constant: b, .. }) => {
+                    a.is_none() || b.is_none() || a == b
+                }
+                _ => true,
+            })
     }
+}
+
+/// A place's step as written, before its index is read.
+enum Written<'s> {
+    Field(&'s str, NodeIdx),
+    Index(ast::IndexExpr),
 }
 
 /// Where a call is written: the whole of it, the name it calls by, and the type arguments it
@@ -201,6 +243,23 @@ type Args = Vec<(Option<ast::Arg>, Value)>;
 /// The arguments a call writes `mut`, and a receiver its method changes: each by position, with
 /// the place it is when it is one.
 type Lent<'s> = Vec<(usize, Option<Place<'s>>)>;
+
+/// What a call's arguments are held to before the call is: the types of its parameters, each
+/// by its position among the arguments, a receiver included; or the fields of a type, each by
+/// its label.
+enum Demands {
+    None,
+    Params(Vec<Option<Ty>>),
+    Fields(DeclId),
+}
+
+/// A method every sequence has, which the compiler provides.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SequenceMethod {
+    Len,
+    Push,
+    Pop,
+}
 
 /// A local's index in the body's `locals`, and in its versions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -237,6 +296,7 @@ enum Link {
     Field(ast::FieldExpr),
     /// A method call on a receiver that is no place: a place is read by the call itself.
     Method(ast::MethodCallExpr),
+    Index(ast::IndexExpr),
 }
 
 /// What holds where a chain of one lazy operator goes on to another operand: the refinements of
@@ -340,6 +400,7 @@ impl<'a, 's> Builder<'a, 's> {
                 called: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
+                accesses: Vec::new(),
                 fallthroughs: vec![None; functions],
                 exits: vec![Vec::new(); functions],
                 bindings: Vec::new(),
@@ -503,7 +564,7 @@ impl<'a, 's> Builder<'a, 's> {
         self.graph.enter(region);
         self.regions.push((region, entry));
         let body = match root_node {
-            Some(root) => self.lower(root),
+            Some(root) => self.lower_as(root, declared.declared().map(|(ty, _)| ty)),
             None => self.hole_value(item_node),
         };
         // Where the body falls through, its value is one exit's.
@@ -1198,25 +1259,34 @@ impl<'a, 's> Builder<'a, 's> {
     /// An operator's or field's left operand is lowered first, off a stack of the operators and
     /// fields it is under: the parser nests such a chain as deep as it is long.
     fn lower(&mut self, node: NodeIdx) -> Value {
-        self.lower_guarded(node).0
+        self.lower_as(node, None)
+    }
+
+    /// `lower`, of what is given to something that holds it to `held`: the type a sequence
+    /// literal takes its element type from, through the parentheses, blocks, and arms it is the
+    /// value of.
+    fn lower_as(&mut self, node: NodeIdx, held: Option<Ty>) -> Value {
+        self.lower_guarded(node, held).0
     }
 
     /// `lower`, with what holds after the chain of one lazy operator the value came off, for an
     /// operator of that kind around it to go on from.
-    fn lower_guarded(&mut self, node: NodeIdx) -> (Value, Option<Guard>) {
+    fn lower_guarded(&mut self, node: NodeIdx, held: Option<Ty>) -> (Value, Option<Guard>) {
         let mut chain = Vec::new();
         let mut leaf = node;
         while let Some((left, link)) = self.link(leaf) {
             chain.push(link);
             leaf = left;
         }
+        // An operand is held to what its operator decides, not to what holds the whole.
+        let held = held.filter(|_| chain.is_empty());
         // Parentheses hand on the guard of the chain inside them.
         let (mut value, mut guard) = match self.parenthesized(leaf) {
             Some(inner) => {
-                let (value, guard) = self.lower_guarded(inner);
+                let (value, guard) = self.lower_guarded(inner, held);
                 (self.through(leaf, value, false), guard)
             }
-            None => (self.lower_one(leaf), None),
+            None => (self.lower_one(leaf, held), None),
         };
         while let Some(link) = chain.pop() {
             let before = guard.take();
@@ -1237,6 +1307,10 @@ impl<'a, 's> Builder<'a, 's> {
                 Link::Method(expr) => {
                     let damaged = self.is_damaged(expr.node());
                     self.method_call(expr, damaged, Some(value))
+                }
+                Link::Index(expr) => {
+                    let damaged = self.is_damaged(expr.node());
+                    self.index(expr, damaged, Some(value))
                 }
             };
         }
@@ -1259,9 +1333,10 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             }
             Stmt::Expr(Expr::FieldExpr(expr)) => Some((expr.base(tree)?.node(), Link::Field(expr))),
+            Stmt::Expr(Expr::IndexExpr(expr)) => Some((expr.base(tree)?.node(), Link::Index(expr))),
             Stmt::Expr(Expr::MethodCallExpr(expr)) => {
                 let receiver = expr.callee(tree)?.base(tree)?;
-                let is_place = self.receiver_place(receiver).is_some();
+                let is_place = self.is_receiver_place(receiver);
                 (!is_place).then_some((receiver.node(), Link::Method(expr)))
             }
             _ => None,
@@ -1289,7 +1364,7 @@ impl<'a, 's> Builder<'a, 's> {
     }
 
     /// A node that is no link of a chain: one with no left operand to lower first.
-    fn lower_one(&mut self, node: NodeIdx) -> Value {
+    fn lower_one(&mut self, node: NodeIdx, held: Option<Ty>) -> Value {
         use ast::{Expr, Stmt};
 
         let tree = self.source.tree;
@@ -1314,8 +1389,8 @@ impl<'a, 's> Builder<'a, 's> {
                 None => self.holed(node),
             },
             Stmt::ReturnStmt(return_) => self.return_(return_, damaged),
-            Stmt::Expr(Expr::Block(_)) => self.block(node),
-            Stmt::Expr(Expr::IfExpr(branch)) => self.if_(branch),
+            Stmt::Expr(Expr::Block(_)) => self.block(node, held),
+            Stmt::Expr(Expr::IfExpr(branch)) => self.if_(branch, held),
             Stmt::Expr(
                 Expr::ForExpr(_)
                 | Expr::MatchExpr(_)
@@ -1324,7 +1399,7 @@ impl<'a, 's> Builder<'a, 's> {
                 | Expr::LiteralExpr(_),
             ) if damaged => self.holed(node),
             Stmt::Expr(Expr::ForExpr(expr)) => self.for_(expr),
-            Stmt::Expr(Expr::MatchExpr(expr)) => self.match_(expr),
+            Stmt::Expr(Expr::MatchExpr(expr)) => self.match_(expr, held),
             Stmt::Expr(Expr::NameRef(_) | Expr::SelfExpr(_)) => self.name_ref(node),
             Stmt::Expr(Expr::LiteralExpr(literal)) => self.literal(literal),
             // A lazy operator here lost a part to recovery: a whole one is a link of a chain.
@@ -1337,7 +1412,7 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::PrefixExpr(expr)) => self.prefix(expr, damaged),
             Stmt::Expr(Expr::ParenExpr(paren)) => match paren.inner(tree) {
                 Some(inner) => {
-                    let value = self.lower(inner.node());
+                    let value = self.lower_as(inner.node(), held);
                     self.through(node, value, damaged)
                 }
                 None => self.holed(node),
@@ -1345,6 +1420,8 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::CallExpr(call)) => self.call(call, damaged),
             Stmt::Expr(Expr::MethodCallExpr(call)) => self.method_call(call, damaged, None),
             Stmt::Expr(Expr::FieldExpr(expr)) => self.field(expr, damaged, None),
+            Stmt::Expr(Expr::IndexExpr(expr)) => self.index(expr, damaged, None),
+            Stmt::Expr(Expr::ArrayExpr(expr)) => self.array(expr, damaged, held),
         }
     }
 
@@ -1400,9 +1477,9 @@ impl<'a, 's> Builder<'a, 's> {
         let Some(initializer) = binding.initializer(tree) else {
             return self.damaged_let(binding);
         };
-        let value = self.lower(initializer.node());
         let annotation = binding.type_ref(tree);
         let declared = annotation.and_then(|annotation| self.source.ty(annotation));
+        let value = self.lower_as(initializer.node(), declared);
         let Some((name, name_node)) = self.source.name(binding.name(tree)) else {
             return self.failed_hole(node);
         };
@@ -1466,9 +1543,15 @@ impl<'a, 's> Builder<'a, 's> {
         let place = assignment
             .target(tree)
             .and_then(|target| self.place_of(target).ok());
-        let value = assignment.value(tree).map(|value| self.lower(value.node()));
-        let value = self.present(node, value);
         let op = assignment.op(tree, self.source.lexed());
+        let value = assignment.value(tree).map(|value| {
+            let held = match (&place, op) {
+                (Some(place), Some(AssignOp::Set)) => self.place_ty(place),
+                _ => None,
+            };
+            self.lower_as(value.node(), held)
+        });
+        let value = self.present(node, value);
         let assigned = match &place {
             // A value that returns first is assigned to nothing.
             Some(place) if value.completes => {
@@ -1479,6 +1562,7 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(assigned)
             }
             Some(place) => self.path(place).and_then(|path| {
+                self.owe(place, &path);
                 self.refer_path(place, &path, true);
                 let value = match op {
                     Some(AssignOp::Arith(op)) => self.combined(place, &path, op, &value, node)?,
@@ -1497,7 +1581,9 @@ impl<'a, 's> Builder<'a, 's> {
         if damaged || assigned.is_none() || !value.is_valid || !self.is_typed(id) {
             self.fail();
         }
-        self.value(node, id, value.control, value.completes)
+        let indexed = place.and_then(|place| place.control);
+        let control = self.compose_control(at, [indexed, value.control]);
+        self.value(node, id, control, value.completes)
     }
 
     /// The place's own value and `value` under `op`, for a compound assignment at `node`; none
@@ -1511,7 +1597,7 @@ impl<'a, 's> Builder<'a, 's> {
         node: NodeIdx,
     ) -> Option<(NodeId, TextRange)> {
         let held = self.held(place, path);
-        let range = self.place_range(place, place.fields.len());
+        let range = self.place_range(place, place.steps.len());
         if !self.is_typed(held) {
             return None;
         }
@@ -1547,13 +1633,13 @@ impl<'a, 's> Builder<'a, 's> {
     /// The place `target` names: a mutable local, or a field under one. Any other is reported,
     /// and is no name's reference unless its shape is a place's.
     fn place_of(&mut self, target: ast::Expr) -> Result<Place<'s>, IsShaped> {
-        let (root, fields) = match self.place_shape(target) {
+        let (root, written) = match self.place_shape(target) {
             Ok(shape) => shape,
             Err(other) => {
                 self.source.error(
                     other,
                     codes::INVALID_ASSIGNMENT_TARGET,
-                    "this is no place: a place is a `mut` name, or a field under one",
+                    "this is no place: a place is a `mut` name, or a field or an element under one",
                     None,
                 );
                 return Err(IsShaped(false));
@@ -1607,57 +1693,120 @@ impl<'a, 's> Builder<'a, 's> {
             );
             return Err(IsShaped(true));
         }
+        let (steps, control) = self.steps(written).ok_or(IsShaped(true))?;
         self.locals[local.index()].is_assigned = true;
         Ok(Place {
             local,
             root: name,
-            fields,
+            steps,
+            control,
         })
     }
 
-    /// The name, or `self`, a place's syntax begins with and the fields under it, outermost
-    /// first; else the expression that is no part of one.
-    #[allow(clippy::type_complexity)]
-    fn place_shape(
-        &self,
-        target: ast::Expr,
-    ) -> Result<(NodeIdx, Vec<(&'s str, NodeIdx)>), NodeIdx> {
+    /// Reads each index of a place's steps, in order, with the control of them all. None where
+    /// one is no value to index by: missing or failed, which is reported, or returning first,
+    /// which is reported here.
+    fn steps(&mut self, written: Vec<Written<'s>>) -> Option<(Vec<Step<'s>>, Option<NodeId>)> {
         let tree = self.source.tree;
-        let mut fields = Vec::new();
+        let mut steps = Vec::with_capacity(written.len());
+        let mut control = None;
+        for step in written {
+            let expr = match step {
+                Written::Field(name, node) => {
+                    steps.push(Step::Field(name, node));
+                    continue;
+                }
+                Written::Index(expr) => expr,
+            };
+            let index = expr
+                .subscript(tree)
+                .and_then(|subscript| subscript.index(tree));
+            let Some(index) = index else {
+                self.fail();
+                return None;
+            };
+            let value = self.lower(index.node());
+            self.advance(&value);
+            if value.completes && value.is_valid {
+                self.source.report(
+                    value.range,
+                    codes::INVALID_ASSIGNMENT_TARGET,
+                    "an index that returns first names no place",
+                    [],
+                );
+            }
+            if value.completes || !value.is_valid {
+                self.fail();
+                return None;
+            }
+            control = self.compose_control(value.range, [control, value.control]);
+            let constant = match &self.graph.node(value.node).op {
+                Op::Int(value) => Some(value.clone()),
+                _ => None,
+            };
+            steps.push(Step::Index {
+                node: expr.node(),
+                index: value.input(),
+                constant,
+            });
+        }
+        Some((steps, control))
+    }
+
+    /// The name, or `self`, a place's syntax begins with and the steps under it, outermost
+    /// first; else the expression that is no part of one.
+    fn place_shape(&self, target: ast::Expr) -> Result<(NodeIdx, Vec<Written<'s>>), NodeIdx> {
+        let tree = self.source.tree;
+        let mut steps = Vec::new();
         let mut expr = self.source.peel(target);
         let root = loop {
             let step = match expr {
                 ast::Expr::NameRef(_) | ast::Expr::SelfExpr(_) => break expr.node(),
                 ast::Expr::FieldExpr(field) if !tree.has_error(field.node()) => {
-                    field.base(tree).zip(field.field(tree))
+                    let name = field.field(tree);
+                    let step =
+                        name.map(|name| Written::Field(self.source.text(name.node()), name.node()));
+                    field.base(tree).zip(step)
+                }
+                ast::Expr::IndexExpr(index) if !tree.has_error(index.node()) => {
+                    index.base(tree).zip(Some(Written::Index(index)))
                 }
                 _ => None,
             };
-            let Some((base, field)) = step else {
+            let Some((base, step)) = step else {
                 return Err(expr.node());
             };
-            fields.push((self.source.text(field.node()), field.node()));
+            steps.push(step);
             expr = self.source.peel(base);
         };
-        fields.reverse();
-        Ok((root, fields))
+        steps.reverse();
+        Ok((root, steps))
     }
 
-    /// The place a method's receiver is, where it has a place's shape under a local.
-    fn receiver_place(&self, receiver: ast::Expr) -> Option<Place<'s>> {
-        let (root, fields) = self.place_shape(receiver).ok()?;
+    /// Whether a method's receiver has a place's shape under a local: it is then read as one.
+    fn is_receiver_place(&self, receiver: ast::Expr) -> bool {
+        let shape = self.place_shape(receiver);
+        shape.is_ok_and(|(root, _)| self.lookup(self.source.text(root)).is_some())
+    }
+
+    /// The place a method's receiver is, where it has a place's shape under a local and every
+    /// index in it is one to read by.
+    fn receiver_place(&mut self, receiver: ast::Expr) -> Option<Place<'s>> {
+        let (root, written) = self.place_shape(receiver).ok()?;
         let local = self.lookup(self.source.text(root))?;
+        let (steps, control) = self.steps(written)?;
         Some(Place {
             local,
             root,
-            fields,
+            steps,
+            control,
         })
     }
 
     /// Where the place is written in the source, through the field at `depth` of its fields.
     fn place_range(&self, place: &Place<'s>, depth: usize) -> TextRange {
         let end = match depth.checked_sub(1) {
-            Some(last) => place.fields[last].1,
+            Some(last) => place.steps[last].node(),
             None => place.root,
         };
         TextRange::new(
@@ -1670,48 +1819,111 @@ impl<'a, 's> Builder<'a, 's> {
     /// known, which is reported at its name.
     fn path(&mut self, place: &Place<'s>) -> Option<Path> {
         let mut base = self.versions.read(place.local);
-        let mut path = Vec::with_capacity(place.fields.len());
-        for (depth, &(name, node)) in place.fields.iter().enumerate() {
-            let (decl, field) = self.field_of(base, name, node)?;
-            path.push((base, decl, field));
-            if depth + 1 < place.fields.len() {
-                let name = self.source.field_name(name);
-                let range = self.place_range(place, depth + 1);
-                let read = (base, self.place_range(place, depth));
-                base = self.place(Op::Field(name), &[read], range, None);
+        let mut path = Vec::with_capacity(place.steps.len());
+        for (depth, step) in place.steps.iter().enumerate() {
+            let read = (base, self.place_range(place, depth));
+            let range = self.place_range(place, depth + 1);
+            let op = match *step {
+                Step::Field(name, node) => {
+                    let (decl, field) = self.field_of(base, name, node)?;
+                    path.push(Hop::Field(base, decl, field));
+                    Op::Field(self.source.field_name(name))
+                }
+                Step::Index { index, .. } => {
+                    self.element_of(base, read.1)?;
+                    path.push(Hop::Index(base, index));
+                    Op::Index
+                }
+            };
+            if depth + 1 < place.steps.len() {
+                base = match path[depth] {
+                    Hop::Field(..) => self.place(op, &[read], range, None),
+                    Hop::Index(_, index) => self.place(op, &[read, index], range, None),
+                };
             }
         }
         Some(path)
     }
 
+    /// The element type of the sequence at `base`, written at `at`; none for what is no
+    /// sequence, or of no known type, which is reported unless it failed.
+    fn element_of(&mut self, base: NodeId, at: TextRange) -> Option<Ty> {
+        if !self.is_typed(base) {
+            return None;
+        }
+        let message = match self.decides_at(base) {
+            Decides::Ty(ty) => match self.source.element(ty) {
+                Some(element) => return Some(element),
+                None => format!(
+                    "`{}` is no sequence, so it holds no element to index",
+                    self.source.show(ty)
+                ),
+            },
+            Decides::Failed => return None,
+            read => format!("the type indexed is not known here{}", pending_text(read)),
+        };
+        self.source.report(at, codes::NOT_A_SEQUENCE, message, []);
+        None
+    }
+
+    /// A read of the sequence at `array` owes a proof that it is inside it: at `index`, or of
+    /// its last element with none.
+    fn access(&mut self, node: NodeIdx, array: NodeId, index: Option<NodeId>) {
+        self.lowered.accesses.push(Access {
+            owner: self.owner,
+            node,
+            array,
+            index,
+            context: self.context(),
+        });
+    }
+
+    /// Each element on the place's path owes its proof, where the place is read or assigned: a
+    /// write after a read is along the same lengths.
+    fn owe(&mut self, place: &Place<'s>, path: &Path) {
+        for (step, hop) in place.steps.iter().zip(path) {
+            if let Hop::Index(base, (index, _)) = *hop {
+                self.access(step.node(), base, Some(index));
+            }
+        }
+    }
+
     /// Refers each field of the place to the field it names, the last one as written if `writes`.
     fn refer_path(&mut self, place: &Place<'s>, path: &Path, writes: bool) {
-        for (depth, (&(_, node), &(_, decl, field))) in place.fields.iter().zip(path).enumerate() {
-            let item = self.source.decls[decl.index()].item;
-            let is_written = writes && depth + 1 == path.len();
-            self.refer(node, Symbol::Field(item, field as u32), is_written);
+        for (depth, hop) in place.steps.iter().zip(path).enumerate() {
+            if let (&Step::Field(_, node), &Hop::Field(_, decl, field)) = hop {
+                let item = self.source.decls[decl.index()].item;
+                let is_written = writes && depth + 1 == path.len();
+                self.refer(node, Symbol::Field(item, field as u32), is_written);
+            }
         }
     }
 
     /// The value the place holds now: the field of the last record on its path, or its local.
     fn held(&mut self, place: &Place<'s>, path: &Path) -> NodeId {
-        let Some(&(base, decl, field)) = path.last() else {
+        let Some(&last) = path.last() else {
             return self.versions.read(place.local);
         };
-        let name = self.source.fields(decl)[field].0;
         let range = self.place_range(place, path.len());
-        let base = (base, self.place_range(place, path.len() - 1));
-        self.place(Op::Field(name), &[base], range, None)
+        let within = self.place_range(place, path.len() - 1);
+        match last {
+            Hop::Field(base, decl, field) => {
+                let name = self.source.fields(decl)[field].0;
+                self.place(Op::Field(name), &[(base, within)], range, None)
+            }
+            Hop::Index(base, index) => self.place(Op::Index, &[(base, within), index], range, None),
+        }
     }
 
-    /// The value a `mut` argument's place holds, for its parameter.
-    fn read_place(&mut self, place: &Place<'s>) -> Value {
+    /// The value the place holds, with the path it is read along; a hole where that has none.
+    fn read_place(&mut self, place: &Place<'s>) -> (Value, Option<Path>) {
         self.locals[place.local.index()].is_read = true;
-        let range = self.place_range(place, place.fields.len());
-        let read = match self.path(place) {
+        let range = self.place_range(place, place.steps.len());
+        let path = self.path(place);
+        let read = match &path {
             Some(path) => {
-                self.refer_path(place, &path, true);
-                self.held(place, &path)
+                self.owe(place, path);
+                self.held(place, path)
             }
             None => self.place(Op::Hole, &[], range, None),
         };
@@ -1719,15 +1931,16 @@ impl<'a, 's> Builder<'a, 's> {
         if !is_valid {
             self.fail();
         }
-        Value {
+        let value = Value {
             node: read,
             range,
             at: range,
-            control: None,
+            control: place.control,
             completes: false,
             is_valid,
             has_scalar_tail: is_valid,
-        }
+        };
+        (value, path)
     }
 
     /// The declared type the value at `base` is of and its field `name`, by position; none where
@@ -1772,8 +1985,16 @@ impl<'a, 's> Builder<'a, 's> {
         at: TextRange,
     ) -> NodeId {
         let mut value = value;
-        for (depth, (base, decl, field)) in path.into_iter().enumerate().rev() {
+        for (depth, hop) in path.into_iter().enumerate().rev() {
             let range = self.place_range(place, depth);
+            let (base, decl, field) = match hop {
+                Hop::Field(base, decl, field) => (base, decl, field),
+                Hop::Index(base, index) => {
+                    let stored = self.place(Op::Store, &[(base, range), index, value], at, None);
+                    value = (stored, range);
+                    continue;
+                }
+            };
             let count = self.source.fields(decl).len();
             let mut inputs = Vec::with_capacity(count);
             for other in 0..count {
@@ -1834,8 +2055,9 @@ impl<'a, 's> Builder<'a, 's> {
         if damaged && value.is_none() {
             return self.holed(node);
         }
+        let result = self.declared.headers[self.owner as usize].result;
         let value = value.map(|value| {
-            let value = self.lower(value.node());
+            let value = self.lower_as(value.node(), result.declared().map(|(ty, _)| ty));
             self.advance(&value);
             value
         });
@@ -1877,7 +2099,7 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    fn block(&mut self, node: NodeIdx) -> Value {
+    fn block(&mut self, node: NodeIdx, held: Option<Ty>) -> Value {
         let tree = self.source.tree;
         let damaged = tree.has_error(node);
         let range = self.source.range(node);
@@ -1896,7 +2118,7 @@ impl<'a, 's> Builder<'a, 's> {
                 range: self.source.range(child),
                 context: self.context(),
             });
-            let value = self.lower(child);
+            let value = self.lower_as(child, held.filter(|_| is_tail));
             if is_expression && !is_tail {
                 // An unused statement is discarded whole, so it is read as a whole.
                 let input = (value.node, value.range);
@@ -2201,7 +2423,7 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// An `if` by its parts. A part the parser lost stands as the `if` itself, which is a hole by
     /// then: its region closes on that hole, and nothing is entered for it.
-    fn if_(&mut self, branch: ast::IfExpr) -> Value {
+    fn if_(&mut self, branch: ast::IfExpr, held: Option<Ty>) -> Value {
         let tree = self.source.tree;
         let lexed = self.source.lexed();
         let node = branch.node();
@@ -2216,7 +2438,7 @@ impl<'a, 's> Builder<'a, 's> {
                     .then_some(node)
             });
         let mut lost: Option<Value> = None;
-        let condition = self.part(node, cond, &mut lost);
+        let condition = self.part(node, cond, None, &mut lost);
         self.advance(&condition);
         let parent = self.context();
         let on_true = Op::Arm(Case::Bool(true));
@@ -2236,12 +2458,12 @@ impl<'a, 's> Builder<'a, 's> {
         };
         let then_region = arms.iter().next().expect("a switch has its then arm");
         let (then, then_state) = self.region(then_region, Some((cond, true)), |this| {
-            this.part(node, then_node, &mut lost)
+            this.part(node, then_node, held, &mut lost)
         });
         let (else_, false_state) = match else_node.zip(arms.iter().nth(1)) {
             Some((else_node, region)) => {
                 let (value, state) = self.region(region, Some((cond, false)), |this| {
-                    this.part(node, else_node, &mut lost)
+                    this.part(node, else_node, held, &mut lost)
                 });
                 (Some(value), state)
             }
@@ -2269,9 +2491,15 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// A part of `node`, or `node` itself standing for a part the parser lost: one hole for all
     /// such parts, made where the first is read.
-    fn part(&mut self, node: NodeIdx, part: NodeIdx, lost: &mut Option<Value>) -> Value {
+    fn part(
+        &mut self,
+        node: NodeIdx,
+        part: NodeIdx,
+        held: Option<Ty>,
+        lost: &mut Option<Value>,
+    ) -> Value {
         if part != node {
-            return self.lower(part);
+            return self.lower_as(part, held);
         }
         match lost {
             Some(value) => *value,
@@ -2285,7 +2513,7 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// A `match`'s arms by case: a member pattern names a declared type and binds a value of it; a
     /// rest pattern takes what the arms before leave. A pattern naming no type leaves a hole.
-    fn match_(&mut self, expr: ast::MatchExpr) -> Value {
+    fn match_(&mut self, expr: ast::MatchExpr, held: Option<Ty>) -> Value {
         let tree = self.source.tree;
         let lexed = self.source.lexed();
         let node = expr.node();
@@ -2402,7 +2630,7 @@ impl<'a, 's> Builder<'a, 's> {
                 let local = self.bind(text, narrow, BindingKind::Arm, at, at.end());
                 self.locals[local.index()].completes = scrutinee.completes;
             }
-            let value = self.lower(arm.value(tree).expect(whole).node());
+            let value = self.lower_as(arm.value(tree).expect(whole).node(), held);
             states.push(self.leave_region(region, &value));
             self.close_scope();
             values.push(value);
@@ -2937,7 +3165,13 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// Lowers the arguments of `list` onto `args`, in order, up to any garbage: the ones whose
     /// position is reliable. One written `mut` is a place, and joins `lent`.
-    fn arguments(&mut self, list: Option<ast::ArgList>, args: &mut Args, lent: &mut Lent<'s>) {
+    fn arguments(
+        &mut self,
+        list: Option<ast::ArgList>,
+        args: &mut Args,
+        lent: &mut Lent<'s>,
+        demands: Demands,
+    ) {
         let tree = self.source.tree;
         if let Some(list) = list {
             for child in tree.children(list.node()) {
@@ -2946,14 +3180,29 @@ impl<'a, 's> Builder<'a, 's> {
                 else {
                     break;
                 };
+                let held = match &demands {
+                    Demands::None => None,
+                    Demands::Params(types) => types.get(args.len()).copied().flatten(),
+                    Demands::Fields(decl) => arg.label(tree).and_then(|label| {
+                        let name = self.source.text(label.node());
+                        let field = self.source.decls[decl.index()].index_of(name)?;
+                        self.source.fields(*decl)[field].1
+                    }),
+                };
                 let is_mut = arg.mutable(tree, self.source.lexed());
                 let place = is_mut.then(|| self.place_of(value));
                 let value = match &place {
-                    Some(Ok(place)) => self.read_place(place),
+                    Some(Ok(place)) => {
+                        let (value, path) = self.read_place(place);
+                        if let Some(path) = path {
+                            self.refer_path(place, &path, true);
+                        }
+                        value
+                    }
                     Some(Err(IsShaped(true))) => self.failed_hole(value.node()),
                     Some(Err(IsShaped(false))) => self.holed(value.node()),
                     None => {
-                        let value = self.lower(value.node());
+                        let value = self.lower_as(value.node(), held);
                         self.advance(&value);
                         value
                     }
@@ -2970,11 +3219,11 @@ impl<'a, 's> Builder<'a, 's> {
                 continue;
             };
             let mut read = args[*index].1.node;
-            for _ in &place.fields {
+            for _ in &place.steps {
                 read = self.graph.inputs(read)[0];
             }
             if read != self.versions.read(place.local) {
-                args[*index].1 = self.read_place(place);
+                args[*index].1 = self.read_place(place).0;
             }
         }
     }
@@ -2996,7 +3245,14 @@ impl<'a, 's> Builder<'a, 's> {
             None => Applied::Unknown,
         };
         let (mut args, mut lent) = (Vec::new(), Vec::new());
-        self.arguments(call.arg_list(tree), &mut args, &mut lent);
+        let demands = match applied {
+            Applied::Function(callee) | Applied::Inferred(callee) => {
+                Demands::Params(self.decided_params(site, callee, &[]))
+            }
+            Applied::Type(decl) => Demands::Fields(decl),
+            _ => Demands::None,
+        };
+        self.arguments(call.arg_list(tree), &mut args, &mut lent, demands);
         if !damaged && matches!(applied, Applied::Type(_) | Applied::InferredType(_)) {
             for &(index, _) in &lent {
                 self.source.report(
@@ -3036,18 +3292,26 @@ impl<'a, 's> Builder<'a, 's> {
             list: call.type_args(tree),
         };
         let base = callee.and_then(|callee| callee.base(tree));
-        let place = base
-            .filter(|_| receiver.is_none())
-            .and_then(|base| self.receiver_place(base));
-        let path = place.as_ref().and_then(|place| self.path(place));
-        let value = match (&place, receiver, base) {
-            (Some(place), ..) => self.receiver_value(place, path.as_ref()),
-            (None, Some(value), _) => value,
-            (None, None, Some(base)) => self.lower(base.node()),
-            (None, None, None) => self.hole_value(node),
+        let shaped = base.filter(|&base| receiver.is_none() && self.is_receiver_place(base));
+        let place = shaped.and_then(|base| self.receiver_place(base));
+        let read = place.as_ref().map(|place| self.read_place(place));
+        let (value, path) = match (read, receiver, base) {
+            // A place's indices moved the context as each was read.
+            (Some(read), ..) => read,
+            (None, Some(value), _) => (value, None),
+            // A place one of whose indices failed is read no second time.
+            (None, None, Some(base)) if shaped.is_some() => (self.failed_hole(base.node()), None),
+            (None, None, Some(base)) => (self.lower(base.node()), None),
+            (None, None, None) => (self.hole_value(node), None),
         };
-        self.advance(&value);
-        let method = name.and_then(|name| self.method(name, &value));
+        if place.is_none() {
+            self.advance(&value);
+        }
+        let built_in = name.and_then(|name| self.sequence_method(name, &value));
+        let method = match built_in {
+            Some(_) => None,
+            None => name.and_then(|name| self.method(name, &value)),
+        };
         // Where the method says it changes its receiver.
         let taken = method.and_then(|method| {
             let receiver = self.declared.parameters[method.index()].first()?;
@@ -3056,7 +3320,11 @@ impl<'a, 's> Builder<'a, 's> {
                 .out()
                 .map(|_| (at, Box::from("the receiver is `mut` here")))
         });
-        let changes = taken.is_some();
+        let changes = taken.is_some()
+            || matches!(
+                built_in,
+                Some((SequenceMethod::Push | SequenceMethod::Pop, _))
+            );
         // A receiver its method changes is a place, as an argument written `mut` is.
         let mut lent = Vec::new();
         let mut is_refused = false;
@@ -3069,9 +3337,7 @@ impl<'a, 's> Builder<'a, 's> {
                 if let Some(path) = &path {
                     self.refer_path(place, path, changes);
                 }
-                if let Some(taken) = taken.clone()
-                    && !self.versions.is_mutable(place.local)
-                {
+                if changes && !self.versions.is_mutable(place.local) {
                     let message = format!(
                         "`{}` changes its receiver, and `{}` is immutable",
                         name.map_or("", |name| self.source.text(name)),
@@ -3083,22 +3349,23 @@ impl<'a, 's> Builder<'a, 's> {
                         self.source.range(place.root),
                         codes::IMMUTABLE_ASSIGNMENT,
                         message,
-                        declared.into_iter().chain([taken]),
+                        declared.into_iter().chain(taken.clone()),
                     );
                     is_refused = true;
                 }
             }
             None => {
-                if let Some(taken) = taken.clone() {
+                if changes && value.is_valid {
                     let message = format!(
                         "`{}` changes its receiver, which is no place: a place is a `mut` name, \
-                         or a field under one",
+                         or a field or an element under one",
                         name.map_or("", |name| self.source.text(name)),
                     );
                     let code = codes::INVALID_ASSIGNMENT_TARGET;
-                    self.source.report(value.range, code, message, [taken]);
-                    is_refused = true;
+                    self.source
+                        .report(value.range, code, message, taken.clone());
                 }
+                is_refused |= changes;
             }
         }
         if is_refused {
@@ -3107,7 +3374,12 @@ impl<'a, 's> Builder<'a, 's> {
             lent.push((0, Some(place)));
         }
         let mut args: Args = vec![(None, value)];
-        self.arguments(call.arg_list(tree), &mut args, &mut lent);
+        if let Some((built_in, element)) = built_in {
+            let pushed = (built_in == SequenceMethod::Push).then_some(element);
+            let demands = Demands::Params(vec![None, pushed]);
+            self.arguments(call.arg_list(tree), &mut args, &mut lent, demands);
+            return self.sequence_call(site, built_in, &args, &lent, damaged || is_refused);
+        }
         let (applied, bound) = match method {
             Some(method) => self.applied_method(site, method, damaged),
             None => {
@@ -3115,6 +3387,23 @@ impl<'a, 's> Builder<'a, 's> {
                 (Applied::Unknown, Vec::new())
             }
         };
+        let demands = match applied {
+            Applied::Function(method) => Demands::Params(self.decided_params(site, method, &[])),
+            // The receiver decides the type parameters of the `impl`.
+            Applied::Inferred(method) => {
+                let params = self.declared.type_args[method.index()].clone();
+                let mut bound = bound.clone();
+                bound.resize(params.len(), None);
+                let types = self.graph.param_types(method);
+                let receiver = types.and_then(|types| types.first().copied());
+                if let (Some(pattern), Decides::Ty(actual)) = (receiver, self.decides(&value)) {
+                    self.source.bind(pattern, actual, &params, &mut bound);
+                }
+                Demands::Params(self.decided_params(site, method, &bound))
+            }
+            _ => Demands::None,
+        };
+        self.arguments(call.arg_list(tree), &mut args, &mut lent, demands);
         self.invoke(
             site,
             applied,
@@ -3126,27 +3415,268 @@ impl<'a, 's> Builder<'a, 's> {
         )
     }
 
-    /// What a receiver that is a place holds: read along `path`, or a hole where that failed.
-    fn receiver_value(&mut self, place: &Place<'s>, path: Option<&Path>) -> Value {
-        self.locals[place.local.index()].is_read = true;
-        let range = self.place_range(place, place.fields.len());
-        let read = match path {
-            Some(path) => self.held(place, path),
-            None => self.place(Op::Hole, &[], range, None),
+    /// The method of every sequence the name at `name` is, of a receiver that is one, with its
+    /// element type.
+    fn sequence_method(&mut self, name: NodeIdx, receiver: &Value) -> Option<(SequenceMethod, Ty)> {
+        let method = match self.source.text(name) {
+            "len" => SequenceMethod::Len,
+            "push" => SequenceMethod::Push,
+            "pop" => SequenceMethod::Pop,
+            _ => return None,
         };
-        let is_valid = self.is_typed(read);
-        if !is_valid {
+        let Decides::Ty(ty) = self.decides(receiver) else {
+            return None;
+        };
+        Some((method, self.source.element(ty)?))
+    }
+
+    /// A call of a sequence's own method over `args`, its receiver first: `push` and `pop` leave
+    /// the sequence they make in the receiver's place, the first of `lent`.
+    fn sequence_call(
+        &mut self,
+        site: Site,
+        method: SequenceMethod,
+        args: &Args,
+        lent: &Lent<'s>,
+        damaged: bool,
+    ) -> Value {
+        let tree = self.source.tree;
+        let node = site.node;
+        let at = self.source.range(node);
+        let name = site.name.map_or("", |name| self.source.text(name));
+        let mut is_whole = !damaged;
+        let (given, _) = self.source.type_args(site.list);
+        is_whole &= self.source.takes(0, given, site.list, at, None, damaged);
+        let wanted = usize::from(method == SequenceMethod::Push);
+        if !damaged {
+            for (arg, _) in args {
+                if let Some(label) = arg.and_then(|arg| arg.label(tree)) {
+                    let message = "a method's arguments take no labels";
+                    self.source
+                        .error(label.node(), codes::LABELED_ARGUMENT, message, None);
+                    is_whole = false;
+                }
+            }
+            for &(index, _) in lent.iter().filter(|&&(index, _)| index > 0) {
+                let message =
+                    format!("`{name}` takes a value: `mut` is written for a `mut` parameter");
+                self.source
+                    .report(args[index].1.range, codes::MUT_ARGUMENT, message, []);
+                is_whole = false;
+            }
+            if args.len() - 1 != wanted {
+                let message = format!("expected {wanted} arguments, found {}", args.len() - 1);
+                self.source.report(at, codes::ARITY, message, []);
+                is_whole = false;
+            }
+        }
+        let control = self.compose_control(at, args.iter().map(|(_, value)| value.control));
+        let completes = args.iter().any(|(_, value)| value.completes);
+        let is_valid = args.iter().all(|(_, value)| value.is_valid);
+        self.bottoms[node.to_usize()] = completes;
+        if !is_whole || !is_valid {
+            let inputs: Vec<_> = args.iter().map(|(_, value)| value.input()).collect();
+            let hole = self.push(node, Op::Hole, &inputs, None);
+            for (index, (_, value)) in args.iter().enumerate() {
+                if value.completes {
+                    self.completes_input(hole, index);
+                }
+            }
+            self.fail();
+            return self.value(node, hole, control, completes);
+        }
+        let receiver = args[0].1;
+        // What the receiver's place holds after the call, and the node the call is.
+        let (left, id) = match method {
+            SequenceMethod::Len => {
+                let len = self.push(node, Op::Len, &[receiver.input()], None);
+                (None, len)
+            }
+            SequenceMethod::Push => {
+                let inputs = [receiver.input(), args[1].1.input()];
+                let pushed = self.place(Op::Push, &inputs, at, None);
+                (Some(pushed), pushed)
+            }
+            SequenceMethod::Pop => {
+                self.access(node, receiver.node, None);
+                let len = self.place(Op::Len, &[receiver.input()], at, None);
+                let one = self.place(Op::Int(Int::from(1)), &[], at, None);
+                let last = BinaryOp::Arith(ArithOp::Sub);
+                let last = self.place(Op::Binary(last), &[(len, at), (one, at)], at, None);
+                let element = self.push(node, Op::Index, &[receiver.input(), (last, at)], None);
+                let rest = self.place(Op::Pop, &[receiver.input()], at, None);
+                (Some(rest), element)
+            }
+        };
+        for (index, (_, value)) in args.iter().enumerate() {
+            if value.completes {
+                self.completes_input(left.filter(|_| index > 0).unwrap_or(id), index);
+            }
+        }
+        let place = lent.first().and_then(|(_, place)| place.as_ref());
+        if let (Some(left), Some(place), false) = (left, place, completes) {
+            match self.path(place) {
+                Some(path) => {
+                    self.write(place, path, (left, receiver.range), at);
+                }
+                None => self.fail(),
+            }
+        }
+        let id = match method {
+            SequenceMethod::Push => self.push(node, Op::Unit, &[(self.context(), at)], None),
+            SequenceMethod::Len | SequenceMethod::Pop => id,
+        };
+        self.value(node, id, control, completes)
+    }
+
+    /// The element of a sequence at an index. `base` is the lowered sequence where the read is a
+    /// link of a chain.
+    fn index(&mut self, expr: ast::IndexExpr, damaged: bool, base: Option<Value>) -> Value {
+        let tree = self.source.tree;
+        let node = expr.node();
+        if let Some(base) = &base {
+            self.advance(base);
+        }
+        let index = expr
+            .subscript(tree)
+            .and_then(|subscript| subscript.index(tree));
+        let index = index.map(|index| self.lower(index.node()));
+        let base = self.present(node, base);
+        let index = self.present(node, index);
+        let is_sequence =
+            !damaged && base.is_valid && self.element_of(base.node, base.range).is_some();
+        let op = if is_sequence { Op::Index } else { Op::Hole };
+        let id = self.push(node, op, &[base.input(), index.input()], None);
+        let range = self.source.range(node);
+        let control = self.compose_control(range, [base.control, index.control]);
+        for (position, operand) in [base, index].into_iter().enumerate() {
+            if operand.completes {
+                self.completes_input(id, position);
+            }
+        }
+        let completes = base.completes || index.completes;
+        self.bottoms[node.to_usize()] = completes;
+        if damaged || !base.is_valid || !index.is_valid || !is_sequence {
+            self.fail();
+        } else if !completes {
+            self.access(node, base.node, Some(index.node));
+        }
+        self.value(node, id, control, completes)
+    }
+
+    /// A sequence of its elements, whose type is what demands one here, else the first element's
+    /// that has one.
+    fn array(&mut self, expr: ast::ArrayExpr, damaged: bool, held: Option<Ty>) -> Value {
+        let tree = self.source.tree;
+        let node = expr.node();
+        let at = self.source.range(node);
+        let demanded = held.and_then(|ty| self.source.element(ty));
+        let mut elements = Vec::new();
+        for element in expr.elements(tree) {
+            let value = self.lower_as(element.node(), demanded);
+            self.advance(&value);
+            elements.push(value);
+        }
+        let element = if self.source.is_muted {
+            self.decided(node).and_then(|args| args.first().copied())
+        } else {
+            let values: Vec<Decides> = elements.iter().map(|value| self.decides(value)).collect();
+            let decided = values.iter().find_map(|&read| match read {
+                Decides::Ty(ty) => Some(ty),
+                _ => None,
+            });
+            let element = demanded.or(decided);
+            match element {
+                Some(element) => self.decide(node, &[element]),
+                None if damaged || values.iter().any(|read| matches!(read, Decides::Failed)) => {}
+                None => {
+                    let pending = values.iter().find(|read| matches!(read, Decides::Pending));
+                    let message = format!(
+                        "nothing here decides what this sequence holds{}; give what takes it a \
+                         type",
+                        pending.map_or("", |&read| pending_text(read)),
+                    );
+                    self.source.report(at, codes::TYPE_ARGUMENTS, message, []);
+                }
+            }
+            element
+        };
+        let decl = element
+            .and_then(|element| self.source.array_of(element, at))
+            .and_then(Ty::as_decl);
+        let inputs: Vec<_> = elements.iter().map(|value| value.input()).collect();
+        let id = self.push(node, decl.map_or(Op::Hole, Op::Array), &inputs, None);
+        let control = self.compose_control(at, elements.iter().map(|value| value.control));
+        let mut completes = false;
+        let mut is_valid = true;
+        for (index, value) in elements.iter().enumerate() {
+            completes |= value.completes;
+            is_valid &= value.is_valid;
+            if value.completes {
+                self.completes_input(id, index);
+            }
+        }
+        self.bottoms[node.to_usize()] = completes;
+        if damaged || !is_valid || decl.is_none() {
             self.fail();
         }
-        Value {
-            node: read,
-            range,
-            at: range,
-            control: None,
-            completes: false,
-            is_valid,
-            has_scalar_tail: is_valid,
+        self.value(node, id, control, completes)
+    }
+
+    /// The parameter types of `function` its call holds its arguments to before they are read,
+    /// by position: each that names no type parameter `bound` leaves open, at those it decides.
+    /// An instance past the limit is reported at `site`.
+    fn decided_params(
+        &mut self,
+        site: Site,
+        function: FunctionId,
+        bound: &[Option<Ty>],
+    ) -> Vec<Option<Ty>> {
+        let Some(patterns) = self.graph.param_types(function) else {
+            return Vec::new();
+        };
+        let patterns = patterns.to_vec();
+        let params = self.declared.type_args[function.index()].clone();
+        let at = |index: usize| bound.get(index).copied().flatten();
+        let args: Vec<Ty> = params
+            .iter()
+            .enumerate()
+            .map(|(index, &param)| at(index).unwrap_or(param))
+            .collect();
+        let open: Vec<DeclId> = params
+            .iter()
+            .enumerate()
+            .filter(|&(index, _)| at(index).is_none())
+            .filter_map(|(_, param)| param.as_decl())
+            .collect();
+        let range = self.source.range(site.node);
+        patterns
+            .into_iter()
+            .map(|pattern| {
+                let is_open = open
+                    .iter()
+                    .any(|&param| self.source.mentions(pattern, param));
+                (!is_open).then(|| self.source.substitute(pattern, &params, &args, range))?
+            })
+            .collect()
+    }
+
+    /// The type the place holds, by its local's and each step's, where every one is known.
+    fn place_ty(&mut self, place: &Place<'s>) -> Option<Ty> {
+        let Decides::Ty(mut ty) = self.decides_at(self.versions.read(place.local)) else {
+            return None;
+        };
+        for step in &place.steps {
+            ty = match *step {
+                Step::Field(name, _) => {
+                    let decl = ty.as_decl()?;
+                    let field = self.source.decls[decl.index()].index_of(name)?;
+                    self.source.fields(decl)[field].1?
+                }
+                Step::Index { .. } => self.source.element(ty)?,
+            };
         }
+        Some(ty)
     }
 
     /// The method the name at `name` is of the receiver's type; none is reported, unless the

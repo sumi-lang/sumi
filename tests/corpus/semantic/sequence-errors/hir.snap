@@ -1,0 +1,200 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 25
+
+== graph ==
+fn swap<T>@5:1..9:2 (T ∈ ∅, T ∈ ∅) -> unit ∈ ∅
+  param a@5:16..5:17: T
+  param b@5:26..5:27: T
+  body:
+    let t@6:9..6:10: T @6:5..6:14
+      initializer: read a@5:16..5:17 : T
+    assignment: assign a@5:16..5:17 : T @7:5..7:10
+      value: read b@5:26..5:27 : T
+    assignment: assign b@5:26..5:27 : T @8:5..8:10
+      value: read t@6:9..6:10 : T
+    tail: make <missing> : <missing> @5:32..9:2
+
+fn first@10:1..10:35 ([int] ∈ ∅) -> int ∈ ∅
+  param xs@10:10..10:12: [int]
+  result: copy : int @10:24..10:27
+    value: index : int @10:30..10:35
+      sequence: read xs@10:10..10:12 : [int]
+      index: int 0 : int @10:33..10:34
+
+fn errors@11:1..39:2 (int ∈ ∅) -> int ∈ ∅
+  param n@11:11..11:12: int
+  result: copy : int @11:22..11:25
+    value:
+      let xs@12:9..12:11: [int] @12:5..12:23
+        initializer: array : [int] @12:14..12:23
+          element: int 1 : int @12:15..12:16
+          element: int 2 : int @12:18..12:19
+          element: int 3 : int @12:21..12:22
+      let ys@13:13..13:15: [int] @13:5..13:24
+        initializer: array : [int] @13:18..13:24
+          element: int 1 : int @13:19..13:20
+          element: int 2 : int @13:22..13:23
+      let empty@14:9..14:14: ? @14:5..14:19
+        initializer: hole : ? @14:17..14:19
+      let mixed@15:9..15:14: [int] @15:5..15:26
+        initializer: array : [int] @15:17..15:26
+          element: int 1 : int @15:18..15:19
+          element: bool true : bool @15:21..15:25
+      let nested@16:9..16:15: ? @16:5..16:30
+        initializer: array : ? @16:18..16:30
+          element: hole : ? @16:19..16:21
+          element: array : [bool] @16:23..16:29
+            element: bool true : bool @16:24..16:28
+      let p@17:9..17:10: Point @17:5..17:30
+        initializer: make Point : Point @17:13..17:30
+          x: int 1 : int @17:22..17:23
+          y: int 2 : int @17:28..17:29
+      discard: hole : ? @18:5..18:15
+        part[0]: read xs@12:9..12:11 : [int]
+        part[1]: int 4 : int @18:13..18:14
+      discard: hole : ? @19:5..19:14
+        part[0]: int 5 : int @19:13..19:14
+      discard: hole : ? @20:9..20:13
+        part[0]: read p@17:9..17:10 : Point
+        part[1]: int 0 : int @20:11..20:12
+      discard: hole : ? @21:9..21:13
+        part[0]: read n@11:11..11:12 : int
+        part[1]: int 1 : int @21:11..21:12
+      discard: index : int @22:9..22:17
+        sequence: read xs@12:9..12:11 : [int]
+        index: bool true : bool @22:12..22:16
+      assignment: assign ys@13:13..13:15 : [int] @23:5..23:18
+        value: push : [int] @23:5..23:18
+          sequence: read ys@13:13..13:15 : [int]
+          element: bool true : bool @23:13..23:17
+      discard: unit : unit @23:5..23:18
+      discard: hole : ? @24:5..24:18
+        part[0]: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+        part[1]: int 1 : int @24:13..24:14
+        part[2]: int 2 : int @24:16..24:17
+      discard: hole : ? @25:5..25:19
+        part[0]: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+        part[1]: hole : ? @25:17..25:18
+      discard: hole : ? @26:5..26:18
+        part[0]: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+        part[1]: int 1 : int @26:16..26:17
+      discard: hole : ? @27:5..27:14
+        part[0]: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+        part[1]: int 1 : int @27:12..27:13
+      discard: hole : ? @28:5..28:18
+        part[0]: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+      discard: hole : ? @29:9..29:18
+        part[0]: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+      discard: field len : ? @30:9..30:15
+        base: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+      discard: hole : ? @31:5..31:19
+        part[0]: array : [int] @31:5..31:11
+          element: int 1 : int @31:6..31:7
+          element: int 2 : int @31:9..31:10
+        part[1]: int 3 : int @31:17..31:18
+      discard: field return : unit @32:5..32:31
+        base: call swap@5:1..9:2 : <missing> @32:5..32:31
+          arg[0]: index : int @32:14..32:19
+            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            index: int 0 : int @32:17..32:18
+          arg[1]: index : int @32:25..32:30
+            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            index: read n@11:11..11:12 : int
+      discard: field return : unit @33:5..33:31
+        base: call swap@5:1..9:2 : <missing> @33:5..33:31
+          arg[0]: index : int @33:14..33:19
+            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            index: int 0 : int @33:17..33:18
+          arg[1]: index : int @33:25..33:30
+            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            index: int 0 : int @33:28..33:29
+      assignment: assign ys@13:13..13:15 : [int] @34:14..34:19
+        value: store : [int] @34:14..34:19
+          sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+          index: int 0 : int @34:17..34:18
+          element: field a : int @34:14..34:19
+            base: call swap@5:1..9:2 : <missing> @34:5..34:31
+              arg[0]: index : int @34:14..34:19
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: int 0 : int @34:17..34:18
+              arg[1]: index : int @34:25..34:30
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: int 1 : int @34:28..34:29
+      assignment: assign ys@13:13..13:15 : [int] @34:25..34:30
+        value: store : [int] @34:25..34:30
+          sequence: read ys@13:13..13:15 (assigned @34:14..34:19) : [int]
+          index: int 1 : int @34:28..34:29
+          element: field b : int @34:25..34:30
+            base: call swap@5:1..9:2 : <missing> @34:5..34:31
+              arg[0]: index : int @34:14..34:19
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: int 0 : int @34:17..34:18
+              arg[1]: index : int @34:25..34:30
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: int 1 : int @34:28..34:29
+      discard: field return : unit @34:5..34:31
+        base: call swap@5:1..9:2 : <missing> @34:5..34:31
+          arg[0]: index : int @34:14..34:19
+            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            index: int 0 : int @34:17..34:18
+          arg[1]: index : int @34:25..34:30
+            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            index: int 1 : int @34:28..34:29
+      let zs@35:9..35:11: hole : ? @35:5..35:30
+        part[0]: read p@17:9..17:10 : Point
+      let ws@36:9..36:11: hole : ? @36:5..36:27
+        part[0]: hole : ? @36:25..36:27
+      assignment: assign ys@13:13..13:15 : [int] @37:5..37:16
+        value: array : [int] @37:10..37:16
+          element: bool true : bool @37:11..37:15
+      tail: eager + : int @38:5..38:30
+        lhs: call first@10:1..10:35 : int @38:5..38:14
+          arg[0]: array : [int] @38:11..38:13
+        rhs: call first@10:1..10:35 : int @38:17..38:30
+          arg[0]: array : [int] @38:23..38:29
+            element: bool true : bool @38:24..38:28
+
+fn swap<int>@5:1..9:2 (int ∈ ∅, int ∈ ∅) -> unit ∈ ∅
+  param a@5:16..5:17: int
+  param b@5:26..5:27: int
+  body:
+    let t@6:9..6:10: int @6:5..6:14
+      initializer: read a@5:16..5:17 : int
+    assignment: assign a@5:16..5:17 : int @7:5..7:10
+      value: read b@5:26..5:27 : int
+    assignment: assign b@5:26..5:27 : int @8:5..8:10
+      value: read t@6:9..6:10 : int
+    tail: make <missing> : <missing> @5:32..9:2
+
+== semantic diagnostics ==
+error[semantic/type-arguments] 14:17..14:19 "[]": nothing here decides what this sequence holds; give what takes it a type
+error[semantic/type-mismatch] 15:21..15:25 "true": expected int, found bool
+error[semantic/type-arguments] 16:19..16:21 "[]": nothing here decides what this sequence holds; give what takes it a type
+error[semantic/immutable-assignment] 18:5..18:7 "xs": `push` changes its receiver, and `xs` is immutable
+  at 12:9..12:11 "xs": declared here
+error[semantic/immutable-assignment] 19:5..19:7 "xs": cannot assign to immutable local `xs`
+  at 12:9..12:11 "xs": declared here
+error[semantic/not-a-sequence] 20:9..20:10 "p": `Point` is no sequence, so it holds no element to index
+error[semantic/not-a-sequence] 21:9..21:10 "n": `int` is no sequence, so it holds no element to index
+error[semantic/type-mismatch] 22:12..22:16 "true": expected int, found bool
+error[semantic/type-mismatch] 23:13..23:17 "true": expected int, found bool
+error[semantic/arity] 24:5..24:18 "ys.push(1, 2)": expected 1 arguments, found 2
+error[semantic/immutable-assignment] 25:17..25:18 "n": cannot assign to immutable local `n`
+  at 11:11..11:12 "n": declared here
+error[semantic/mut-argument] 25:17..25:18 "n": `push` takes a value: `mut` is written for a `mut` parameter
+error[semantic/labeled-argument] 26:13..26:14 "x": a method's arguments take no labels
+error[semantic/arity] 27:5..27:14 "ys.len(1)": expected 0 arguments, found 1
+error[semantic/type-arguments] 28:11..28:16 "<int>": expected 0 type arguments, found 1
+error[semantic/unknown-method] 29:12..29:16 "nope": `[int]` has no method `nope`
+error[semantic/unknown-field] 30:9..30:15 "ys.len": `len` is a method of `[int]`: a call of it takes `()`
+error[semantic/invalid-assignment-target] 31:5..31:11 "[1, 2]": `push` changes its receiver, which is no place: a place is a `mut` name, or a field or an element under one
+error[semantic/overlapping-places] 32:25..32:30 "ys[n]": this place overlaps another the call changes
+  at 32:14..32:19 "ys[0]": also changed here
+error[semantic/overlapping-places] 33:25..33:30 "ys[0]": this place overlaps another the call changes
+  at 33:14..33:19 "ys[0]": also changed here
+error[semantic/invalid-union-member] 35:13..35:18 "[int]": a sequence is no member of a union
+error[semantic/unknown-type] 36:14..36:21 "Missing": unknown type `Missing`
+error[semantic/type-arguments] 36:25..36:27 "[]": nothing here decides what this sequence holds; give what takes it a type
+error[semantic/type-mismatch] 37:11..37:15 "true": expected int, found bool
+error[semantic/type-mismatch] 38:24..38:28 "true": expected int, found bool

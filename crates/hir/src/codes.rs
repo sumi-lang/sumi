@@ -53,6 +53,12 @@ sumi_frontend::codes! {
     /// A field read or label naming no field of the type it is applied to.
     UNKNOWN_FIELD: Error = "unknown-field";
 
+    /// An index not proven inside its sequence, or a last element of one not proven to hold any.
+    INDEX_OUT_OF_BOUNDS: Error = "index-out-of-bounds";
+
+    /// A subscript on a value that is no sequence, or whose type is not known.
+    NOT_A_SEQUENCE: Error = "not-a-sequence";
+
     /// A method call naming no method of its receiver's type.
     UNKNOWN_METHOD: Error = "unknown-method";
 
