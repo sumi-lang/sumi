@@ -684,14 +684,28 @@ pub fn semantics(analysis: &Analysis) {
     use sumi_hir::FunctionId;
     let source = analysis.parsed().source();
     if analysis.parsed().diagnostics().is_empty() {
-        use sumi_syntax::ast::{AstNode, SourceFile, View};
+        use sumi_syntax::ast::{AstNode, Item, SourceFile, View};
         let tree = analysis.parsed().parse().tree();
-        let mut declarations: Vec<_> = SourceFile::cast(tree, tree.root())
+        let range = |node| tree.byte_range(node, analysis.parsed().lexed());
+        // An `impl`'s methods are reversed as the items are.
+        let mut declarations: Vec<String> = SourceFile::cast(tree, tree.root())
             .unwrap()
             .items(tree)
             .map(|item| {
-                tree.byte_range(item.node(), analysis.parsed().lexed())
-                    .text(source)
+                let whole = range(item.node());
+                let methods = match item {
+                    Item::ImplItem(item) => item.method_list(tree),
+                    Item::FnItem(_) | Item::TypeItem(_) => None,
+                };
+                let methods = methods.into_iter().flat_map(|list| list.methods(tree));
+                let mut methods: Vec<_> = methods.map(|method| range(method.node())).collect();
+                let Some(first) = methods.first() else {
+                    return whole.text(source).to_owned();
+                };
+                let head = TextRange::new(whole.start(), first.start()).text(source);
+                methods.reverse();
+                let methods: Vec<&str> = methods.iter().map(|method| method.text(source)).collect();
+                format!("{head}{}\n}}", methods.join("\n"))
             })
             .collect();
         declarations.reverse();

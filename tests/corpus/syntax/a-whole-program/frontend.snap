@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 1:1..88:1
+SourceFile 1:1..106:1
   FnItem 3:1..15:2
     Name 3:4..3:8 "main"
     ParamList 3:8..3:10 "()"
@@ -390,3 +390,96 @@ SourceFile 1:1..88:1
       FieldExpr 86:5..86:8
         NameRef 86:5..86:6 "p"
         NameRef 86:7..86:8 "x"
+  ImplItem 89:1..95:2
+    NameRef 89:6..89:11 "Point"
+    MethodList 89:12..95:2
+      FnItem 90:5..90:35
+        Name 90:8..90:11 "sum"
+        ParamList 90:11..90:17
+          SelfParam 90:12..90:16 "self"
+        BinaryExpr 90:20..90:35
+          FieldExpr 90:20..90:26
+            SelfExpr 90:20..90:24 "self"
+            NameRef 90:25..90:26 "x"
+          FieldExpr 90:29..90:35
+            SelfExpr 90:29..90:33 "self"
+            NameRef 90:34..90:35 "y"
+      FnItem 92:5..94:6
+        Name 92:8..92:13 "shift"
+        ParamList 92:13..92:32
+          SelfParam 92:14..92:22 "mut self"
+          Param 92:24..92:31
+            Name 92:24..92:26 "dx"
+            TypeRef 92:28..92:31 "int"
+        Block 92:33..94:6
+          AssignStmt 93:9..93:21
+            FieldExpr 93:9..93:15
+              SelfExpr 93:9..93:13 "self"
+              NameRef 93:14..93:15 "x"
+            NameRef 93:19..93:21 "dx"
+  ImplItem 97:1..99:2
+    NameRef 97:6..97:9 "Box"
+    TypeParamList 97:9..97:12
+      Name 97:10..97:11 "T"
+    MethodList 97:13..99:2
+      FnItem 98:5..98:61
+        Name 98:8..98:12 "with"
+        TypeParamList 98:12..98:15
+          Name 98:13..98:14 "U"
+        ParamList 98:15..98:31
+          SelfParam 98:16..98:20 "self"
+          Param 98:22..98:30
+            Name 98:22..98:27 "other"
+            TypeRef 98:29..98:30 "U"
+        TypeRef 98:35..98:41
+          TypeArgList 98:38..98:41
+            TypeRef 98:39..98:40 "U"
+        CallExpr 98:44..98:61
+          NameRef 98:44..98:47 "Box"
+          ArgList 98:47..98:61
+            Arg 98:48..98:60
+              NameRef 98:48..98:53 "value"
+              NameRef 98:55..98:60 "other"
+  FnItem 101:1..105:2
+    Name 101:4..101:11 "methods"
+    ParamList 101:11..101:13 "()"
+    TypeRef 101:17..101:20 "int"
+    Block 101:21..105:2
+      LetStmt 102:5..102:34
+        Name 102:13..102:14 "p"
+        CallExpr 102:17..102:34
+          NameRef 102:17..102:22 "Point"
+          ArgList 102:22..102:34
+            Arg 102:23..102:27
+              NameRef 102:23..102:24 "x"
+              LiteralExpr 102:26..102:27 "1"
+            Arg 102:29..102:33
+              NameRef 102:29..102:30 "y"
+              LiteralExpr 102:32..102:33 "2"
+      MethodCallExpr 103:5..103:15
+        FieldExpr 103:5..103:12
+          NameRef 103:5..103:6 "p"
+          NameRef 103:7..103:12 "shift"
+        ArgList 103:12..103:15
+          Arg 103:13..103:14
+            LiteralExpr 103:13..103:14 "3"
+      MethodCallExpr 104:5..104:45
+        FieldExpr 104:5..104:43
+          FieldExpr 104:5..104:39
+            MethodCallExpr 104:5..104:33
+              FieldExpr 104:5..104:23
+                CallExpr 104:5..104:18
+                  NameRef 104:5..104:8 "Box"
+                  ArgList 104:8..104:18
+                    Arg 104:9..104:17
+                      NameRef 104:9..104:14 "value"
+                      NameRef 104:16..104:17 "p"
+                NameRef 104:19..104:23 "with"
+              TypeArgList 104:23..104:30
+                TypeRef 104:24..104:29 "Point"
+              ArgList 104:30..104:33
+                Arg 104:31..104:32
+                  NameRef 104:31..104:32 "p"
+            NameRef 104:34..104:39 "value"
+          NameRef 104:40..104:43 "sum"
+        ArgList 104:43..104:45 "()"

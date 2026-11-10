@@ -1,0 +1,271 @@
+== tree ==
+SourceFile 1:1..34:1
+  TypeItem 1:1..1:40
+    Name 1:6..1:10 "Pair"
+    TypeParamList 1:10..1:16
+      Name 1:11..1:12 "A"
+      Name 1:14..1:15 "B"
+    FieldList 1:17..1:40
+      Field 1:19..1:27
+        Name 1:19..1:24 "first"
+        TypeRef 1:26..1:27 "A"
+      Field 1:29..1:38
+        Name 1:29..1:35 "second"
+        TypeRef 1:37..1:38 "B"
+  ImplItem 3:1..9:2
+    NameRef 3:8..3:12 "Pair"
+    TypeParamList 3:12..3:17
+      Name 3:13..3:14 "A"
+      Name 3:15..3:16 "B"
+    MethodList 3:17..9:2
+      FnItem 4:5..4:86
+        Name 4:8..4:15 "swapped"
+        ParamList 4:15..4:23
+          SelfParam 4:17..4:21 "self"
+        TypeRef 4:27..4:37
+          TypeArgList 4:31..4:37
+            TypeRef 4:32..4:33 "B"
+            TypeRef 4:35..4:36 "A"
+        CallExpr 4:40..4:86
+          NameRef 4:40..4:44 "Pair"
+          ArgList 4:44..4:86
+            Arg 4:45..4:65
+              NameRef 4:45..4:50 "first"
+              FieldExpr 4:52..4:65
+                SelfExpr 4:52..4:56 "self"
+                NameRef 4:59..4:65 "second"
+            Arg 4:67..4:85
+              NameRef 4:67..4:73 "second"
+              FieldExpr 4:75..4:85
+                SelfExpr 4:75..4:79 "self"
+                NameRef 4:80..4:85 "first"
+      FnItem 7:5..7:56
+        Name 7:8..7:11 "put"
+        ParamList 7:11..7:33
+          SelfParam 7:12..7:22 "mut   self"
+          Param 7:24..7:32
+            Name 7:24..7:29 "first"
+            TypeRef 7:31..7:32 "A"
+        Block 7:34..7:56
+          AssignStmt 7:36..7:54
+            FieldExpr 7:36..7:46
+              SelfExpr 7:36..7:40 "self"
+              NameRef 7:41..7:46 "first"
+            NameRef 7:49..7:54 "first"
+      FnItem 8:5..8:85
+        Name 8:8..8:11 "map"
+        TypeParamList 8:11..8:14
+          Name 8:12..8:13 "C"
+        ParamList 8:14..8:30
+          SelfParam 8:15..8:19 "self"
+          Param 8:21..8:29
+            Name 8:21..8:26 "third"
+            TypeRef 8:28..8:29 "C"
+        TypeRef 8:34..8:44
+          TypeArgList 8:38..8:44
+            TypeRef 8:39..8:40 "A"
+            TypeRef 8:42..8:43 "C"
+        CallExpr 8:47..8:85
+          NameRef 8:47..8:51 "Pair"
+          ArgList 8:51..8:85
+            Arg 8:52..8:69
+              NameRef 8:52..8:57 "first"
+              FieldExpr 8:59..8:69
+                SelfExpr 8:59..8:63 "self"
+                NameRef 8:64..8:69 "first"
+            Arg 8:71..8:84
+              NameRef 8:71..8:77 "second"
+              NameRef 8:79..8:84 "third"
+  ImplItem 11:1..11:14
+    NameRef 11:6..11:11 "Empty"
+    MethodList 11:12..11:14 "{}"
+  ImplItem 13:1..16:2
+    NameRef 13:6..13:10 "Wide"
+    MethodList 14:1..16:2
+      FnItem 15:5..15:21
+        Name 15:8..15:11 "one"
+        ParamList 15:11..15:17
+          SelfParam 15:12..15:16 "self"
+        LiteralExpr 15:20..15:21 "1"
+  FnItem 18:1..28:2
+    Name 18:4..18:9 "calls"
+    ParamList 18:9..18:33
+      Param 18:10..18:32
+        Name 18:14..18:15 "p"
+        TypeRef 18:17..18:32
+          TypeArgList 18:21..18:32
+            TypeRef 18:22..18:25 "int"
+            TypeRef 18:27..18:31 "bool"
+    TypeRef 18:37..18:40 "int"
+    Block 18:41..28:2
+      MethodCallExpr 19:5..19:13
+        FieldExpr 19:5..19:10
+          NameRef 19:5..19:6 "p"
+          NameRef 19:7..19:10 "put"
+        ArgList 19:10..19:13
+          Arg 19:11..19:12
+            LiteralExpr 19:11..19:12 "1"
+      FieldExpr 20:5..20:32
+        MethodCallExpr 20:5..20:26
+          FieldExpr 20:5..20:24
+            MethodCallExpr 20:5..20:16
+              FieldExpr 20:5..20:14
+                NameRef 20:5..20:6 "p"
+                NameRef 20:7..20:14 "swapped"
+              ArgList 20:14..20:16 "()"
+            NameRef 20:17..20:24 "swapped"
+          ArgList 20:24..20:26 "()"
+        NameRef 20:27..20:32 "first"
+      BinaryExpr 21:5..24:15
+        FieldExpr 21:5..21:25
+          MethodCallExpr 21:5..21:18
+            FieldExpr 21:5..21:10
+              NameRef 21:5..21:6 "p"
+              NameRef 21:7..21:10 "map"
+            TypeArgList 21:10..21:15
+              TypeRef 21:11..21:14 "int"
+            ArgList 21:15..21:18
+              Arg 21:16..21:17
+                LiteralExpr 21:16..21:17 "2"
+          NameRef 21:19..21:25 "second"
+        FieldExpr 21:28..24:15
+          MethodCallExpr 21:28..23:19
+            FieldExpr 21:28..23:17
+              MethodCallExpr 21:28..22:16
+                FieldExpr 21:28..22:13
+                  NameRef 21:28..21:29 "p"
+                  NameRef 22:10..22:13 "map"
+                ArgList 22:13..22:16
+                  Arg 22:14..22:15
+                    LiteralExpr 22:14..22:15 "3"
+              NameRef 23:10..23:17 "swapped"
+            ArgList 23:17..23:19 "()"
+          NameRef 24:10..24:15 "first"
+      BinaryExpr 25:5..25:55
+        BinaryExpr 25:5..25:42
+          FieldExpr 25:5..25:25
+            MethodCallExpr 25:5..25:18
+              FieldExpr 25:5..25:16
+                ParenExpr 25:5..25:8
+                  NameRef 25:6..25:7 "p"
+                NameRef 25:9..25:16 "swapped"
+              ArgList 25:16..25:18 "()"
+            NameRef 25:19..25:25 "second"
+          PrefixExpr 25:28..25:42
+            MethodCallExpr 25:29..25:42
+              FieldExpr 25:29..25:40
+                FieldExpr 25:29..25:36
+                  NameRef 25:29..25:30 "p"
+                  NameRef 25:31..25:36 "first"
+                NameRef 25:37..25:40 "abs"
+              ArgList 25:40..25:42 "()"
+        FieldExpr 25:45..25:55
+          MethodCallExpr 25:45..25:53
+            FieldExpr 25:45..25:51
+              CallExpr 25:45..25:49
+                NameRef 25:45..25:46 "f"
+                ArgList 25:46..25:49
+                  Arg 25:47..25:48
+                    NameRef 25:47..25:48 "p"
+              NameRef 25:50..25:51 "g"
+            ArgList 25:51..25:53 "()"
+          NameRef 25:54..25:55 "h"
+      MethodCallExpr 26:5..27:15
+        FieldExpr 26:5..27:13
+          FieldExpr 26:5..26:12
+            NameRef 26:5..26:6 "p"
+            NameRef 26:7..26:12 "first"
+          NameRef 27:10..27:13 "abs"
+        ArgList 27:13..27:15 "()"
+  FnItem 30:1..33:2
+    Name 30:4..30:15 "long_chains"
+    ParamList 30:15..30:91
+      Param 30:16..30:62
+        Name 30:16..30:45 "some_quite_long_receiver_name"
+        TypeRef 30:47..30:62
+          TypeArgList 30:51..30:62
+            TypeRef 30:52..30:55 "int"
+            TypeRef 30:57..30:61 "bool"
+      Param 30:64..30:90
+        Name 30:64..30:85 "another_long_argument"
+        TypeRef 30:87..30:90 "int"
+    TypeRef 30:95..30:98 "int"
+    Block 30:99..33:2
+      LetStmt 31:5..31:128
+        Name 31:9..31:13 "kept"
+        MethodCallExpr 31:16..31:128
+          FieldExpr 31:16..31:120
+            MethodCallExpr 31:16..31:112
+              FieldExpr 31:16..31:89
+                MethodCallExpr 31:16..31:82
+                  FieldExpr 31:16..31:59
+                    FieldExpr 31:16..31:51
+                      NameRef 31:16..31:45 "some_quite_long_receiver_name"
+                      NameRef 31:46..31:51 "first"
+                    NameRef 31:52..31:59 "checked"
+                  ArgList 31:59..31:82
+                    Arg 31:60..31:81
+                      NameRef 31:60..31:81 "another_long_argument"
+                NameRef 31:83..31:89 "scaled"
+              ArgList 31:89..31:112
+                Arg 31:90..31:111
+                  NameRef 31:90..31:111 "another_long_argument"
+            NameRef 31:113..31:120 "clamped"
+          ArgList 31:120..31:128
+            Arg 31:121..31:122
+              LiteralExpr 31:121..31:122 "0"
+            Arg 31:124..31:127
+              LiteralExpr 31:124..31:127 "100"
+      MethodCallExpr 32:5..32:113
+        FieldExpr 32:5..32:44
+          NameRef 32:5..32:9 "kept"
+          NameRef 32:10..32:44 "only_one_call_takes_long_arguments"
+        ArgList 32:44..32:113
+          Arg 32:45..32:66
+            NameRef 32:45..32:66 "another_long_argument"
+          Arg 32:68..32:89
+            NameRef 32:68..32:89 "another_long_argument"
+          Arg 32:91..32:112
+            NameRef 32:91..32:112 "another_long_argument"
+
+== formatted ==
+type Pair<A, B> {
+    first: A,
+    second: B
+}
+
+impl Pair<A, B> {
+    fn swapped(self) -> Pair<B, A> = Pair(first: self.second, second: self.first)
+
+    // A receiver that changes says so.
+    fn put(mut self, first: A) {
+        self.first = first
+    }
+    fn map<C>(self, third: C) -> Pair<A, C> = Pair(first: self.first, second: third)
+}
+
+impl Empty {}
+
+impl Wide {
+    fn one(self) = 1
+}
+
+fn calls(mut p: Pair<int, bool>) -> int {
+    p.put(1)
+    p.swapped().swapped().first
+    p.map<int>(2).second + p.map(3).swapped().first
+    (p).swapped().second + -p.first.abs() + f(p).g().h
+    p.first.abs()
+}
+
+fn long_chains(some_quite_long_receiver_name: Pair<int, bool>, another_long_argument: int) -> int {
+    let kept = some_quite_long_receiver_name.first
+        .checked(another_long_argument)
+        .scaled(another_long_argument)
+        .clamped(0, 100)
+    kept.only_one_call_takes_long_arguments(
+        another_long_argument,
+        another_long_argument,
+        another_long_argument,
+    )
+}

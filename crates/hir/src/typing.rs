@@ -1076,11 +1076,19 @@ impl Checker<'_, '_> {
             decl.name_node
                 .map(|node| (self.source.range(node), Box::from("declared here")))
         });
-        let message = format!(
-            "`{}` has no field `{}`",
-            self.source.show(ty),
-            self.source.field_names[name.index()]
-        );
+        let name = self.source.field_names[name.index()];
+        let item = ty
+            .as_decl()
+            .map(|decl| self.source.decls[decl.index()].item);
+        let is_method = item.is_some_and(|item| self.declared.methods.contains_key(&(item, name)));
+        let message = if is_method {
+            format!(
+                "`{name}` is a method of `{}`: a call of it takes `()`",
+                self.source.show(ty)
+            )
+        } else {
+            format!("`{}` has no field `{name}`", self.source.show(ty))
+        };
         self.source
             .report(at, codes::UNKNOWN_FIELD, message, declared);
         false

@@ -29,6 +29,7 @@ enum Kind {
 
 const DECLARATION: u32 = 1 << 0;
 const READONLY: u32 = 1 << 1;
+const MODIFICATION: u32 = 1 << 2;
 
 pub(crate) fn legend() -> SemanticTokensLegend {
     SemanticTokensLegend {
@@ -50,6 +51,7 @@ pub(crate) fn legend() -> SemanticTokensLegend {
         token_modifiers: vec![
             SemanticTokenModifier::DECLARATION,
             SemanticTokenModifier::READONLY,
+            SemanticTokenModifier::MODIFICATION,
         ],
     }
 }
@@ -89,14 +91,41 @@ pub(crate) fn tokens(
         .collect();
     let mut name = |node, kind, modifiers| {
         if let Some(node) = node {
-            let token = tree.first_token(node);
-            if lexed.kind(token) == SyntaxKind::Ident {
+            // A receiver's name is `self`, which follows its `mut`.
+            let token = match tree.kind(node) {
+                NodeKind::SelfParam => tree.end_token(node) - 1,
+                _ => tree.first_token(node),
+            };
+            if matches!(lexed.kind(token), SyntaxKind::Ident | SyntaxKind::SelfKw) {
                 styles[token.to_usize()] = Some((kind, modifiers));
             }
         }
     };
+    // The callee of the method call last met: a parent comes before its children.
+    let mut method = None;
     for node in tree.nodes() {
         match tree.kind(node) {
+            NodeKind::ImplItem => name(
+                ast::ImplItem::cast(tree, node)
+                    .and_then(|item| item.target(tree))
+                    .map(|target| target.node()),
+                Kind::Type,
+                0,
+            ),
+            NodeKind::SelfParam => {
+                let is_mutable = ast::SelfParam::cast(tree, node)
+                    .is_some_and(|param| param.mutable(tree, lexed));
+                name(
+                    Some(node),
+                    Kind::Parameter,
+                    DECLARATION | if is_mutable { 0 } else { READONLY },
+                )
+            }
+            NodeKind::MethodCallExpr => {
+                method = ast::MethodCallExpr::cast(tree, node)
+                    .and_then(|call| call.callee(tree))
+                    .map(|callee| callee.node());
+            }
             NodeKind::FnItem => name(
                 ast::FnItem::cast(tree, node)
                     .and_then(|item| item.name(tree))
@@ -187,7 +216,11 @@ pub(crate) fn tokens(
                 ast::FieldExpr::cast(tree, node)
                     .and_then(|expr| expr.field(tree))
                     .map(|field| field.node()),
-                Kind::Property,
+                if method == Some(node) {
+                    Kind::Function
+                } else {
+                    Kind::Property
+                },
                 0,
             ),
             _ => {}
@@ -209,8 +242,10 @@ pub(crate) fn tokens(
                     | BindingKind::Arm => (Kind::Variable, READONLY),
                 },
             };
+            // A write is marked where it is written, which a changed receiver does not say.
+            let written = if reference.is_write { MODIFICATION } else { 0 };
             let token = lexed.token_at(reference.range.start()).unwrap();
-            styles[token.to_usize()] = Some(style);
+            styles[token.to_usize()] = Some((style.0, style.1 | written));
         }
     }
     let mut position = Position::new(0, 0);
@@ -298,7 +333,7 @@ mod tests {
     use sumi_hir::analyze;
     use sumi_text::Encoding;
 
-    use super::{DECLARATION, Kind, READONLY, tokens};
+    use super::{DECLARATION, Kind, MODIFICATION, READONLY, tokens};
 
     const TYPES: &str = "type Point { x: int, y: int }
 type Unit {}
@@ -384,6 +419,60 @@ fn main() -> int = id<Box<int>>(Box<int>(value: 1)).value
                 ("int", ty, 0),
                 ("value", property, 0),
                 ("value", property, 0),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_method_call_names_a_function_and_marks_the_receiver_it_changes() {
+        let (function, parameter, variable, ty, property) = (
+            Kind::Function as u32,
+            Kind::Parameter as u32,
+            Kind::Variable as u32,
+            Kind::Type as u32,
+            Kind::Property as u32,
+        );
+        let text = "type Count { n: int }
+impl Count {
+    fn bump(mut self) { self.n += 1 }
+    fn get(self) = self.n
+}
+fn main() -> int {
+    let mut c = Count(n: 0)
+    c.bump()
+    c.get()
+}
+";
+        let call = |refined| {
+            let names = names(text, refined);
+            let at = names.iter().rposition(|&(name, ..)| name == "bump");
+            names[at.unwrap()]
+        };
+        assert_eq!(call(false), ("bump", function, 0));
+        assert_eq!(
+            names(text, true),
+            [
+                ("Count", ty, DECLARATION),
+                ("n", property, DECLARATION),
+                ("int", ty, 0),
+                ("Count", ty, 0),
+                ("bump", function, DECLARATION),
+                ("self", parameter, DECLARATION),
+                ("self", parameter, MODIFICATION),
+                ("n", property, MODIFICATION),
+                ("get", function, DECLARATION),
+                ("self", parameter, DECLARATION | READONLY),
+                ("self", parameter, READONLY),
+                ("n", property, 0),
+                ("main", function, DECLARATION),
+                ("int", ty, 0),
+                ("c", variable, DECLARATION),
+                ("Count", ty, 0),
+                ("n", property, 0),
+                ("c", variable, MODIFICATION),
+                ("bump", function, 0),
+                ("c", variable, 0),
+                ("get", function, 0),
             ]
         );
     }

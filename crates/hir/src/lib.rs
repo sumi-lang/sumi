@@ -306,12 +306,13 @@ impl<'a> Program<'a> {
             .enumerate()
             .map(|(index, function)| (FunctionId::new(index), function))
     }
-    /// A valid file names each function item once; a generic one is found as the instance at its
-    /// own type parameters.
+    /// A valid file names each function item outside an `impl` once; a generic one is found as
+    /// the instance at its own type parameters.
     pub fn function_named(self, name: &str) -> Option<FunctionId> {
         self.functions()
             .find(|&(id, function)| {
                 function.generic == id
+                    && function.target.is_none()
                     && function
                         .name()
                         .is_some_and(|range| self.analysis.text(range) == name)
@@ -432,6 +433,7 @@ pub struct Function {
     /// Resolved only for a function with parameter types.
     result: Option<Ty>,
     product: Option<DeclId>,
+    target: Option<DeclId>,
     is_complete: bool,
     depth: Option<u64>,
 }
@@ -451,6 +453,11 @@ impl Function {
     /// The type arguments this is its item's instance at, one per type parameter.
     pub fn type_args(&self) -> &[Ty] {
         &self.type_args
+    }
+    /// The type item whose `impl` holds the function, which is then found by that type and not
+    /// by its name alone.
+    pub fn target(&self) -> Option<DeclId> {
+        self.target
     }
     /// The body built whole and every value in it resolved.
     pub fn is_complete(&self) -> bool {

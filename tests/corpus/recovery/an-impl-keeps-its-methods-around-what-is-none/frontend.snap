@@ -1,0 +1,101 @@
+== tree ==
+SourceFile! 1:1..19:1
+  ImplItem! 1:1..8:2
+    NameRef 1:6..1:11 "Point"
+    MethodList! 1:12..8:2
+      Error! 2:5..2:18 "let stray = 1"
+      FnItem 3:5..3:35
+        Name 3:8..3:11 "sum"
+        ParamList 3:11..3:17
+          SelfParam 3:12..3:16 "self"
+        BinaryExpr 3:20..3:35
+          FieldExpr 3:20..3:26
+            SelfExpr 3:20..3:24 "self"
+            NameRef 3:25..3:26 "x"
+          FieldExpr 3:29..3:35
+            SelfExpr 3:29..3:33 "self"
+            NameRef 3:34..3:35 "y"
+      Error! 4:5..4:18 "type Inner {}"
+      FnItem 5:5..7:6
+        Name 5:8..5:13 "shift"
+        ParamList 5:13..5:32
+          SelfParam 5:14..5:22 "mut self"
+          Param 5:24..5:31
+            Name 5:24..5:26 "dx"
+            TypeRef 5:28..5:31 "int"
+        Block 5:33..7:6
+          AssignStmt 6:9..6:21
+            FieldExpr 6:9..6:15
+              SelfExpr 6:9..6:13 "self"
+              NameRef 6:14..6:15 "x"
+            NameRef 6:19..6:21 "dx"
+  ImplItem! 10:1..12:2
+    MethodList 10:6..12:2
+      FnItem 11:5..11:24
+        Name 11:8..11:14 "orphan"
+        ParamList 11:14..11:20
+          SelfParam 11:15..11:19 "self"
+        LiteralExpr 11:23..11:24 "1"
+  ImplItem! 14:1..14:11
+    NameRef 14:6..14:11 "Point"
+  FnItem 15:1..15:15
+    Name 15:4..15:9 "after"
+    ParamList 15:9..15:11 "()"
+    LiteralExpr 15:14..15:15 "1"
+  ImplItem! 17:1..17:13
+    NameRef 17:6..17:11 "Point"
+    MethodList! 17:12..17:13 "{"
+  FnItem! 18:5..18:30
+    Name 18:8..18:12 "open"
+    ParamList! 18:12..18:23
+      SelfParam 18:13..18:17 "self"
+      Param! 18:19..18:22 "mut"
+    SelfExpr 18:26..18:30 "self"
+  Error! 18:30..18:31 "."
+
+== evidence ==
+ExpectedItem at 2:5
+ExpectedItem at 4:5
+ExpectedName at 10:6
+Expected(LBrace) at 15:1
+Expected(RBrace) at 18:5
+ExpectedName at 18:22
+Expected(Colon) at 18:22
+ExpectedItem at 18:30
+
+== diagnostics ==
+error[syntax/expected-item] 2:5..2:8 "let": expected a function item
+  at 2:5..2:18 "let stray = 1": skipped while recovering
+error[syntax/expected-item] 4:5..4:9 "type": expected a function item
+  at 4:5..4:18 "type Inner {}": skipped while recovering
+error[syntax/expected-name] 10:6: expected a name
+error[syntax/expected-token] 15:1: expected `{`
+error[syntax/expected-token] 18:5: expected `}`
+  at 17:12..17:13 "{": opening delimiter is here
+  fix: insert `}`
+    17:13 -> "}"
+error[syntax/expected-name] 18:22: expected a name
+error[syntax/expected-token] 18:22: expected `:`
+error[syntax/expected-item] 18:30..18:31 ".": expected a function item
+
+== fixed ==
+remaining: syntax/expected-item, syntax/expected-name, syntax/expected-token
+
+impl Point {
+    let stray = 1
+    fn sum(self) = self.x + self.y
+    type Inner {}
+    fn shift(mut self, dx: int) {
+        self.x += dx
+    }
+}
+
+impl {
+    fn orphan(self) = 1
+}
+
+impl Point
+fn after() = 1
+
+impl Point {}
+    fn open(self, mut) = self.

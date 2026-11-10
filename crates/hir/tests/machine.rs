@@ -224,15 +224,20 @@ impl Gen<'_> {
         } else {
             format!("<{}>", kind.name())
         };
-        match self.rng.below(if kind == Kind::Int { 6 } else { 3 }) {
+        match self.rng.below(if kind == Kind::Int { 8 } else { 5 }) {
             0 => format!("pass{args}({value})"),
             1 => format!("wrap{args}({value}).g"),
             2 => format!("G{args}(g: {value}).g"),
-            3 => {
+            3 => format!("wrap{args}({value}).get()"),
+            4 => {
+                let other = self.expr(kind, fuel);
+                format!("G{args}(g: {value}).with({other}).get()")
+            }
+            5 => {
                 let other = self.expr(Kind::Int, fuel);
                 format!("least({value}, {other})")
             }
-            4 => format!("size({value})"),
+            6 => format!("size({value})"),
             // The divisor is at least one only as `size` bounds its result at this call.
             _ => {
                 let dividend = self.operand(Kind::Int, fuel);
@@ -314,6 +319,9 @@ impl Gen<'_> {
         }
         let record = self.rng.pick(&records).clone();
         let field = if kind == Kind::Int { "a" } else { "b" };
+        if kind == Kind::Int && self.rng.chance(1, 3) {
+            return Some(format!("{record}.signed()"));
+        }
         Some(format!("{record}.{field}"))
     }
 
@@ -338,6 +346,11 @@ impl Gen<'_> {
                 format!("if {condition} {{ {then} }} else {{ {otherwise} }}")
             }
             4 => self.block(Kind::Rec, fuel - 1),
+            6 => {
+                let record = self.rec(fuel - 1);
+                let by = self.operand(Kind::Int, fuel - 1);
+                format!("{record}.grown({by})")
+            }
             5 => {
                 let callable = self.callable(Kind::Rec);
                 if callable.is_empty() {
@@ -616,11 +629,13 @@ impl Gen<'_> {
                         format!("_ = {}", self.expr(Kind::Int, fuel))
                     } else {
                         let name = self.rng.pick(&records).clone();
-                        match self.rng.below(5) {
+                        match self.rng.below(7) {
                             0 => format!("{name}.a = {}", self.expr(Kind::Int, fuel)),
                             4 => self.compound(&format!("{name}.a"), fuel),
                             1 => format!("{name}.b = {}", self.expr(Kind::Bool, fuel)),
                             2 => format!("bump(mut {name}, {})", self.expr(Kind::Int, fuel)),
+                            5 => format!("{name}.grow({})", self.expr(Kind::Int, fuel)),
+                            6 => format!("_ = {name}.drain()"),
                             _ => format!("_ = reset(mut {name})"),
                         }
                     }
@@ -851,7 +866,17 @@ fn program(seed: u64) -> String {
          fn reset(mut r: R) -> int { let old = r.a\nr.a = 0\nold }\n\
          fn exchange<T>(mut a: T, mut b: T) { let t = a\na = b\nb = t }\n\
          fn least(a: int, b: int) -> int = if a < b { a } else { b }\n\
-         fn size(a: int) -> int = if a < 0 { -a } else { a }\n",
+         fn size(a: int) -> int = if a < 0 { -a } else { a }\n\
+         impl R {\n\
+         fn signed(self) -> int = if self.b { self.a } else { -self.a }\n\
+         fn grown(self, by: int) -> R = R(a: self.a + by, b: self.b)\n\
+         fn grow(mut self, by: int) { self.a += by }\n\
+         fn drain(mut self) -> int { let old = self.a\nself.a = 0\nold }\n\
+         }\n\
+         impl G<T> {\n\
+         fn get(self) = self.g\n\
+         fn with(self, x: T) -> Self = G(g: x)\n\
+         }\n",
     );
     for current in 0..functions.len() {
         let signature = &functions[current];

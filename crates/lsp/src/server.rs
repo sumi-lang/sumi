@@ -26,12 +26,12 @@ use lsp_types::{
 use serde_json::Value;
 use sumi_frontend::{Diagnostic, Fix, ParsedSource, Severity, parse_source};
 use sumi_hir::{
-    Analysis, BindingKind, Dead, DeadCause, DeclId, FunctionId, Occurrence, Op, Signature, Symbol,
-    Ty, analyze,
+    Analysis, BindingKind, Dead, DeadCause, DeclId, Function, FunctionId, Occurrence, Op,
+    Signature, Symbol, Ty, analyze,
 };
 use sumi_lexer::{Fixed, LexedFile, RawIdx, SyntaxKind, lex};
 use sumi_syntax::ast::{self, AstNode, View};
-use sumi_syntax::{NodeKind, SyntaxTree, starts_statement};
+use sumi_syntax::{NodeIdx, NodeKind, SyntaxTree, starts_statement};
 use sumi_text::{Encoding, TextRange, TextSize};
 
 use crate::{highlight, position::Positions};
@@ -1141,6 +1141,16 @@ fn symbols(
         .enumerate()
         .filter(|&(index, function)| function.generic() == FunctionId::new(index))
         .map(|(_, function)| function);
+    let kind = |function: &Function| match function.target() {
+        Some(_) => SymbolKind::METHOD,
+        None => SymbolKind::FUNCTION,
+    };
+    let type_name = |target| {
+        analysis
+            .decl(target)
+            .name()
+            .map_or("", |name| name.text(text))
+    };
     if is_hierarchical {
         let symbols = items
             .filter_map(|function| {
@@ -1148,8 +1158,8 @@ fn symbols(
                 #[allow(deprecated)]
                 Some(DocumentSymbol {
                     name: name.text(text).into(),
-                    detail: None,
-                    kind: SymbolKind::FUNCTION,
+                    detail: function.target().map(|target| type_name(target).into()),
+                    kind: kind(function),
                     tags: None,
                     deprecated: None,
                     range: positions.range(function.origin()),
@@ -1166,11 +1176,11 @@ fn symbols(
                 #[allow(deprecated)]
                 Some(SymbolInformation {
                     name: name.text(text).into(),
-                    kind: SymbolKind::FUNCTION,
+                    kind: kind(function),
                     tags: None,
                     deprecated: None,
                     location: Location::new(uri.clone(), positions.range(function.origin())),
-                    container_name: None,
+                    container_name: function.target().map(|target| type_name(target).into()),
                 })
             })
             .collect();
@@ -1230,14 +1240,23 @@ fn context(lexed: &LexedFile, tree: &SyntaxTree, offset: TextSize) -> Context {
     let has_line_break = (previous + 1)
         .until(gap_end)
         .any(|index| lexed.kind(index) == SyntaxKind::Newline);
+    let ends = |node: NodeIdx| {
+        previous + 1 == tree.end_token(node)
+            && !tree.has_error(node)
+            && (lexed.kind(previous) == SyntaxKind::RBrace || has_line_break)
+    };
     let at_item_level = ast::SourceFile::cast(tree, tree.root())
         .expect("the root is a file")
         .items(tree)
-        .any(|item| {
-            let node = item.node();
-            previous + 1 == tree.end_token(node)
-                && !tree.has_error(node)
-                && (lexed.kind(previous) == SyntaxKind::RBrace || has_line_break)
+        .any(|item| ends(item.node()));
+    // In an `impl`: after its `{`, or after a whole method.
+    let at_method_level = tree
+        .nodes()
+        .filter_map(|node| ast::MethodList::cast(tree, node))
+        .any(|list| {
+            let opens = lexed.kind(previous) == SyntaxKind::LBrace
+                && tree.first_token(list.node()) == previous;
+            opens || list.methods(tree).any(|method| ends(method.node()))
         });
     let is_inside = |kinds: &[NodeKind]| {
         tree.nodes().any(|node| {
@@ -1264,6 +1283,7 @@ fn context(lexed: &LexedFile, tree: &SyntaxTree, offset: TextSize) -> Context {
             Context::Keyword(Fixed::InKw)
         }
         _ if is_inside(&[NodeKind::ParamList, NodeKind::TypeRef]) => Context::Nothing,
+        _ if at_method_level => Context::Keyword(Fixed::FnKw),
         _ if at_item_level => Context::Items,
         _ => Context::Values {
             has_else: lexed.kind(previous) == SyntaxKind::RBrace
@@ -1301,7 +1321,11 @@ fn complete(
     };
     let items = match context(lexed, tree, offset) {
         Context::Nothing => Vec::new(),
-        Context::Items => vec![keyword(Fixed::FnKw), keyword(Fixed::TypeKw)],
+        Context::Items => vec![
+            keyword(Fixed::FnKw),
+            keyword(Fixed::TypeKw),
+            keyword(Fixed::ImplKw),
+        ],
         Context::Types => Ty::SCALARS
             .iter()
             .map(|ty| ty.scalar_name().expect("a scalar has a name").to_owned())
@@ -1331,8 +1355,10 @@ fn complete(
                 SyntaxKind::ALL
                     .iter()
                     .filter_map(|kind| kind.fixed())
+                    // `self` is offered as the binding it is, where a method's body sees it.
                     .filter(|fixed| {
                         is_keyword(fixed.kind())
+                            && *fixed != Fixed::SelfKw
                             && (starts_statement(fixed.kind())
                                 || (has_else && *fixed == Fixed::ElseKw))
                     })
@@ -1482,7 +1508,12 @@ fn highlight(
     )
 }
 
-/// None where no name is, or for a function whose declaration lost its name.
+/// Whether the symbol is a method's receiver, whose name is the keyword `self`.
+fn is_receiver(analysis: &Analysis, symbol: Symbol) -> bool {
+    matches!(symbol, Symbol::Local(id) if analysis.text(analysis.binding(id).name()) == "self")
+}
+
+/// None where no name is, for a function whose declaration lost its name, or for a receiver.
 fn prepare_rename(
     analysis: &Analysis,
     position: Position,
@@ -1490,6 +1521,9 @@ fn prepare_rename(
 ) -> Option<PrepareRenameResponse> {
     let occurrence = symbol_at(analysis, position, encoding)?;
     analysis.declaration(occurrence.symbol)?;
+    if is_receiver(analysis, occurrence.symbol) {
+        return None;
+    }
     let range = positions(analysis, encoding).range(occurrence.range);
     Some(PrepareRenameResponse::Range(range))
 }
@@ -1513,17 +1547,36 @@ fn rename(
     let Some(declared) = analysis.declaration(occurrence.symbol) else {
         return Ok(None);
     };
+    if is_receiver(analysis, occurrence.symbol) {
+        return Err("`self` is a method's receiver, and takes no other name".into());
+    }
     let old_name = analysis.text(declared);
     if old_name == new_name {
         return Ok(None);
     }
-    // The items, each once with its range: an instance is declared where its item is, and a type
-    // parameter is no item.
+    // The methods of the type item `target`, each once with its name's range.
+    let methods = |target: DeclId| {
+        let functions = analysis.functions().iter().enumerate();
+        functions
+            .filter(move |&(index, function)| {
+                function.generic() == FunctionId::new(index) && function.target() == Some(target)
+            })
+            .filter_map(|(_, function)| function.name())
+    };
+    // The type item a method is found by: its name is one among that type's members.
+    let member_of = match occurrence.symbol {
+        Symbol::Function(id) => analysis.function(id).target(),
+        _ => None,
+    };
+    // The items a name alone finds, each once with its range: an instance is declared where its
+    // item is, and a type parameter is no item.
     let items = || {
         let functions = analysis.functions().iter().enumerate();
         let decls = analysis.decls().iter().enumerate();
         functions
-            .filter(|&(index, function)| function.generic() == FunctionId::new(index))
+            .filter(|&(index, function)| {
+                function.generic() == FunctionId::new(index) && function.target().is_none()
+            })
             .filter_map(|(_, function)| Some(("function", function.name()?, function.origin())))
             .chain(
                 decls
@@ -1546,13 +1599,15 @@ fn rename(
         })
     };
     let is_param = matches!(occurrence.symbol, Symbol::Type(id) if analysis.decl(id).is_param());
-    if matches!(occurrence.symbol, Symbol::Function(_) | Symbol::Type(_))
-        && !is_param
-        && items()
+    let same = match member_of {
+        Some(target) => methods(target)
+            .filter(|&range| analysis.text(range) == old_name)
+            .count(),
+        None => items()
             .filter(|&(_, range, _)| analysis.text(range) == old_name)
-            .count()
-            > 1
-    {
+            .count(),
+    };
+    if matches!(occurrence.symbol, Symbol::Function(_) | Symbol::Type(_)) && !is_param && same > 1 {
         return Err(format!("multiple declarations are named `{old_name}`"));
     }
     if analysis
@@ -1565,7 +1620,11 @@ fn rename(
         ));
     }
     let occurrences = || std::iter::once(declared).chain(analysis.references_of(occurrence.symbol));
-    if let Symbol::Field(id, _) = occurrence.symbol {
+    let member = match occurrence.symbol {
+        Symbol::Field(id, _) => Some(id),
+        _ => member_of,
+    };
+    if let Some(id) = member {
         if analysis
             .decl(id)
             .fields()
@@ -1574,9 +1633,15 @@ fn rename(
         {
             return Err(format!("a field is already named `{new_name}`"));
         }
+        if methods(id).any(|range| analysis.text(range) == new_name) {
+            return Err(format!("a method is already named `{new_name}`"));
+        }
     } else {
         if matches!(occurrence.symbol, Symbol::Type(_)) && Ty::scalar(new_name).is_some() {
             return Err(format!("`{new_name}` is a built-in type"));
+        }
+        if matches!(occurrence.symbol, Symbol::Type(_)) && new_name == "Self" {
+            return Err("`Self` is the type an `impl` is of".into());
         }
         let named = |range: TextRange| analysis.text(range) == new_name;
         if is_param {
@@ -1812,11 +1877,24 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
         Some(hint)
     });
     let params = tree.nodes().flat_map(|node| {
-        let call = ast::CallExpr::cast(tree, node)
-            .filter(|call| is_wanted(tree.byte_range(call.node(), lexed)));
-        let callee = call.and_then(|call| call.callee(tree));
-        let target = callee.and_then(|callee| {
-            match analysis.symbol_at(tree.byte_range(callee.node(), lexed).start())? {
+        // The name called, its arguments, and how many parameters come before the first of them:
+        // a method's receiver is its first parameter.
+        let function = ast::CallExpr::cast(tree, node).map(|call| {
+            (
+                call.callee(tree).map(|name| name.node()),
+                call.arg_list(tree),
+                0,
+            )
+        });
+        let method = ast::MethodCallExpr::cast(tree, node).map(|call| {
+            let name = call.callee(tree).and_then(|callee| callee.field(tree));
+            (name.map(|name| name.node()), call.arg_list(tree), 1)
+        });
+        let call = function
+            .or(method)
+            .filter(|_| is_wanted(tree.byte_range(node, lexed)));
+        let target = call.and_then(|(callee, ..)| {
+            match analysis.symbol_at(tree.byte_range(callee?, lexed).start())? {
                 Occurrence {
                     symbol: Symbol::Function(id),
                     ..
@@ -1825,12 +1903,13 @@ fn inlay_hints(analysis: &Analysis, requested: Range, encoding: Encoding) -> Vec
             }
         });
         let args = call
-            .and_then(|call| call.arg_list(tree))
+            .and_then(|(_, list, _)| list)
             .into_iter()
             .flat_map(|list| list.values(tree));
         target
             .into_iter()
             .flat_map(|id| analysis.params(id))
+            .skip(call.map_or(0, |(.., receiver)| receiver))
             .zip(args)
             .filter_map(|(param, arg)| {
                 let name = analysis.text(param?.name());
@@ -2450,6 +2529,24 @@ fn main() -> bool = right(true)";
     }
 
     #[test]
+    fn completion_in_an_impl_offers_methods_and_their_receiver() {
+        let text = "type Count { n: int }
+impl Count {
+    fn get(self) -> int {
+        se
+    }
+
+}
+";
+        assert_eq!(labels(text, 1, 12, false), ["fn"]);
+        assert_eq!(labels(text, 5, 0, false), ["fn"]);
+        assert_eq!(labels(text, 7, 0, false), ["fn", "impl", "type"]);
+        let inside = labels(text, 3, 10, false);
+        assert_eq!(inside.iter().filter(|label| *label == "self").count(), 1);
+        assert_eq!(inside[0], "self");
+    }
+
+    #[test]
     fn completion_offers_what_the_position_admits() {
         let text = "fn add(a: int, b: int) -> int = a + b
 fn body(c: bool) -> int {
@@ -2479,8 +2576,8 @@ fn body(c: bool) -> int {
                 .map(String::from)
                 .collect()
         };
-        assert_eq!(labels(text, 0, 0, false), ["fn", "type"]);
-        assert_eq!(labels(text, 11, 0, false), ["fn", "type"]);
+        assert_eq!(labels(text, 0, 0, false), ["fn", "impl", "type"]);
+        assert_eq!(labels(text, 11, 0, false), ["fn", "impl", "type"]);
         assert_eq!(labels(text, 1, 3, false), Vec::<String>::new());
         assert_eq!(labels(text, 1, 8, false), Vec::<String>::new());
         assert_eq!(labels(text, 1, 16, false), Vec::<String>::new());
@@ -2616,7 +2713,7 @@ fn body(c: bool) -> int {
                     (3, 12, 1, 2, 1),
                     (3, 16, 1, 2, 2),
                     (4, 8, 1, 2, 3),
-                    (4, 20, 1, 2, 0),
+                    (4, 20, 1, 2, 4),
                     (4, 24, 1, 2, 0),
                     (4, 28, 1, 2, 2),
                     (5, 4, 1, 0, 0),
@@ -3205,6 +3302,82 @@ fn main() -> int = f()",
     }
 
     #[test]
+    fn rename_holds_a_method_to_its_type_and_leaves_the_receiver_its_name() {
+        let text = "type P { n: int }
+type Q { n: int }
+impl P {
+    fn get(self) -> int = self.n
+    fn twice(self) -> int = self.get() + self.get()
+}
+impl Q {
+    fn get(self) -> int = self.n
+}
+fn free(p: P) -> int = p.get()
+fn main() -> int = free(P(n: 1)) + Q(n: 2).get() + P(n: 3).twice()
+";
+        let uri: Uri = "file:///methods.su".parse().unwrap();
+        let analysis = analyzed(text);
+        assert!(analysis.is_valid(), "{:?}", analysis.diagnostics());
+        let renamed = |line, character, new_name| {
+            rename(
+                &analysis,
+                uri.clone(),
+                Position::new(line, character),
+                Encoding::Utf16,
+                new_name,
+            )
+        };
+        assert!(prepare_rename(&analysis, Position::new(3, 11), Encoding::Utf16).is_none());
+        for (line, character, new_name, message) in [
+            (
+                3,
+                11,
+                "this",
+                "`self` is a method's receiver, and takes no other name",
+            ),
+            (
+                3,
+                26,
+                "this",
+                "`self` is a method's receiver, and takes no other name",
+            ),
+            (3, 7, "twice", "a method is already named `twice`"),
+            (3, 7, "n", "a field is already named `n`"),
+            (0, 9, "get", "a method is already named `get`"),
+            (0, 5, "Self", "`Self` is the type an `impl` is of"),
+        ] {
+            assert_eq!(renamed(line, character, new_name), Err(message.into()));
+        }
+        for (line, character, new_name, count) in [
+            (3, 7, "fetch", 4),
+            (7, 7, "fetch", 2),
+            (3, 7, "free", 4),
+            (9, 3, "get", 2),
+            (1, 9, "twice", 3),
+        ] {
+            let mut edits = renamed(line, character, new_name)
+                .unwrap()
+                .unwrap()
+                .changes
+                .unwrap()
+                .remove(&uri)
+                .unwrap();
+            assert_eq!(edits.len(), count);
+            edits.sort_by_key(|edit| {
+                std::cmp::Reverse((edit.range.start.line, edit.range.start.character))
+            });
+            let mut changed = text.to_owned();
+            for edit in edits {
+                let start = offset_at(&analysis, edit.range.start, Encoding::Utf16).unwrap();
+                let end = offset_at(&analysis, edit.range.end, Encoding::Utf16).unwrap();
+                changed.replace_range(start.to_usize()..end.to_usize(), &edit.new_text);
+            }
+            let changed = analyzed(&changed);
+            assert!(changed.is_valid(), "{:?}", changed.diagnostics());
+        }
+    }
+
+    #[test]
     fn rename_respects_type_and_field_namespaces() {
         let text = "type A { value: int }
 type B {}
@@ -3591,7 +3764,7 @@ fn main() -> int {
         let text = "fn f() = {\n    if true { let q = 1 } \n}";
         assert_eq!(labels(text, 1, 26, false), values(&[], true));
         assert_eq!(labels(text, 1, 24, false), values(&["q"], false));
-        assert_eq!(labels("", 0, 0, false), ["fn", "type"]);
+        assert_eq!(labels("", 0, 0, false), ["fn", "impl", "type"]);
         assert_eq!(
             complete(&analyzed(""), Position::new(3, 0), Encoding::Utf16, false),
             None

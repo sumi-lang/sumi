@@ -1,0 +1,33 @@
+type Pair<A, B> { first: A, second: B }
+
+impl   Pair<A,B>{
+    fn swapped( self ) -> Pair<B, A> = Pair(first: self . second, second: self.first)
+
+    // A receiver that changes says so.
+    fn put(mut   self, first: A) { self.first = first }
+    fn map<C>(self, third: C) -> Pair<A, C> = Pair(first: self.first, second: third)
+}
+
+impl Empty {}
+
+impl Wide
+{
+    fn one(self) = 1
+}
+
+fn calls(mut p: Pair<int, bool>) -> int {
+    p.put(1)
+    p.swapped().swapped().first
+    p.map<int>(2).second + p
+        .map(3)
+        .swapped()
+        .first
+    (p).swapped().second + -p.first.abs() + f(p).g().h
+    p.first
+        .abs()
+}
+
+fn long_chains(some_quite_long_receiver_name: Pair<int, bool>, another_long_argument: int) -> int {
+    let kept = some_quite_long_receiver_name.first.checked(another_long_argument).scaled(another_long_argument).clamped(0, 100)
+    kept.only_one_call_takes_long_arguments(another_long_argument, another_long_argument, another_long_argument)
+}

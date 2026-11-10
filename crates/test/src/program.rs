@@ -109,16 +109,20 @@ fn type_text() -> BoxedStrategy<String> {
 
 fn param_list() -> BoxedStrategy<String> {
     (
+        prop::option::of(any::<bool>()),
         prop::collection::vec((any::<bool>(), name(), type_text()), 0..3),
         any::<bool>(),
     )
-        .prop_map(move |(params, trailing)| {
-            let params: Vec<String> = params
+        .prop_map(move |(receiver, params, trailing)| {
+            let receiver = receiver.map(|mutable| if mutable { "mut self" } else { "self" });
+            let params = params.into_iter().map(|(mutable, param, ty)| {
+                let mutable = if mutable { "mut " } else { "" };
+                format!("{mutable}{param}: {ty}")
+            });
+            let params: Vec<String> = receiver
+                .map(str::to_owned)
                 .into_iter()
-                .map(|(mutable, param, ty)| {
-                    let mutable = if mutable { "mut " } else { "" };
-                    format!("{mutable}{param}: {ty}")
-                })
+                .chain(params)
                 .collect();
             let comma = if trailing && !params.is_empty() {
                 ","
@@ -146,8 +150,21 @@ fn signature_tail(
         .boxed()
 }
 
+/// What a call calls: a name, or a method of a receiver, which may stand on the line before.
+fn callee() -> BoxedStrategy<String> {
+    let receiver = prop::sample::select(&["a", "self", "foo.b", "x1()", "(a)"][..]);
+    prop_oneof![
+        2 => name(),
+        1 => (receiver, any::<bool>(), name()).prop_map(|(receiver, leading, method)| {
+            let gap = if leading { "\n  " } else { "" };
+            format!("{receiver}{gap}.{method}")
+        }),
+    ]
+    .boxed()
+}
+
 fn expr() -> BoxedStrategy<String> {
-    let leaf = prop_oneof![name(), literal()];
+    let leaf = prop_oneof![4 => name(), 4 => literal(), 1 => Just("self".to_owned())];
     leaf.prop_recursive(3, 24, 3, |expr| {
         let otherwise = prop_oneof![
             2 => block(expr.clone()),
@@ -159,7 +176,7 @@ fn expr() -> BoxedStrategy<String> {
             4 => literal(),
             1 => expr.clone().prop_map(|e| format!("({e})")),
             2 => (
-                (name(), type_list(type_text()))
+                (callee(), type_list(type_text()))
                     .prop_map(|(callee, type_args)| format!("{callee}{type_args}")),
                 prop::collection::vec(
                     (prop::option::of(name()), any::<bool>(), expr.clone()),
@@ -292,8 +309,8 @@ fn block(expr: BoxedStrategy<String>) -> BoxedStrategy<String> {
     .boxed()
 }
 
-pub fn program() -> BoxedStrategy<String> {
-    let function = (
+fn function() -> BoxedStrategy<String> {
+    (
         name(),
         type_params(),
         param_list(),
@@ -301,8 +318,28 @@ pub fn program() -> BoxedStrategy<String> {
     )
         .prop_map(|(name, type_params, params, (tail, _))| {
             format!("fn {name}{type_params}{params}{tail}")
-        });
-    let item = prop_oneof![3 => function, 1 => type_item()];
+        })
+        .boxed()
+}
+
+fn impl_item() -> BoxedStrategy<String> {
+    (
+        prop::sample::select(&["P", "Q"][..]),
+        type_params(),
+        prop::collection::vec(function(), 0..3),
+    )
+        .prop_map(|(target, params, methods)| {
+            if methods.is_empty() {
+                format!("impl {target}{params} {{}}")
+            } else {
+                format!("impl {target}{params} {{\n{}\n}}", methods.join("\n"))
+            }
+        })
+        .boxed()
+}
+
+pub fn program() -> BoxedStrategy<String> {
+    let item = prop_oneof![3 => function(), 1 => type_item(), 1 => impl_item()];
     (any::<bool>(), prop::collection::vec(item, 0..3))
         .prop_map(|(comment, items)| {
             let mut text = if comment {

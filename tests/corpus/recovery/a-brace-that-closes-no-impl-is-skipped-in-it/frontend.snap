@@ -1,0 +1,25 @@
+== tree ==
+SourceFile! 1:1..2:1
+  ImplItem! 1:1..1:16
+    MethodList! 1:5..1:16
+      FnItem! 1:6..1:14
+        ParamList 1:8..1:10 "()"
+        NameRef 1:12..1:13 "e"
+        Error! 1:13..1:14 "{"
+      Error! 1:14..1:15 "}"
+
+== evidence ==
+ExpectedName at 1:5
+ExpectedName at 1:8
+Unexpected at 1:13
+ExpectedItem at 1:14
+
+== diagnostics ==
+error[syntax/expected-name] 1:5: expected a name
+error[syntax/expected-name] 1:8: expected a name
+error[syntax/unexpected-syntax] 1:13..1:14 "{": unexpected syntax in expression
+error[syntax/expected-item] 1:14..1:15 "}": expected a function item
+
+== formatted ==
+impl{
+    fn() = e{}}

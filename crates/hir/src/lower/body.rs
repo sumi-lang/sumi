@@ -17,7 +17,7 @@ use sumi_syntax::{
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
-use super::declare::{Declarations, HeaderResult, Named, Order, RESULT, unbounded_calls};
+use super::declare::{Declarations, HeaderResult, Named, Order, RESULT, SELF, unbounded_calls};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
@@ -124,6 +124,8 @@ fn pending_text(value: Decides) -> &'static str {
 enum Target {
     Function(FunctionId),
     Type(DeclId),
+    /// `Self`: the type an `impl` is of, at its type parameters.
+    Instance(DeclId),
     /// Reported where it was resolved, or ambiguous.
     Unknown,
 }
@@ -174,14 +176,31 @@ impl Place<'_> {
     }
 }
 
+/// Where a call is written: the whole of it, the name it calls by, and the type arguments it
+/// writes after that.
+#[derive(Clone, Copy)]
+pub(super) struct Site {
+    pub node: NodeIdx,
+    pub name: Option<NodeIdx>,
+    pub list: Option<ast::TypeArgList>,
+}
+
 /// A call from a generic function's own body to a generic function, at the type arguments it
 /// names or its arguments decide.
 pub(super) struct GenericCall {
     pub caller: FunctionId,
     pub callee: FunctionId,
-    pub call: ast::CallExpr,
+    pub site: Site,
     pub args: Vec<Ty>,
 }
+
+/// A call's arguments in order, a method's receiver first: each with its syntax, which a
+/// receiver has none of, and its value.
+type Args = Vec<(Option<ast::Arg>, Value)>;
+
+/// The arguments a call writes `mut`, and a receiver its method changes: each by position, with
+/// the place it is when it is one.
+type Lent<'s> = Vec<(usize, Option<Place<'s>>)>;
 
 /// A local's index in the body's `locals`, and in its versions.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -216,6 +235,8 @@ enum Link {
     Lazy(ast::BinaryExpr, bool),
     Eager(ast::BinaryExpr, BinaryOp),
     Field(ast::FieldExpr),
+    /// A method call on a receiver that is no place: a place is read by the call itself.
+    Method(ast::MethodCallExpr),
 }
 
 /// What holds where a chain of one lazy operator goes on to another operand: the refinements of
@@ -432,6 +453,9 @@ impl<'a, 's> Builder<'a, 's> {
                 .copied()
                 .zip(type_args.iter().copied()),
         );
+        self.source
+            .scope
+            .extend(header.receiver.map(|ty| (SELF, ty)));
         self.source.is_muted = header.generic.index() != owner;
         if self.source.is_muted {
             // The item's syntax built another instance before this one.
@@ -456,7 +480,7 @@ impl<'a, 's> Builder<'a, 's> {
         for index in 0..self.declared.parameters[owner].len() {
             let param = self.declared.parameters[owner][index];
             let index = u32::try_from(index).expect("parameter count fits u32");
-            let name = param.name.map(|(_, node)| self.source.range(node));
+            let name = param.at;
             let ty = param.ty.filter(|_| !param.is_duplicate);
             let node = self.push(param.node, Op::Param { index, ty }, &[], name);
             self.has_failed |= ty.is_none();
@@ -574,7 +598,8 @@ impl<'a, 's> Builder<'a, 's> {
         for (index, local) in self.locals.iter().enumerate() {
             // What a `mut` parameter is assigned, its caller reads.
             let is_out = local.is_assigned && self.outs.contains(&LocalId::new(index));
-            if local.is_read || is_out {
+            // A receiver is what makes a function a method, read or not.
+            if local.is_read || is_out || local.name == "self" {
                 continue;
             }
             let declaration = self.graph.node(local.declaration);
@@ -1209,6 +1234,10 @@ impl<'a, 's> Builder<'a, 's> {
                     let damaged = self.is_damaged(expr.node());
                     self.field(expr, damaged, Some(value))
                 }
+                Link::Method(expr) => {
+                    let damaged = self.is_damaged(expr.node());
+                    self.method_call(expr, damaged, Some(value))
+                }
             };
         }
         (value, guard)
@@ -1230,6 +1259,11 @@ impl<'a, 's> Builder<'a, 's> {
                 }
             }
             Stmt::Expr(Expr::FieldExpr(expr)) => Some((expr.base(tree)?.node(), Link::Field(expr))),
+            Stmt::Expr(Expr::MethodCallExpr(expr)) => {
+                let receiver = expr.callee(tree)?.base(tree)?;
+                let is_place = self.receiver_place(receiver).is_some();
+                (!is_place).then_some((receiver.node(), Link::Method(expr)))
+            }
             _ => None,
         }
     }
@@ -1283,11 +1317,15 @@ impl<'a, 's> Builder<'a, 's> {
             Stmt::Expr(Expr::Block(_)) => self.block(node),
             Stmt::Expr(Expr::IfExpr(branch)) => self.if_(branch),
             Stmt::Expr(
-                Expr::ForExpr(_) | Expr::MatchExpr(_) | Expr::NameRef(_) | Expr::LiteralExpr(_),
+                Expr::ForExpr(_)
+                | Expr::MatchExpr(_)
+                | Expr::NameRef(_)
+                | Expr::SelfExpr(_)
+                | Expr::LiteralExpr(_),
             ) if damaged => self.holed(node),
             Stmt::Expr(Expr::ForExpr(expr)) => self.for_(expr),
             Stmt::Expr(Expr::MatchExpr(expr)) => self.match_(expr),
-            Stmt::Expr(Expr::NameRef(name)) => self.name_ref(name),
+            Stmt::Expr(Expr::NameRef(_) | Expr::SelfExpr(_)) => self.name_ref(node),
             Stmt::Expr(Expr::LiteralExpr(literal)) => self.literal(literal),
             // A lazy operator here lost a part to recovery: a whole one is a link of a chain.
             Stmt::Expr(Expr::BinaryExpr(expr)) => {
@@ -1305,6 +1343,7 @@ impl<'a, 's> Builder<'a, 's> {
                 None => self.holed(node),
             },
             Stmt::Expr(Expr::CallExpr(call)) => self.call(call, damaged),
+            Stmt::Expr(Expr::MethodCallExpr(call)) => self.method_call(call, damaged, None),
             Stmt::Expr(Expr::FieldExpr(expr)) => self.field(expr, damaged, None),
         }
     }
@@ -1440,6 +1479,7 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(assigned)
             }
             Some(place) => self.path(place).and_then(|path| {
+                self.refer_path(place, &path, true);
                 let value = match op {
                     Some(AssignOp::Arith(op)) => self.combined(place, &path, op, &value, node)?,
                     _ => value.input(),
@@ -1507,53 +1547,42 @@ impl<'a, 's> Builder<'a, 's> {
     /// The place `target` names: a mutable local, or a field under one. Any other is reported,
     /// and is no name's reference unless its shape is a place's.
     fn place_of(&mut self, target: ast::Expr) -> Result<Place<'s>, IsShaped> {
-        let tree = self.source.tree;
-        let mut fields = Vec::new();
-        let mut expr = self.source.peel(target);
-        let name = loop {
-            let step = match expr {
-                ast::Expr::NameRef(name) => break name,
-                ast::Expr::FieldExpr(field) if !tree.has_error(field.node()) => {
-                    field.base(tree).zip(field.field(tree))
-                }
-                _ => None,
-            };
-            let Some((base, field)) = step else {
+        let (root, fields) = match self.place_shape(target) {
+            Ok(shape) => shape,
+            Err(other) => {
                 self.source.error(
-                    expr.node(),
+                    other,
                     codes::INVALID_ASSIGNMENT_TARGET,
                     "this is no place: a place is a `mut` name, or a field under one",
                     None,
                 );
                 return Err(IsShaped(false));
-            };
-            fields.push((self.source.text(field.node()), field.node()));
-            expr = self.source.peel(base);
+            }
         };
-        fields.reverse();
-        let text = self.source.text(name.node());
+        let name = root;
+        let text = self.source.text(name);
         let Some(local) = self.lookup(text) else {
             if let Some(&named) = self.declared.names.get(text) {
                 let what = match named {
                     Named::Function(id) => {
-                        self.refer(name.node(), Symbol::Function(id), true);
+                        self.refer(name, Symbol::Function(id), true);
                         "function"
                     }
                     Named::Type(id) => {
-                        self.refer(name.node(), Symbol::Type(id), true);
+                        self.refer(name, Symbol::Type(id), true);
                         "type"
                     }
                     Named::Ambiguous => "name",
                 };
                 self.source.error(
-                    name.node(),
+                    name,
                     codes::INVALID_ASSIGNMENT_TARGET,
                     format!("{what} `{text}` is not assignable"),
                     None,
                 );
             } else {
                 self.source.error(
-                    name.node(),
+                    name,
                     codes::UNKNOWN_NAME,
                     format!("unknown name `{text}`"),
                     None,
@@ -1562,14 +1591,14 @@ impl<'a, 's> Builder<'a, 's> {
             return Err(IsShaped(true));
         };
         self.refer(
-            name.node(),
+            name,
             Symbol::Local(self.locals[local.index()].binding),
             true,
         );
         if !self.versions.is_mutable(local) {
             let declaration = self.locals[local.index()].declaration;
             self.source.error(
-                name.node(),
+                name,
                 codes::IMMUTABLE_ASSIGNMENT,
                 format!("cannot assign to immutable local `{text}`"),
                 self.spans
@@ -1581,7 +1610,46 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals[local.index()].is_assigned = true;
         Ok(Place {
             local,
-            root: name.node(),
+            root: name,
+            fields,
+        })
+    }
+
+    /// The name, or `self`, a place's syntax begins with and the fields under it, outermost
+    /// first; else the expression that is no part of one.
+    #[allow(clippy::type_complexity)]
+    fn place_shape(
+        &self,
+        target: ast::Expr,
+    ) -> Result<(NodeIdx, Vec<(&'s str, NodeIdx)>), NodeIdx> {
+        let tree = self.source.tree;
+        let mut fields = Vec::new();
+        let mut expr = self.source.peel(target);
+        let root = loop {
+            let step = match expr {
+                ast::Expr::NameRef(_) | ast::Expr::SelfExpr(_) => break expr.node(),
+                ast::Expr::FieldExpr(field) if !tree.has_error(field.node()) => {
+                    field.base(tree).zip(field.field(tree))
+                }
+                _ => None,
+            };
+            let Some((base, field)) = step else {
+                return Err(expr.node());
+            };
+            fields.push((self.source.text(field.node()), field.node()));
+            expr = self.source.peel(base);
+        };
+        fields.reverse();
+        Ok((root, fields))
+    }
+
+    /// The place a method's receiver is, where it has a place's shape under a local.
+    fn receiver_place(&self, receiver: ast::Expr) -> Option<Place<'s>> {
+        let (root, fields) = self.place_shape(receiver).ok()?;
+        let local = self.lookup(self.source.text(root))?;
+        Some(Place {
+            local,
+            root,
             fields,
         })
     }
@@ -1605,11 +1673,8 @@ impl<'a, 's> Builder<'a, 's> {
         let mut path = Vec::with_capacity(place.fields.len());
         for (depth, &(name, node)) in place.fields.iter().enumerate() {
             let (decl, field) = self.field_of(base, name, node)?;
-            let item = self.source.decls[decl.index()].item;
-            let is_last = depth + 1 == place.fields.len();
-            self.refer(node, Symbol::Field(item, field as u32), is_last);
             path.push((base, decl, field));
-            if !is_last {
+            if depth + 1 < place.fields.len() {
                 let name = self.source.field_name(name);
                 let range = self.place_range(place, depth + 1);
                 let read = (base, self.place_range(place, depth));
@@ -1617,6 +1682,15 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         Some(path)
+    }
+
+    /// Refers each field of the place to the field it names, the last one as written if `writes`.
+    fn refer_path(&mut self, place: &Place<'s>, path: &Path, writes: bool) {
+        for (depth, (&(_, node), &(_, decl, field))) in place.fields.iter().zip(path).enumerate() {
+            let item = self.source.decls[decl.index()].item;
+            let is_written = writes && depth + 1 == path.len();
+            self.refer(node, Symbol::Field(item, field as u32), is_written);
+        }
     }
 
     /// The value the place holds now: the field of the last record on its path, or its local.
@@ -1635,7 +1709,10 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals[place.local.index()].is_read = true;
         let range = self.place_range(place, place.fields.len());
         let read = match self.path(place) {
-            Some(path) => self.held(place, &path),
+            Some(path) => {
+                self.refer_path(place, &path, true);
+                self.held(place, &path)
+            }
             None => self.place(Op::Hole, &[], range, None),
         };
         let is_valid = self.is_typed(read);
@@ -1868,11 +1945,18 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    fn name_ref(&mut self, name: ast::NameRef) -> Value {
-        let node = name.node();
+    /// A read of the local a name, or `self`, at `node` names.
+    fn name_ref(&mut self, node: NodeIdx) -> Value {
         let name = self.source.text(node);
         let Some(local) = self.lookup(name) else {
-            if self.source.param(name).is_some() {
+            if self.source.tree.kind(node) == NodeKind::SelfExpr {
+                self.source.error(
+                    node,
+                    codes::INVALID_SELF,
+                    "`self` is a method's receiver, and this function takes none",
+                    None,
+                );
+            } else if self.source.param(name).is_some() {
                 self.source.error(
                     node,
                     codes::NOT_A_VALUE,
@@ -2590,7 +2674,10 @@ impl<'a, 's> Builder<'a, 's> {
             }
             return Target::Unknown;
         }
-        if self.source.param(name).is_some() {
+        if let Some(ty) = self.source.param(name) {
+            if let (SELF, Some(decl)) = (name, ty.as_decl()) {
+                return Target::Instance(decl);
+            }
             self.source.error(
                 node,
                 codes::NOT_CALLABLE,
@@ -2623,20 +2710,22 @@ impl<'a, 's> Builder<'a, 's> {
 
     /// What a call names once its type argument list is read: its target at the list's types,
     /// one per type parameter. A call that names none is reported here.
-    fn applied(
-        &mut self,
-        call: ast::CallExpr,
-        callee: NodeIdx,
-        target: Target,
-        damaged: bool,
-    ) -> Applied {
-        let tree = self.source.tree;
-        let list = call.type_args(tree);
+    fn applied(&mut self, site: Site, callee: NodeIdx, target: Target, damaged: bool) -> Applied {
+        let list = site.list;
         let at = self.source.range(callee);
         match target {
             Target::Unknown => {
                 self.source.type_args(list);
                 Applied::Unknown
+            }
+            Target::Instance(decl) => {
+                let (given, _) = self.source.type_args(list);
+                let takes = self.source.takes(0, given, list, at, None, damaged);
+                if takes {
+                    Applied::Type(decl)
+                } else {
+                    Applied::Unknown
+                }
             }
             Target::Type(item) if list.is_none() && self.source.is_generic(item) => {
                 Applied::InferredType(item)
@@ -2661,21 +2750,55 @@ impl<'a, 's> Builder<'a, 's> {
                 if expected == 0 {
                     return Applied::Function(generic);
                 }
-                let instance = args.and_then(|args| self.instance(call, generic, args));
+                let instance = args.and_then(|args| self.instance(site, generic, args));
                 instance.map_or(Applied::Unknown, Applied::Function)
             }
         }
     }
 
+    /// What a method call names once its type argument list is read. The list is of the method's
+    /// own type parameters: its `impl`'s come first and are the receiver's to decide, so they
+    /// are returned undecided beside the written ones.
+    fn applied_method(
+        &mut self,
+        site: Site,
+        method: FunctionId,
+        damaged: bool,
+    ) -> (Applied, Vec<Option<Ty>>) {
+        let item = &self.declared.items[method.index()];
+        let total = item.params.len();
+        let own = total - item.method.map_or(0, |method| method.impl_params);
+        let Some(list) = site.list else {
+            let applied = if total == 0 {
+                Applied::Function(method)
+            } else {
+                Applied::Inferred(method)
+            };
+            return (applied, Vec::new());
+        };
+        let (given, args) = self.source.type_args(Some(list));
+        let at = site
+            .name
+            .map_or(self.source.range(site.node), |name| self.source.range(name));
+        let declared = self.declared.headers[method.index()].name;
+        let takes = self
+            .source
+            .takes(own, given, Some(list), at, declared, damaged);
+        match args.filter(|_| takes) {
+            Some(_) if total == 0 => (Applied::Function(method), Vec::new()),
+            Some(args) => {
+                let mut bound = vec![None; total - own];
+                bound.extend(args.into_iter().map(Some));
+                (Applied::Inferred(method), bound)
+            }
+            None => (Applied::Unknown, Vec::new()),
+        }
+    }
+
     /// The instance of `generic` the call names at `args`; none for a call marked as having no
     /// last instance.
-    fn instance(
-        &mut self,
-        call: ast::CallExpr,
-        generic: FunctionId,
-        args: Vec<Ty>,
-    ) -> Option<FunctionId> {
-        if self.declared.unbounded.contains(&call.node()) {
+    fn instance(&mut self, site: Site, generic: FunctionId, args: Vec<Ty>) -> Option<FunctionId> {
+        if self.declared.unbounded.contains(&site.node) {
             return None;
         }
         let caller = self.declared.headers[self.owner as usize].generic;
@@ -2685,7 +2808,7 @@ impl<'a, 's> Builder<'a, 's> {
             self.generic_calls.push(GenericCall {
                 caller,
                 callee: generic,
-                call,
+                site,
                 args: args.clone(),
             });
         }
@@ -2732,23 +2855,25 @@ impl<'a, 's> Builder<'a, 's> {
         );
     }
 
-    /// The instance of `generic` its arguments decide, one per parameter: each type parameter is
-    /// the type of the first argument whose parameter names it.
+    /// The instance of `generic` its arguments decide, one per parameter: each type parameter
+    /// `bound` leaves open is the type of the first argument whose parameter names it.
     fn infer_call(
         &mut self,
-        call: ast::CallExpr,
-        callee: NodeIdx,
+        site: Site,
         generic: FunctionId,
-        args: &[(ast::Arg, Value)],
+        args: &Args,
+        bound: Vec<Option<Ty>>,
     ) -> Option<FunctionId> {
+        let name = site.name?;
         if self.source.is_muted {
-            let args = self.decided(callee)?;
-            return self.instance(call, generic, args);
+            let args = self.decided(name)?;
+            return self.instance(site, generic, args);
         }
         let patterns = self.graph.param_types(generic)?.to_vec();
         let values: Vec<Decides> = args.iter().map(|(_, value)| self.decides(value)).collect();
         let params = self.declared.type_args[generic.index()].clone();
-        let mut bound = vec![None; params.len()];
+        let mut bound = bound;
+        bound.resize(params.len(), None);
         for (&pattern, &value) in patterns.iter().zip(&values) {
             if let Decides::Ty(actual) = value {
                 self.source.bind(pattern, actual, &params, &mut bound);
@@ -2756,14 +2881,14 @@ impl<'a, 's> Builder<'a, 's> {
         }
         match bound.iter().copied().collect::<Option<Vec<Ty>>>() {
             Some(args) => {
-                self.decide(callee, &args);
-                self.instance(call, generic, args)
+                self.decide(name, &args);
+                self.instance(site, generic, args)
             }
             None => {
                 let names = self.declared.items[generic.index()].params.clone();
-                let name = self.source.text(callee);
+                let text = self.source.text(name);
                 let declared = self.declared.headers[generic.index()].name;
-                self.undecided(callee, name, &names, &bound, &values, declared);
+                self.undecided(name, text, &names, &bound, &values, declared);
                 None
             }
         }
@@ -2810,24 +2935,11 @@ impl<'a, 's> Builder<'a, 's> {
         }
     }
 
-    /// Every argument is read, arity aside: the typing holds each to its parameter. A damaged
-    /// list is not yet the wrong length, and its labels are not yet in order.
-    fn call(&mut self, call: ast::CallExpr, damaged: bool) -> Value {
+    /// Lowers the arguments of `list` onto `args`, in order, up to any garbage: the ones whose
+    /// position is reliable. One written `mut` is a place, and joins `lent`.
+    fn arguments(&mut self, list: Option<ast::ArgList>, args: &mut Args, lent: &mut Lent<'s>) {
         let tree = self.source.tree;
-        let node = call.node();
-        let name = call.callee(tree).map(|callee| callee.node());
-        let applied = match name {
-            Some(name) => {
-                let target = self.target(name);
-                self.applied(call, name, target, damaged)
-            }
-            None => Applied::Unknown,
-        };
-        // The arguments before any garbage: the ones whose position is reliable.
-        let mut args: Vec<(ast::Arg, Value)> = Vec::new();
-        // Each argument written `mut`, by position, with the place it is when it is one.
-        let mut lent: Vec<(usize, Option<Place<'s>>)> = Vec::new();
-        if let Some(list) = call.arg_list(tree) {
+        if let Some(list) = list {
             for child in tree.children(list.node()) {
                 let Some((arg, value)) =
                     ast::Arg::cast(tree, child).and_then(|arg| Some((arg, arg.value(tree)?)))
@@ -2849,11 +2961,11 @@ impl<'a, 's> Builder<'a, 's> {
                 if let Some(place) = place {
                     lent.push((args.len(), place.ok()));
                 }
-                args.push((arg, value));
+                args.push((Some(arg), value));
             }
         }
         // A place is read where the call begins: again, if an argument after it wrote its local.
-        for (index, place) in &lent {
+        for (index, place) in lent.iter() {
             let Some(place) = place.as_ref().filter(|_| args[*index].1.is_valid) else {
                 continue;
             };
@@ -2865,6 +2977,26 @@ impl<'a, 's> Builder<'a, 's> {
                 args[*index].1 = self.read_place(place);
             }
         }
+    }
+
+    /// Every argument is read, arity aside: the typing holds each to its parameter. A damaged
+    /// list is not yet the wrong length, and its labels are not yet in order.
+    fn call(&mut self, call: ast::CallExpr, damaged: bool) -> Value {
+        let tree = self.source.tree;
+        let site = Site {
+            node: call.node(),
+            name: call.callee(tree).map(|callee| callee.node()),
+            list: call.type_args(tree),
+        };
+        let applied = match site.name {
+            Some(name) => {
+                let target = self.target(name);
+                self.applied(site, name, target, damaged)
+            }
+            None => Applied::Unknown,
+        };
+        let (mut args, mut lent) = (Vec::new(), Vec::new());
+        self.arguments(call.arg_list(tree), &mut args, &mut lent);
         if !damaged && matches!(applied, Applied::Type(_) | Applied::InferredType(_)) {
             for &(index, _) in &lent {
                 self.source.report(
@@ -2877,12 +3009,220 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         match applied {
-            Applied::Type(decl) if !damaged => return self.construct(call, decl, false, &args),
-            Applied::InferredType(item) if !damaged => {
-                return self.construct(call, item, true, &args);
-            }
-            _ => {}
+            Applied::Type(decl) if !damaged => self.construct(call, decl, false, &args),
+            Applied::InferredType(item) if !damaged => self.construct(call, item, true, &args),
+            _ => self.invoke(site, applied, Vec::new(), args, lent, damaged, false),
         }
+    }
+
+    /// A call of the method its receiver's type gives the name. `receiver` is the lowered
+    /// receiver where the call is a link of a chain; one that is a place is read here.
+    fn method_call(
+        &mut self,
+        call: ast::MethodCallExpr,
+        damaged: bool,
+        receiver: Option<Value>,
+    ) -> Value {
+        let tree = self.source.tree;
+        let node = call.node();
+        let callee = call.callee(tree);
+        let name = callee
+            .and_then(|callee| callee.field(tree))
+            .filter(|name| !tree.has_error(name.node()))
+            .map(|name| name.node());
+        let site = Site {
+            node,
+            name,
+            list: call.type_args(tree),
+        };
+        let base = callee.and_then(|callee| callee.base(tree));
+        let place = base
+            .filter(|_| receiver.is_none())
+            .and_then(|base| self.receiver_place(base));
+        let path = place.as_ref().and_then(|place| self.path(place));
+        let value = match (&place, receiver, base) {
+            (Some(place), ..) => self.receiver_value(place, path.as_ref()),
+            (None, Some(value), _) => value,
+            (None, None, Some(base)) => self.lower(base.node()),
+            (None, None, None) => self.hole_value(node),
+        };
+        self.advance(&value);
+        let method = name.and_then(|name| self.method(name, &value));
+        // Where the method says it changes its receiver.
+        let taken = method.and_then(|method| {
+            let receiver = self.declared.parameters[method.index()].first()?;
+            let at = self.source.range(receiver.node);
+            receiver
+                .out()
+                .map(|_| (at, Box::from("the receiver is `mut` here")))
+        });
+        let changes = taken.is_some();
+        // A receiver its method changes is a place, as an argument written `mut` is.
+        let mut lent = Vec::new();
+        let mut is_refused = false;
+        match &place {
+            Some(place) => {
+                let local = &mut self.locals[place.local.index()];
+                local.is_assigned |= changes;
+                let (binding, declaration) = (local.binding, local.declaration);
+                self.refer(place.root, Symbol::Local(binding), changes);
+                if let Some(path) = &path {
+                    self.refer_path(place, path, changes);
+                }
+                if let Some(taken) = taken.clone()
+                    && !self.versions.is_mutable(place.local)
+                {
+                    let message = format!(
+                        "`{}` changes its receiver, and `{}` is immutable",
+                        name.map_or("", |name| self.source.text(name)),
+                        self.source.text(place.root)
+                    );
+                    let declared = self.spans.name(declaration);
+                    let declared = declared.map(|range| (range, Box::from("declared here")));
+                    self.source.report(
+                        self.source.range(place.root),
+                        codes::IMMUTABLE_ASSIGNMENT,
+                        message,
+                        declared.into_iter().chain([taken]),
+                    );
+                    is_refused = true;
+                }
+            }
+            None => {
+                if let Some(taken) = taken.clone() {
+                    let message = format!(
+                        "`{}` changes its receiver, which is no place: a place is a `mut` name, \
+                         or a field under one",
+                        name.map_or("", |name| self.source.text(name)),
+                    );
+                    let code = codes::INVALID_ASSIGNMENT_TARGET;
+                    self.source.report(value.range, code, message, [taken]);
+                    is_refused = true;
+                }
+            }
+        }
+        if is_refused {
+            self.fail();
+        } else if let (true, Some(place)) = (changes, place) {
+            lent.push((0, Some(place)));
+        }
+        let mut args: Args = vec![(None, value)];
+        self.arguments(call.arg_list(tree), &mut args, &mut lent);
+        let (applied, bound) = match method {
+            Some(method) => self.applied_method(site, method, damaged),
+            None => {
+                self.source.type_args(site.list);
+                (Applied::Unknown, Vec::new())
+            }
+        };
+        self.invoke(
+            site,
+            applied,
+            bound,
+            args,
+            lent,
+            damaged || is_refused,
+            true,
+        )
+    }
+
+    /// What a receiver that is a place holds: read along `path`, or a hole where that failed.
+    fn receiver_value(&mut self, place: &Place<'s>, path: Option<&Path>) -> Value {
+        self.locals[place.local.index()].is_read = true;
+        let range = self.place_range(place, place.fields.len());
+        let read = match path {
+            Some(path) => self.held(place, path),
+            None => self.place(Op::Hole, &[], range, None),
+        };
+        let is_valid = self.is_typed(read);
+        if !is_valid {
+            self.fail();
+        }
+        Value {
+            node: read,
+            range,
+            at: range,
+            control: None,
+            completes: false,
+            is_valid,
+            has_scalar_tail: is_valid,
+        }
+    }
+
+    /// The method the name at `name` is of the receiver's type; none is reported, unless the
+    /// receiver failed.
+    fn method(&mut self, name: NodeIdx, receiver: &Value) -> Option<FunctionId> {
+        let text = self.source.text(name);
+        let ty = match self.decides(receiver) {
+            Decides::Ty(ty) => ty,
+            Decides::Failed => return None,
+            read => {
+                let message = format!(
+                    "the type `{text}` is a method of is not known here{}",
+                    pending_text(read)
+                );
+                self.source
+                    .error(name, codes::UNKNOWN_METHOD, message, None);
+                return None;
+            }
+        };
+        let decl = ty.as_decl();
+        let item = decl.map(|decl| self.source.decls[decl.index()].item);
+        let found = item.and_then(|item| self.declared.methods.get(&(item, text)).copied());
+        let method = match found {
+            Some((_, method)) => method?,
+            None => {
+                let declared = item
+                    .and_then(|item| self.source.decls[item.index()].name_node)
+                    .map(|node| (self.source.range(node), "declared here"));
+                let is_field = item
+                    .is_some_and(|item| self.source.decls[item.index()].index_of(text).is_some());
+                let (code, message) = if is_field {
+                    let message = format!(
+                        "`{text}` is a field of `{}`, not a method",
+                        self.source.show(ty)
+                    );
+                    (codes::NOT_CALLABLE, message)
+                } else {
+                    let message = format!("`{}` has no method `{text}`", self.source.show(ty));
+                    (codes::UNKNOWN_METHOD, message)
+                };
+                self.source.error(name, code, message, declared);
+                return None;
+            }
+        };
+        self.refer(name, Symbol::Function(method), false);
+        let header = self.declared.headers[method.index()];
+        let takes_self = self.declared.parameters[method.index()]
+            .first()
+            .is_some_and(|receiver| receiver.name.is_some_and(|(name, _)| name == "self"));
+        if !takes_self {
+            self.source.error(
+                name,
+                codes::UNKNOWN_METHOD,
+                format!("`{text}` takes no `self`, so it is called on no value"),
+                header.name.map(|name| (name, "declared here")),
+            );
+            return None;
+        }
+        Some(method)
+    }
+
+    /// The call of what `applied` names over `args`, a method's receiver the first of them:
+    /// `bound` are the type arguments already decided for one whose arguments decide the rest.
+    #[allow(clippy::too_many_arguments)]
+    fn invoke(
+        &mut self,
+        site: Site,
+        applied: Applied,
+        bound: Vec<Option<Ty>>,
+        args: Args,
+        lent: Lent<'s>,
+        damaged: bool,
+        is_method: bool,
+    ) -> Value {
+        let tree = self.source.tree;
+        let node = site.node;
         let context = self.context();
         // The function named, whose parameter list its every instance shares.
         let named = match applied {
@@ -2896,7 +3236,7 @@ impl<'a, 's> Builder<'a, 's> {
         if !damaged {
             for (arg, _) in &args {
                 // A label on an argument to a name that resolved to nothing is reported there.
-                if let Some(label) = arg.label(tree)
+                if let Some(label) = arg.and_then(|arg| arg.label(tree))
                     && let Some(function) = named
                 {
                     let item = self.declared.headers[function.index()].item;
@@ -2912,20 +3252,27 @@ impl<'a, 's> Builder<'a, 's> {
             if let (Some(function), Some(arity)) = (named, arity)
                 && args.len() != arity
             {
+                // A receiver is no argument of the call as it is written.
+                let receiver = usize::from(is_method);
                 let item = self.declared.headers[function.index()].item;
+                let message = format!(
+                    "expected {} arguments, found {}",
+                    arity - receiver,
+                    args.len() - receiver
+                );
                 self.source.error(
                     node,
                     codes::ARITY,
-                    format!("expected {arity} arguments, found {}", args.len()),
+                    message,
                     Some((self.source.range(item), "declared here")),
                 );
             }
         }
-        let mut changes = !damaged && self.changes(named, &args, &lent);
-        let target = match (applied, name) {
-            (Applied::Function(function), _) => Some(function),
-            (Applied::Inferred(generic), Some(name)) if !damaged && arity == Some(args.len()) => {
-                self.infer_call(call, name, generic, &args)
+        let mut changes = !damaged && self.changes(named, &args, &lent, is_method);
+        let target = match applied {
+            Applied::Function(function) => Some(function),
+            Applied::Inferred(generic) if !damaged && arity == Some(args.len()) => {
+                self.infer_call(site, generic, &args, bound)
             }
             _ => None,
         };
@@ -3038,12 +3385,14 @@ impl<'a, 's> Builder<'a, 's> {
     }
 
     /// Whether the call writes `mut` where its function's parameters are, on places no two of
-    /// which overlap; reported where not. `lent` are the arguments written `mut`.
+    /// which overlap; reported where not. A method's receiver is written none, and held to its
+    /// method by the call.
     fn changes(
         &mut self,
         named: Option<FunctionId>,
-        args: &[(ast::Arg, Value)],
-        lent: &[(usize, Option<Place<'s>>)],
+        args: &Args,
+        lent: &Lent<'s>,
+        is_method: bool,
     ) -> bool {
         let takes =
             named.is_some_and(|named| self.declared.headers[named.index()].product.is_some());
@@ -3057,7 +3406,7 @@ impl<'a, 's> Builder<'a, 's> {
         let mut agrees = true;
         let name = self.declared.headers[function.index()].name;
         let name = name.map_or("<missing>", |name| name.text(self.source.parsed.source()));
-        for (index, (_, value)) in args.iter().enumerate() {
+        for (index, (_, value)) in args.iter().enumerate().skip(usize::from(is_method)) {
             let Some(param) = self.declared.parameters[function.index()].get(index) else {
                 break;
             };
@@ -3105,7 +3454,7 @@ impl<'a, 's> Builder<'a, 's> {
         call: ast::CallExpr,
         decl: DeclId,
         is_inferred: bool,
-        args: &[(ast::Arg, Value)],
+        args: &Args,
     ) -> Value {
         let tree = self.source.tree;
         let node = call.node();
@@ -3119,7 +3468,7 @@ impl<'a, 's> Builder<'a, 's> {
         // A type with a field of no type is reported at its declaration.
         let mut is_damaged = self.source.fields(decl).iter().any(|(_, ty)| ty.is_none());
         for &(arg, value) in args {
-            let Some(label) = arg.label(tree) else {
+            let Some(label) = arg.and_then(|arg| arg.label(tree)) else {
                 self.source.report(
                     value.range,
                     codes::UNLABELED_FIELD,

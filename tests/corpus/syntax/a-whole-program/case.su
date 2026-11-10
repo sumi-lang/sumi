@@ -85,3 +85,21 @@ fn moved() -> int {
     p.x %= 5
     p.x
 }
+
+impl Point {
+    fn sum(self) = self.x + self.y
+
+    fn shift(mut self, dx: int) {
+        self.x += dx
+    }
+}
+
+impl Box<T> {
+    fn with<U>(self, other: U) -> Box<U> = Box(value: other)
+}
+
+fn methods() -> int {
+    let mut p = Point(x: 1, y: 2)
+    p.shift(3)
+    Box(value: p).with<Point>(p).value.sum()
+}

@@ -226,9 +226,66 @@ fn skip_all(
 fn item(p: &mut Marker<'_, '_>) {
     if p.at(T::TypeKw) {
         type_item(p);
+    } else if p.at(T::ImplKw) {
+        impl_item(p);
     } else {
         fn_item(p);
     }
+}
+
+fn impl_item(p: &mut Marker<'_, '_>) {
+    let mut m = p.start();
+    m.token();
+    if !m.at(T::Ident) {
+        let recovery = m.missing(ParseRecoveryKind::Name);
+        signature_garbage(&mut m, recovery, |m| m.at(T::Ident) || m.at(T::LBrace));
+    }
+    if m.at(T::Ident) {
+        let target = leaf(&mut m, N::NameRef);
+        m.field(&target, 0);
+        type_params(&mut m);
+    }
+    if !m.at(T::LBrace) {
+        let recovery = m.missing(ParseRecoveryKind::Token(T::LBrace));
+        signature_garbage(&mut m, recovery, |m| m.at(T::LBrace));
+    }
+    if m.at(T::LBrace) {
+        let methods = method_list(&mut m);
+        m.field(&methods, 2);
+    }
+    m.complete(N::ImplItem);
+}
+
+/// Within braces the stream pairs, a `fn` begins a method; what is none is skipped up to the next.
+fn method_list(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.open(Pair::Brace);
+    loop {
+        match m.current() {
+            None => {
+                m.missing_closer(Pair::Brace);
+                break;
+            }
+            Some(T::RBrace) if !m.has_closer_ahead() => {
+                m.token();
+                break;
+            }
+            Some(_) if m.closes_open_bracket() => {
+                m.missing_closer(Pair::Brace);
+                break;
+            }
+            Some(T::FnKw) => fn_item(&mut m),
+            Some(_) => {
+                let recovery = m.recover_tokens(ParseRecoveryKind::Item, 1);
+                // A `}` with the list's own still ahead is garbage like any other.
+                skip_all(&mut m, recovery, |m| {
+                    m.at(T::FnKw)
+                        || (m.at(T::RBrace) && !m.has_closer_ahead())
+                        || m.closes_open_bracket()
+                });
+            }
+        }
+    }
+    m.complete(N::MethodList)
 }
 
 fn type_item(p: &mut Marker<'_, '_>) {
@@ -573,11 +630,20 @@ impl ListRule for Params {
     const RESUMES_AT_ELEMENT: bool = false;
 
     fn starts_element(m: &Marker<'_, '_>) -> bool {
-        m.at(T::Ident) || m.at(T::Underscore) || m.at(T::MutKw)
+        m.at(T::Ident) || m.at(T::Underscore) || m.at(T::MutKw) || m.at(T::SelfKw)
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
-        typed_name(m, N::Param);
+        let after_mut = usize::from(m.at(T::MutKw));
+        if m.nth(after_mut) == Some(T::SelfKw) {
+            let mut m = m.start();
+            for _ in 0..=after_mut {
+                m.token();
+            }
+            m.complete(N::SelfParam);
+        } else {
+            typed_name(m, N::Param);
+        }
     }
 
     /// A brace the stream never pairs is garbage in the list, not what follows it.
@@ -821,7 +887,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         Some(T::Underscore) => discard_stmt(p),
         Some(T::ReturnKw) => return_stmt(p),
         // A named function or type where a statement belongs is an item, not a statement.
-        Some(T::FnKw | T::TypeKw)
+        Some(T::FnKw | T::TypeKw | T::ImplKw)
             if !p.is_nth_after_newline(1) && matches!(p.nth(1), Some(T::Ident | T::Underscore)) =>
         {
             let recovery = p.recover_tokens(ParseRecoveryKind::Statement, 1);
@@ -1051,7 +1117,13 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if follow == ExprFollow::Range && p.at(T::Dot) {
             break;
         }
-        if p.completed_kind(&lhs) == N::NameRef && (begins_call(p) || begins_type_args(p)) {
+        // A name is called; a field so written is a method of what it is read from.
+        let call = match p.completed_kind(&lhs) {
+            N::NameRef => Some(N::CallExpr),
+            N::FieldExpr => Some(N::MethodCallExpr),
+            _ => None,
+        };
+        if let Some(call) = call.filter(|_| begins_call(p) || begins_type_args(p)) {
             let callee = p.completed_node(&lhs);
             let mut m = p.precede(lhs);
             m.wrapped_field(callee, 0);
@@ -1066,7 +1138,7 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
             } else {
                 m.missing(ParseRecoveryKind::Token(T::LParen));
             }
-            lhs = m.complete(N::CallExpr);
+            lhs = m.complete(call);
             was_comparison = false;
             continue;
         }
@@ -1198,6 +1270,7 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             m.complete(N::PrefixExpr)
         }
         T::Ident => leaf(p, N::NameRef),
+        T::SelfKw => leaf(p, N::SelfExpr),
         _ if is_literal(kind) => leaf(p, N::LiteralExpr),
         T::LParen => {
             let mut m = p.open(Pair::Paren);
