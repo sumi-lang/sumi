@@ -1,0 +1,12 @@
+fn squares(n: int, a: int) -> int = if n <= -2 {
+    a
+} else {
+    squares(n - 2, squares(n - 2, a) * (-a)) - n
+}
+
+fn wide(n: int) -> int = squares(n, 5)
+
+fn main() -> int {
+    return 1
+    wide(0)
+}

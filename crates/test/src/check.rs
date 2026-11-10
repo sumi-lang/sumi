@@ -1338,13 +1338,21 @@ pub struct Runs {
     pub abandoned: usize,
 }
 
+/// Whether an integer is too wide for a run to go on. A step budget is not enough: squaring along
+/// a recursion doubles the width every frame, and one multiplication then outlasts it.
+fn too_wide() -> impl Fn(&sumi_hir::Value) -> bool {
+    use sumi_hir::{Int, Value};
+
+    const DIGITS: usize = 300;
+    let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
+    let narrow = -&wide;
+    move |value| matches!(value, Value::Int(v) if *v > wide || *v < narrow)
+}
+
 pub fn run(program: Program<'_>) -> Runs {
     use sumi_hir::{Bools, Fields, Graph, Int, Ints, May, Ty, TyKind, Value};
 
     const STEPS: u64 = 1 << 17;
-    /// The step budget is not enough: squaring along a recursion doubles the width every frame, and
-    /// one multiplication then outlasts it.
-    const DIGITS: usize = 300;
     const TUPLES: usize = 32;
 
     fn contains(ints: &Ints, value: &Int) -> bool {
@@ -1453,9 +1461,7 @@ pub fn run(program: Program<'_>) -> Runs {
         points
     }
 
-    let wide: Int = format!("1{}", "0".repeat(DIGITS)).parse().unwrap();
-    let narrow = -&wide;
-    let too_wide = |value: &Value| matches!(value, Value::Int(v) if *v > wide || *v < narrow);
+    let too_wide = too_wide();
     let mut runs = Runs::default();
     let compiled = program.compile();
     optimized(&compiled);
@@ -1610,6 +1616,7 @@ fn dead_code_stays_dead(program: Program<'_>) {
         return;
     }
     let graph = analysis.graph();
+    let too_wide = too_wide();
     for (id, _) in program.functions() {
         let mut tuples: Vec<Vec<Value>> = vec![Vec::new()];
         for &ty in program.signature(id).params {
@@ -1627,13 +1634,17 @@ fn dead_code_stays_dead(program: Program<'_>) {
                 .collect();
         }
         for args in tuples {
-            // Outside the proven ranges a run may be refused or run long; either ends the check.
+            // Outside the proven ranges a run may be refused, run long, or grow wide; each ends the
+            // check.
             let mut machine = Machine::new(graph, id, &args, None);
             for _ in 0..STEPS {
                 if machine.step().is_some() {
                     break;
                 }
-                if let Some((node, _)) = machine.latest() {
+                if let Some((node, value)) = machine.latest() {
+                    if too_wide(value) {
+                        break;
+                    }
                     let origin = program.analysis().spans().origin(node);
                     let within = dead.iter().find(|dead| {
                         dead.range.start() <= origin.start() && origin.end() <= dead.range.end()
