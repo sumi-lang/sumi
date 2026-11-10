@@ -9,7 +9,8 @@ use std::mem::ManuallyDrop;
 use std::ops::{Add, BitAnd, Div, Mul, Neg, Rem, Sub};
 
 use crate::{
-    ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Int, Names, Ty, TyKind, Unions,
+    ARRAY, ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Int, Names, Ty, TyKind,
+    Unions,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -164,6 +165,13 @@ impl Ints {
     pub const EMPTY: Self = Self(None);
     pub const ALL: Self = Self(Some(Band {
         lo: Bound::NegInf,
+        hi: Bound::PosInf,
+        has_hole: false,
+    }));
+
+    /// Every length a sequence may have.
+    pub const LENGTHS: Self = Self(Some(Band {
+        lo: Bound::Finite(Int::ZERO),
         hi: Bound::PosInf,
         has_hole: false,
     }));
@@ -581,6 +589,8 @@ pub enum Fields {
     Any,
     /// Per field in declaration order.
     Known(Box<[May]>),
+    /// Of a sequence: how many elements it may hold, and what any of them may.
+    Elements(Ints, Box<May>),
 }
 
 impl Fields {
@@ -599,6 +609,12 @@ impl Fields {
                 }
                 grew
             }
+            (Self::Elements(len, element), Self::Elements(other_len, other)) => {
+                len.join(other_len) | element.join(other)
+            }
+            (Self::Known(_), Self::Elements(..)) | (Self::Elements(..), Self::Known(_)) => {
+                unreachable!("one type is a sequence or holds fields")
+            }
         }
     }
 
@@ -606,7 +622,43 @@ impl Fields {
         match self {
             Self::Any => Self::Any,
             Self::Known(fields) => Self::Known(fields.iter().map(&mut f).collect()),
+            Self::Elements(len, element) => {
+                let len = f(&May::ints(len.clone())).ints;
+                Self::Elements(len, Box::new(f(element)))
+            }
         }
+    }
+
+    /// The values in both, where there is one: an empty sequence holds no element.
+    fn meet(&self, other: &Self) -> Option<Self> {
+        Some(match (self, other) {
+            (Self::Any, fields) | (fields, Self::Any) => fields.clone(),
+            (Self::Known(mine), Self::Known(theirs)) => {
+                let fields: Box<[May]> = mine
+                    .iter()
+                    .zip(theirs)
+                    .map(|(mine, theirs)| mine.meet(theirs))
+                    .collect();
+                if !fields.iter().all(May::is_live) {
+                    return None;
+                }
+                Self::Known(fields)
+            }
+            (Self::Elements(len, element), Self::Elements(other_len, other)) => {
+                let element = element.meet(other);
+                let mut len = len & other_len;
+                if !element.is_live() {
+                    len = &len & &Ints::from(Int::from(0));
+                }
+                if len.is_empty() {
+                    return None;
+                }
+                Self::Elements(len, Box::new(element))
+            }
+            (Self::Known(_), Self::Elements(..)) | (Self::Elements(..), Self::Known(_)) => {
+                unreachable!("one type is a sequence or holds fields")
+            }
+        })
     }
 }
 
@@ -823,20 +875,7 @@ impl May {
     /// The values in both: a declared value stays where each of its fields holds some value.
     pub fn meet(&self, other: &Self) -> Self {
         let decls = self.decls.iter().filter_map(|(decl, mine)| {
-            let fields = match (mine, other.decls.get(decl)?) {
-                (Fields::Any, fields) | (fields, Fields::Any) => fields.clone(),
-                (Fields::Known(mine), Fields::Known(theirs)) => {
-                    let fields: Box<[Self]> = mine
-                        .iter()
-                        .zip(theirs)
-                        .map(|(mine, theirs)| mine.meet(theirs))
-                        .collect();
-                    if !fields.iter().all(Self::is_live) {
-                        return None;
-                    }
-                    Fields::Known(fields)
-                }
-            };
+            let fields = mine.meet(other.decls.get(decl)?)?;
             Some((decl, fields))
         });
         Self {
@@ -900,6 +939,23 @@ impl fmt::Display for Shown<'_> {
 }
 
 impl May {
+    /// The sequences here, each of known elements remade by `f` from its lengths and elements;
+    /// one that then holds no length is none.
+    fn elements(&self, f: impl Fn(&Ints, &Self) -> (Ints, Self)) -> Self {
+        let decls = self.decls.iter().filter_map(|(decl, fields)| match fields {
+            Fields::Elements(len, element) => {
+                let (len, element) = f(len, element);
+                (!len.is_empty()).then(|| (decl, Fields::Elements(len, Box::new(element))))
+            }
+            Fields::Any => Some((decl, Fields::Any)),
+            Fields::Known(_) => None,
+        });
+        Self {
+            decls: decls.collect(),
+            ..Self::NONE
+        }
+    }
+
     fn shown_decl(
         &self,
         decl: DeclId,
@@ -909,7 +965,11 @@ impl May {
         let name = Ty::decl(decl).shown(names);
         match self.decls.get(decl) {
             None => f.write_str("∅"),
+            Some(Fields::Any) if names.decl(decl) == ARRAY => write!(f, "{name}"),
             Some(Fields::Any) => write!(f, "{name}(..)"),
+            Some(Fields::Elements(len, element)) => {
+                write!(f, "[{}; {len}]", element.shown_whole(names))
+            }
             Some(Fields::Known(fields)) => {
                 write!(f, "{name}(")?;
                 for (index, field) in fields.iter().enumerate() {
@@ -1106,9 +1166,67 @@ impl Domain for May {
                         result.join(&Self::every(ty, unions));
                     }
                 }
+                Fields::Elements(..) => unreachable!("a sequence has no fields"),
             }
         }
         Ok(result)
+    }
+
+    fn array(decl: DeclId, elements: Vec<Self>) -> Self {
+        let len = Ints::from(Int::from(elements.len() as i64));
+        let mut element = Self::NONE;
+        for each in &elements {
+            element.join(each);
+        }
+        Self::decl(decl, Fields::Elements(len, Box::new(element)))
+    }
+
+    fn length(&self) -> Result<Self, Infallible> {
+        let mut result = Ints::EMPTY;
+        for (_, fields) in self.decls.iter() {
+            match fields {
+                Fields::Elements(len, _) => result.join(len),
+                Fields::Any => result.join(&Ints::LENGTHS),
+                Fields::Known(_) => false,
+            };
+        }
+        Ok(Self::ints(result))
+    }
+
+    fn index(&self, _: &Self, decls: &[Decl], unions: &Unions) -> Result<Self, Infallible> {
+        let mut result = Self::NONE;
+        for (decl, fields) in self.decls.iter() {
+            match (fields, decls[decl.index()].element()) {
+                (Fields::Elements(_, element), _) => result.join(element),
+                (Fields::Any, Some(element)) => result.join(&Self::every(element, unions)),
+                (Fields::Any, None) | (Fields::Known(_), _) => false,
+            };
+        }
+        Ok(result)
+    }
+
+    /// Which element is replaced is not tracked, so the others' values stay possible.
+    fn store(&self, _: &Self, value: &Self) -> Result<Self, Infallible> {
+        Ok(self.elements(|len, element| {
+            let mut element = element.clone();
+            element.join(value);
+            (len.clone(), element)
+        }))
+    }
+
+    fn push(&self, value: &Self) -> Result<Self, Infallible> {
+        Ok(self.elements(|len, element| {
+            let mut element = element.clone();
+            element.join(value);
+            (len + &Ints::from(Int::from(1)), element)
+        }))
+    }
+
+    fn pop(&self) -> Result<Self, Infallible> {
+        Ok(self.elements(|len, element| {
+            let len = &(len - &Ints::from(Int::from(1))) & &Ints::LENGTHS;
+            (len, element.clone())
+        }))
     }
 
     fn narrow(&self, ty: Ty, unions: &Unions) -> Self {
@@ -1459,6 +1577,11 @@ mod tests {
                     .iter()
                     .zip(record.fields().iter())
                     .all(|(field, value)| is_member(field, value)),
+                Some(Fields::Elements(len, element)) => {
+                    let elements = record.fields();
+                    contains(len, elements.len() as i64)
+                        && elements.iter().all(|value| is_member(element, value))
+                }
             },
         }
     }

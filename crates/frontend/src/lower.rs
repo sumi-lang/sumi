@@ -235,6 +235,14 @@ impl Snapshot<'_> {
                     "opening `<` must be adjacent to the name before it",
                 )
             }
+            ParseViolationKind::SpacedListOpener
+                if self.lexed.kind(violation.range.start()) == SyntaxKind::LBracket =>
+            {
+                (
+                    codes::SPACED_LIST_OPENER,
+                    "opening `[` must be adjacent to what it indexes",
+                )
+            }
             ParseViolationKind::SpacedListOpener => (
                 codes::SPACED_LIST_OPENER,
                 "opening `(` must be adjacent to the function name",

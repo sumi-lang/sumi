@@ -764,6 +764,20 @@ impl Checker<'_, '_> {
                 Some(product) => self.fact(node, Ty::decl(product), origin),
                 None => self.import(node, *callee),
             },
+            Op::Array(decl) => self.fact(node, Ty::decl(*decl), origin),
+            Op::Len => self.fact(node, Ty::INT, origin),
+            // Lowering builds each over a base it knows for a sequence.
+            Op::Index => match self
+                .resolve(inputs[0])
+                .and_then(|ty| self.source.element(ty))
+            {
+                Some(element) => self.fact(node, element, origin),
+                None => self.unknown(node),
+            },
+            Op::Store | Op::Push | Op::Pop => match self.resolve(inputs[0]) {
+                Some(ty) => self.fact(node, ty, origin),
+                None => self.unknown(node),
+            },
         }
     }
 
@@ -938,8 +952,35 @@ impl Checker<'_, '_> {
                     ok &= self.require(at, input, expected, declared);
                 }
             }
+            Op::Array(decl) => {
+                if let Some(element) = self.source.element(Ty::decl(*decl)) {
+                    for (index, (&at, &input)) in reads.iter().zip(inputs).enumerate() {
+                        if value(index) {
+                            ok &= self.require(at, input, Expected::Ty(element), None);
+                        }
+                    }
+                }
+            }
+            Op::Index | Op::Store | Op::Push => {
+                let element = self.resolve(inputs[0]);
+                let element = element.and_then(|ty| self.source.element(ty));
+                let (index, stored) = match graph.node(node).op {
+                    Op::Index => (Some(1), None),
+                    Op::Store => (Some(1), Some(2)),
+                    _ => (None, Some(1)),
+                };
+                if let Some(index) = index.filter(|&index| value(index)) {
+                    ok &= self.require(reads[index], inputs[index], Expected::Ty(Ty::INT), None);
+                }
+                if let (Some(stored), Some(element)) = (stored.filter(|&at| value(at)), element) {
+                    let expected = Expected::Ty(element);
+                    ok &= self.require(reads[stored], inputs[stored], expected, None);
+                }
+            }
             Op::Int(_)
             | Op::Bool(_)
+            | Op::Len
+            | Op::Pop
             | Op::Param { .. }
             | Op::Unit
             | Op::Hole
@@ -1080,7 +1121,10 @@ impl Checker<'_, '_> {
         let item = ty
             .as_decl()
             .map(|decl| self.source.decls[decl.index()].item);
-        let is_method = item.is_some_and(|item| self.declared.methods.contains_key(&(item, name)));
+        let is_sequence =
+            self.source.element(ty).is_some() && ["len", "push", "pop"].contains(&name);
+        let is_method = is_sequence
+            || item.is_some_and(|item| self.declared.methods.contains_key(&(item, name)));
         let message = if is_method {
             format!(
                 "`{name}` is a method of `{}`: a call of it takes `()`",

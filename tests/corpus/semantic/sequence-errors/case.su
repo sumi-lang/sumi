@@ -1,0 +1,39 @@
+type Point {
+    x: int,
+    y: int,
+}
+fn swap<T>(mut a: T, mut b: T) {
+    let t = a
+    a = b
+    b = t
+}
+fn first(xs: [int]) -> int = xs[0]
+fn errors(n: int) -> int {
+    let xs = [1, 2, 3]
+    let mut ys = [1, 2]
+    let empty = []
+    let mixed = [1, true]
+    let nested = [[], [true]]
+    let p = Point(x: 1, y: 2)
+    xs.push(4)
+    xs[0] = 5
+    _ = p[0]
+    _ = n[1]
+    _ = xs[true]
+    ys.push(true)
+    ys.push(1, 2)
+    ys.push(mut n)
+    ys.push(x: 1)
+    ys.len(1)
+    ys.len<int>()
+    _ = ys.nope()
+    _ = ys.len
+    [1, 2].push(3)
+    swap(mut ys[0], mut ys[n])
+    swap(mut ys[0], mut ys[0])
+    swap(mut ys[0], mut ys[1])
+    let zs: [int] | Point = p
+    let ws: [Missing] = []
+    ys = [true]
+    first([]) + first([true])
+}

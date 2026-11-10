@@ -1,0 +1,241 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 11
+
+== graph ==
+fn first@1:1..1:35 ([int] ∈ [∅; [0, 0]]) -> int ∈ ∅
+  param xs@1:10..1:12: [int]
+  result: copy : int @1:24..1:27
+    value: index : int @1:30..1:35
+      sequence: read xs@1:10..1:12 : [int]
+      index: int 0 : int @1:33..1:34
+
+fn pick@2:1..2:42 ([int] ∈ [[1, 3]; [3, 3]], int ∈ [7, 7]) -> int ∈ [1, 3]
+  param xs@2:9..2:11: [int]
+  param i@2:20..2:21: int
+  result: copy : int @2:31..2:34
+    value: index : int @2:37..2:42
+      sequence: read xs@2:9..2:11 : [int]
+      index: read i@2:20..2:21 : int
+
+fn drain@3:1..6:2 () -> int ∈ [3, 6]
+  result: copy : int @3:15..3:18
+    value:
+      let ys@4:13..4:15: [int] @4:5..4:24
+        initializer: array : [int] @4:18..4:24
+          element: int 1 : int @4:19..4:20
+          element: int 2 : int @4:22..4:23
+      assignment: assign ys@4:13..4:15 : [int] @5:5..5:13
+        value: pop : [int] @5:5..5:13
+          sequence: read ys@4:13..4:15 : [int]
+      assignment: assign ys@4:13..4:15 : [int] @5:16..5:24
+        value: pop : [int] @5:16..5:24
+          sequence: read ys@4:13..4:15 (assigned @5:5..5:13) : [int]
+      assignment: assign ys@4:13..4:15 : [int] @5:27..5:35
+        value: pop : [int] @5:27..5:35
+          sequence: read ys@4:13..4:15 (assigned @5:16..5:24) : [int]
+      tail: eager + : int @5:5..5:35
+        lhs: eager + : int @5:5..5:24
+          lhs: index : int @5:5..5:13
+            sequence: read ys@4:13..4:15 : [int]
+            index: eager - : int @5:5..5:13
+              lhs: len : int @5:5..5:13
+                sequence: read ys@4:13..4:15 : [int]
+              rhs: int 1 : int @5:5..5:13
+          rhs: index : int @5:16..5:24
+            sequence: read ys@4:13..4:15 (assigned @5:5..5:13) : [int]
+            index: eager - : int @5:16..5:24
+              lhs: len : int @5:16..5:24
+                sequence: read ys@4:13..4:15 (assigned @5:5..5:13) : [int]
+              rhs: int 1 : int @5:16..5:24
+        rhs: index : int @5:27..5:35
+          sequence: read ys@4:13..4:15 (assigned @5:16..5:24) : [int]
+          index: eager - : int @5:27..5:35
+            lhs: len : int @5:27..5:35
+              sequence: read ys@4:13..4:15 (assigned @5:16..5:24) : [int]
+            rhs: int 1 : int @5:27..5:35
+
+fn outside@7:1..10:2 () -> int ∈ [2, 6]
+  result: copy : int @7:17..7:20
+    value:
+      let xs@8:9..8:11: [int] @8:5..8:23
+        initializer: array : [int] @8:14..8:23
+          element: int 1 : int @8:15..8:16
+          element: int 2 : int @8:18..8:19
+          element: int 3 : int @8:21..8:22
+      tail: eager + : int @9:5..9:19
+        lhs: index : int @9:5..9:10
+          sequence: read xs@8:9..8:11 : [int]
+          index: int 3 : int @9:8..9:9
+        rhs: index : int @9:13..9:19
+          sequence: read xs@8:9..8:11 : [int]
+          index: int -1 : int @9:16..9:18
+
+fn stores@11:1..15:2 (int ∈ [5, 5]) -> unit ∈ unit
+  param i@11:11..11:12: int
+  result: copy : unit @11:10..11:18
+    value:
+      let xs@12:13..12:15: [int] @12:5..12:27
+        initializer: array : [int] @12:18..12:27
+          element: int 1 : int @12:19..12:20
+          element: int 2 : int @12:22..12:23
+          element: int 3 : int @12:25..12:26
+      assignment: assign xs@12:13..12:15 : [int] @13:5..13:14
+        value: store : [int] @13:5..13:14
+          sequence: read xs@12:13..12:15 : [int]
+          index: read i@11:11..11:12 : int
+          element: int 0 : int @13:13..13:14
+      assignment: assign xs@12:13..12:15 : [int] @14:5..14:15
+        value: store : [int] @14:5..14:15
+          sequence: read xs@12:13..12:15 (assigned @13:5..13:14) : [int]
+          index: read i@11:11..11:12 : int
+          element: eager + : int @14:5..14:15
+            lhs: index : int @14:5..14:10
+              sequence: read xs@12:13..12:15 (assigned @13:5..13:14) : [int]
+              index: read i@11:11..11:12 : int
+            rhs: int 1 : int @14:14..14:15
+      tail: unit : unit @11:19..15:2
+
+fn lent@16:1..18:2 (int ∈ [1, 1]) -> unit ∈ unit
+  param n@16:13..16:14: int
+  body:
+    assignment: assign n@16:13..16:14 : int @17:5..17:11
+      value: eager + : int @17:5..17:11
+        lhs: read n@16:13..16:14 : int
+        rhs: int 1 : int @17:10..17:11
+    tail: make <missing> : <missing> @16:21..18:2
+
+fn lends@19:1..22:2 () -> unit ∈ unit
+  result: copy : unit @19:9..19:11
+    value:
+      let xs@20:13..20:15: [int] @20:5..20:21
+        initializer: array : [int] @20:18..20:21
+          element: int 1 : int @20:19..20:20
+      assignment: assign xs@20:13..20:15 : [int] @21:14..21:19
+        value: store : [int] @21:14..21:19
+          sequence: read xs@20:13..20:15 : [int]
+          index: int 1 : int @21:17..21:18
+          element: field n : int @21:14..21:19
+            base: call lent@16:1..18:2 : <missing> @21:5..21:20
+              arg[0]: index : int @21:14..21:19
+                sequence: read xs@20:13..20:15 : [int]
+                index: int 1 : int @21:17..21:18
+      tail: field return : unit @21:5..21:20
+        base: call lent@16:1..18:2 : <missing> @21:5..21:20
+          arg[0]: index : int @21:14..21:19
+            sequence: read xs@20:13..20:15 : [int]
+            index: int 1 : int @21:17..21:18
+
+fn unknown@23:1..30:2 ([int] ∈ [[1, 1]; [0, 1]], int ∈ [-1, 1] \ 0) -> int ∈ [1, 1]
+  param xs@23:12..23:14: [int]
+  param i@23:23..23:24: int
+  result: copy : int @23:34..23:37
+    value:
+      let ys@24:13..24:15: [int] @24:5..24:20
+        initializer: read xs@23:12..23:14 : [int]
+      discard: phi ys@24:13..24:15 : [int] @25:5..29:6
+        scrutinee: eager >= : bool @25:8..25:14
+          lhs: read i@23:23..23:24 : int
+          rhs: int 0 : int @25:13..25:14
+        then: read ys@24:13..24:15 : [int]
+        else: read ys@24:13..24:15 (assigned @28:9..28:17) : [int]
+      tail: if : int @25:5..29:6
+        scrutinee: eager >= : bool @25:8..25:14
+          lhs: read i@23:23..23:24 : int
+          rhs: int 0 : int @25:13..25:14
+        then: index : int @26:9..26:14
+          sequence: read xs@23:12..23:14 : [int]
+          index: read i@23:23..23:24 [i >= 0 holds@25:8..25:14] : int
+        else:
+          assignment: assign ys@24:13..24:15 : [int] @28:9..28:17
+            value: pop : [int] @28:9..28:17
+              sequence: read ys@24:13..24:15 : [int]
+          tail: index : int @28:9..28:17
+            sequence: read ys@24:13..24:15 : [int]
+            index: eager - : int @28:9..28:17
+              lhs: len : int @28:9..28:17
+                sequence: read ys@24:13..24:15 : [int]
+              rhs: int 1 : int @28:9..28:17
+
+fn grows@31:1..37:2 (bool ∈ {true, false}) -> int ∈ [1, 2]
+  param c@31:10..31:11: bool
+  result: copy : int @31:22..31:25
+    value:
+      let xs@32:13..32:15: [int] @32:5..32:21
+        initializer: array : [int] @32:18..32:21
+          element: int 1 : int @32:19..32:20
+      discard: if : unit @33:5..35:6
+        scrutinee: read c@31:10..31:11 : bool
+        then:
+          assignment: assign xs@32:13..32:15 : [int] @34:9..34:19
+            value: push : [int] @34:9..34:19
+              sequence: read xs@32:13..32:15 : [int]
+              element: int 2 : int @34:17..34:18
+          tail: unit : unit @34:9..34:19
+        else: unit (implicit)
+      tail: index : int @36:5..36:10
+        sequence: phi xs@32:13..32:15 : [int] @33:5..35:6
+          scrutinee: read c@31:10..31:11 : bool
+          then: read xs@32:13..32:15 (assigned @34:9..34:19) : [int]
+          else: read xs@32:13..32:15 : [int]
+        index: int 1 : int @36:8..36:9
+
+fn main@38:1..42:2 () -> int ∈ ∅
+  result: copy : int @38:14..38:17
+    value:
+      discard: call stores@11:1..15:2 : unit @39:5..39:14
+        arg[0]: int 5 : int @39:12..39:13
+      discard: call lends@19:1..22:2 : unit @40:5..40:12
+      tail: eager + : int @41:5..41:122
+        lhs: eager + : int @41:5..41:107
+          lhs: eager + : int @41:5..41:93
+            lhs: eager + : int @41:5..41:75
+              lhs: eager + : int @41:5..41:57
+                lhs: eager + : int @41:5..41:45
+                  lhs: eager + : int @41:5..41:35
+                    lhs: call first@1:1..1:35 : int @41:5..41:14
+                      arg[0]: array : [int] @41:11..41:13
+                    rhs: call pick@2:1..2:42 : int @41:17..41:35
+                      arg[0]: array : [int] @41:22..41:31
+                        element: int 1 : int @41:23..41:24
+                        element: int 2 : int @41:26..41:27
+                        element: int 3 : int @41:29..41:30
+                      arg[1]: int 7 : int @41:33..41:34
+                  rhs: call drain@3:1..6:2 : int @41:38..41:45
+                rhs: call outside@7:1..10:2 : int @41:48..41:57
+              rhs: call unknown@23:1..30:2 : int @41:60..41:75
+                arg[0]: array : [int] @41:68..41:71
+                  element: int 1 : int @41:69..41:70
+                arg[1]: int 1 : int @41:73..41:74
+            rhs: call unknown@23:1..30:2 : int @41:78..41:93
+              arg[0]: array : [int] @41:86..41:88
+              arg[1]: int -1 : int @41:90..41:92
+          rhs: call grows@31:1..37:2 : int @41:96..41:107
+            arg[0]: bool true : bool @41:102..41:106
+        rhs: call grows@31:1..37:2 : int @41:110..41:122
+          arg[0]: bool false : bool @41:116..41:121
+
+== semantic diagnostics ==
+error[semantic/index-out-of-bounds] 1:30..1:35 "xs[0]": index is outside the sequence: it is [0, 0], and the length is [0, 0]
+  at 1:33..1:34 "0": is [0, 0]
+error[semantic/index-out-of-bounds] 2:37..2:42 "xs[i]": index is outside the sequence: it is [7, 7], and the length is [3, 3]
+  at 41:33..41:34 "7": argument is [7, 7]
+error[semantic/index-out-of-bounds] 5:27..5:35 "ys.pop()": the sequence is empty, and has no last element
+error[semantic/index-out-of-bounds] 9:5..9:10 "xs[3]": index is outside the sequence: it is [3, 3], and the length is [3, 3]
+  at 9:8..9:9 "3": is [3, 3]
+error[semantic/index-out-of-bounds] 9:13..9:19 "xs[-1]": index is outside the sequence: it is [-1, -1], and the length is [3, 3]
+  at 9:16..9:18 "-1": is [-1, -1]
+warning[semantic/unused-name] 12:13..12:15 "xs": local `xs` is assigned but never read
+error[semantic/index-out-of-bounds] 13:5..13:10 "xs[i]": index is outside the sequence: it is [5, 5], and the length is [3, 3]
+  at 39:12..39:13 "5": argument is [5, 5]
+error[semantic/index-out-of-bounds] 14:5..14:10 "xs[i]": index is outside the sequence: it is [5, 5], and the length is [3, 3]
+  at 39:12..39:13 "5": argument is [5, 5]
+error[semantic/index-out-of-bounds] 21:14..21:19 "xs[1]": index is outside the sequence: it is [1, 1], and the length is [1, 1]
+  at 21:17..21:18 "1": is [1, 1]
+error[semantic/index-out-of-bounds] 26:9..26:14 "xs[i]": index is outside the sequence: it is [1, 1], and the length is [0, 1]
+  at 25:8..25:14 "i >= 0": is [1, 1] under this guard
+  at 41:73..41:74 "1": argument is [1, 1]
+  at 41:90..41:92 "-1": argument is [-1, -1]
+error[semantic/index-out-of-bounds] 28:9..28:17 "ys.pop()": the sequence may be empty: its length is [0, 1]
+error[semantic/index-out-of-bounds] 36:5..36:10 "xs[1]": index may be outside the sequence: it is [1, 1], and the length is [1, 2]
+  at 36:8..36:9 "1": is [1, 1]

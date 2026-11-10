@@ -38,6 +38,7 @@ pub fn rep<'s>(source: &'s str, lexed: &LexedFile, parse: &Parse) -> Rep<'s> {
         let closer = match tree.kind(node) {
             NodeKind::ArgList | NodeKind::ParamList => SyntaxKind::RParen,
             NodeKind::TypeParamList | NodeKind::TypeArgList => SyntaxKind::Gt,
+            NodeKind::ArrayExpr => SyntaxKind::RBracket,
             _ => continue,
         };
         if !tree.has_error(node) {

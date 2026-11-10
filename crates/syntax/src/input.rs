@@ -102,7 +102,11 @@ impl ParserInput {
                         type_lists.push((opener, SigIdx::new(index as u32)));
                     }
                 }
-                SyntaxKind::Ident | SyntaxKind::Comma | SyntaxKind::Pipe => {}
+                SyntaxKind::Ident
+                | SyntaxKind::Comma
+                | SyntaxKind::Pipe
+                | SyntaxKind::LBracket
+                | SyntaxKind::RBracket => {}
                 _ => angles.clear(),
             }
             if matched == 0 && is_item_anchor_at(&slots, index) {

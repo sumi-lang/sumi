@@ -17,11 +17,28 @@ pub use rebuild::Rebuild;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Decl {
     fields: Box<[(FieldName, Option<Ty>)]>,
+    element: Option<Ty>,
 }
 
 impl Decl {
     pub fn new(fields: Box<[(FieldName, Option<Ty>)]>) -> Self {
-        Self { fields }
+        Self {
+            fields,
+            element: None,
+        }
+    }
+
+    /// A sequence type of `element`, which has no fields.
+    pub fn array(element: Ty) -> Self {
+        Self {
+            fields: Box::new([]),
+            element: Some(element),
+        }
+    }
+
+    /// The element type, of a sequence type.
+    pub fn element(&self) -> Option<Ty> {
+        self.element
     }
 
     pub fn fields(&self) -> &[(FieldName, Option<Ty>)] {
@@ -360,6 +377,18 @@ pub enum Op {
     Make(DeclId),
     /// The field so named of its input, whatever declared type reaches it.
     Field(FieldName),
+    /// A sequence of the declared type, one of a sequence, over its inputs in order.
+    Array(DeclId),
+    /// How many elements its input, a sequence, holds.
+    Len,
+    /// The element of its first input at its second, an index below its length and not below 0.
+    Index,
+    /// Its first input with the element at its second, such an index, replaced by its third.
+    Store,
+    /// Its first input with its second after its last element.
+    Push,
+    /// Its input, which holds an element, without its last.
+    Pop,
 }
 
 impl Op {

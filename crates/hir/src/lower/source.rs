@@ -106,6 +106,8 @@ pub(crate) struct Source<'s> {
     pub params: Params,
     /// By type item, which its ID as a declared type indexes.
     pub(super) type_items: Vec<TypeItem<'s>>,
+    /// The built-in sequence type, a type item after the source's with one type parameter.
+    pub(super) array: DeclId,
     /// By declared type ID, the fields the graph takes; none for an instance not yet settled.
     fields: Vec<Option<Fields>>,
     instances: HashMap<(DeclId, Rc<[Ty]>), DeclId, FxBuildHasher>,
@@ -141,6 +143,7 @@ impl<'s> Source<'s> {
             decls: Vec::new(),
             params: Params::default(),
             type_items: Vec::new(),
+            array: DeclId::new(0),
             fields: Vec::new(),
             instances: HashMap::default(),
             unsettled: Vec::new(),
@@ -371,6 +374,32 @@ impl<'s> Source<'s> {
         self.instances.insert((item, args), decl);
         Some(decl)
     }
+    /// The element type, of a sequence type.
+    pub fn element(&self, ty: Ty) -> Option<Ty> {
+        let decl = &self.decls[ty.as_decl()?.index()];
+        match *decl.args {
+            [element] if decl.item == self.array => Some(element),
+            _ => None,
+        }
+    }
+    /// The sequence type of `element`.
+    pub(super) fn array_of(&mut self, element: Ty, at: TextRange) -> Option<Ty> {
+        self.instantiate(self.array, vec![element], at)
+            .map(Ty::decl)
+    }
+    /// Every declared type as the graph takes it, in ID order.
+    pub(super) fn take_decls(&mut self) -> Vec<sumi_graph::Decl> {
+        let fields = self.take_fields();
+        let decls = fields.into_iter().enumerate();
+        decls
+            .map(
+                |(index, fields)| match self.element(Ty::decl(DeclId::new(index))) {
+                    Some(element) => sumi_graph::Decl::array(element),
+                    None => sumi_graph::Decl::new(fields),
+                },
+            )
+            .collect()
+    }
     /// The declared types a value of `ty` may be: itself, or a union's members.
     pub(super) fn decls_of(&self, ty: Ty) -> Vec<DeclId> {
         match ty.kind() {
@@ -562,6 +591,12 @@ impl<'s> Source<'s> {
     pub(super) fn ty(&mut self, node: ast::Type) -> Option<Ty> {
         let union = match node {
             ast::Type::TypeRef(name) => return self.named_ty(name),
+            ast::Type::ArrayType(array) => {
+                let element = array
+                    .element(self.tree)
+                    .and_then(|element| self.ty(element))?;
+                return self.array_of(element, self.range(array.node()));
+            }
             ast::Type::UnionType(union) => union,
         };
         if self.tree.has_error(union.node()) {
@@ -574,12 +609,22 @@ impl<'s> Source<'s> {
             names.push(inner.rhs(self.tree));
             lhs = inner.lhs(self.tree);
         }
-        if let Some(ast::Type::TypeRef(first)) = lhs {
-            names.push(Some(first));
+        let mut is_valid = true;
+        match lhs {
+            Some(ast::Type::TypeRef(first)) => names.push(Some(first)),
+            Some(ast::Type::ArrayType(array)) => {
+                self.error(
+                    array.node(),
+                    codes::INVALID_UNION_MEMBER,
+                    "a sequence is no member of a union",
+                    None,
+                );
+                is_valid = false;
+            }
+            Some(ast::Type::UnionType(_)) | None => {}
         }
         names.reverse();
         let mut members = Vec::new();
-        let mut is_valid = true;
         for member in names {
             let Some(member) = member else {
                 is_valid = false;

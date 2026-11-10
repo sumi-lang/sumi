@@ -1,0 +1,145 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 3
+
+== graph ==
+fn grow@6:5..8:6 (P ∈ P([1, 2]), int ∈ [1, 1]) -> unit ∈ unit
+  param self@6:17..6:21: P
+  param by@6:23..6:25: int
+  body:
+    assignment: assign self@6:17..6:21 : P @7:9..7:21
+      value: make P : P @7:9..7:21
+        n: eager + : int @7:9..7:21
+          lhs: field n : int @7:9..7:15
+            base: read self@6:17..6:21 : P
+          rhs: read by@6:23..6:25 : int
+    tail: make <missing> : <missing> @6:32..8:6
+
+fn bump@11:1..13:2 (int ∈ [1, 2], int ∈ [5, 5]) -> unit ∈ unit
+  param x@11:13..11:14: int
+  param by@11:21..11:23: int
+  body:
+    assignment: assign x@11:13..11:14 : int @12:5..12:12
+      value: eager + : int @12:5..12:12
+        lhs: read x@11:13..11:14 : int
+        rhs: read by@11:21..11:23 : int
+    tail: make <missing> : <missing> @11:30..13:2
+
+fn main@16:1..33:2 () -> int ∈ [3, 12]
+  result: copy : int @16:14..16:17
+    value:
+      let xs@17:13..17:15: [int] @17:5..17:24
+        initializer: array : [int] @17:18..17:24
+          element: int 1 : int @17:19..17:20
+          element: int 2 : int @17:22..17:23
+      discard: index : int @18:14..18:19
+        sequence: read xs@17:13..17:15 : [int]
+        index: int 1 : int @18:17..18:18
+      discard: index : int @19:13..19:21
+        sequence: read xs@17:13..17:15 : [int]
+        index: eager - : int @19:13..19:21
+          lhs: len : int @19:13..19:21
+            sequence: read xs@17:13..17:15 : [int]
+          rhs: int 1 : int @19:13..19:21
+      assignment: assign xs@17:13..17:15 : [int] @19:13..19:21
+        value: pop : [int] @19:13..19:21
+          sequence: read xs@17:13..17:15 : [int]
+      assignment: assign xs@17:13..17:15 : [int] @18:14..18:19
+        value: store : [int] @18:14..18:19
+          sequence: read xs@17:13..17:15 (assigned @19:13..19:21) : [int]
+          index: int 1 : int @18:17..18:18
+          element: field x : int @18:14..18:19
+            base: call bump@11:1..13:2 : <missing> @18:5..21:7
+              arg[0]: index : int @18:14..18:19
+                sequence: read xs@17:13..17:15 (assigned @19:13..19:21) : [int]
+                index: int 1 : int @18:17..18:18
+              arg[1]: int 5 : int @20:9..20:10
+      discard: field return : unit @18:5..21:7
+        base: call bump@11:1..13:2 : <missing> @18:5..21:7
+          arg[0]: index : int @18:14..18:19
+            sequence: read xs@17:13..17:15 (assigned @19:13..19:21) : [int]
+            index: int 1 : int @18:17..18:18
+          arg[1]: int 5 : int @20:9..20:10
+      let grid@22:13..22:17: [[int]] @22:5..22:30
+        initializer: array : [[int]] @22:20..22:30
+          element: array : [int] @22:21..22:24
+            element: int 1 : int @22:22..22:23
+          element: array : [int] @22:26..22:29
+            element: int 2 : int @22:27..22:28
+      discard: index : [int] @23:5..23:12
+        sequence: read grid@22:13..22:17 : [[int]]
+        index: int 1 : int @23:10..23:11
+      discard: index : [int] @24:13..24:23
+        sequence: read grid@22:13..22:17 : [[int]]
+        index: eager - : int @24:13..24:23
+          lhs: len : int @24:13..24:23
+            sequence: read grid@22:13..22:17 : [[int]]
+          rhs: int 1 : int @24:13..24:23
+      assignment: assign grid@22:13..22:17 : [[int]] @24:13..24:23
+        value: pop : [[int]] @24:13..24:23
+          sequence: read grid@22:13..22:17 : [[int]]
+      assignment: assign grid@22:13..22:17 : [[int]] @23:5..26:7
+        value: store : [[int]] @23:5..26:7
+          sequence: read grid@22:13..22:17 (assigned @24:13..24:23) : [[int]]
+          index: int 1 : int @23:10..23:11
+          element: push : [int] @23:5..26:7
+            sequence: index : [int] @23:5..23:12
+              sequence: read grid@22:13..22:17 (assigned @24:13..24:23) : [[int]]
+              index: int 1 : int @23:10..23:11
+            element: int 3 : int @25:9..25:10
+      discard: unit : unit @23:5..26:7
+      let ps@27:13..27:15: [P] @27:5..27:36
+        initializer: array : [P] @27:18..27:36
+          element: make P : P @27:19..27:26
+            n: int 1 : int @27:24..27:25
+          element: make P : P @27:28..27:35
+            n: int 2 : int @27:33..27:34
+      discard: index : P @28:5..28:10
+        sequence: read ps@27:13..27:15 : [P]
+        index: int 1 : int @28:8..28:9
+      discard: index : P @29:13..29:21
+        sequence: read ps@27:13..27:15 : [P]
+        index: eager - : int @29:13..29:21
+          lhs: len : int @29:13..29:21
+            sequence: read ps@27:13..27:15 : [P]
+          rhs: int 1 : int @29:13..29:21
+      assignment: assign ps@27:13..27:15 : [P] @29:13..29:21
+        value: pop : [P] @29:13..29:21
+          sequence: read ps@27:13..27:15 : [P]
+      assignment: assign ps@27:13..27:15 : [P] @28:5..28:10
+        value: store : [P] @28:5..28:10
+          sequence: read ps@27:13..27:15 (assigned @29:13..29:21) : [P]
+          index: int 1 : int @28:8..28:9
+          element: field self : P @28:5..28:10
+            base: call grow@6:5..8:6 : <missing> @28:5..31:7
+              arg[0]: index : P @28:5..28:10
+                sequence: read ps@27:13..27:15 (assigned @29:13..29:21) : [P]
+                index: int 1 : int @28:8..28:9
+              arg[1]: int 1 : int @30:9..30:10
+      discard: field return : unit @28:5..31:7
+        base: call grow@6:5..8:6 : <missing> @28:5..31:7
+          arg[0]: index : P @28:5..28:10
+            sequence: read ps@27:13..27:15 (assigned @29:13..29:21) : [P]
+            index: int 1 : int @28:8..28:9
+          arg[1]: int 1 : int @30:9..30:10
+      tail: eager + : int @32:5..32:36
+        lhs: eager + : int @32:5..32:26
+          lhs: index : int @32:5..32:10
+            sequence: read xs@17:13..17:15 (assigned @18:14..18:19) : [int]
+            index: int 0 : int @32:8..32:9
+          rhs: len : int @32:13..32:26
+            sequence: index : [int] @32:13..32:20
+              sequence: read grid@22:13..22:17 (assigned @23:5..26:7) : [[int]]
+              index: int 0 : int @32:18..32:19
+        rhs: field n : int @32:29..32:36
+          base: index : P @32:29..32:34
+            sequence: read ps@27:13..27:15 (assigned @28:5..28:10) : [P]
+            index: int 0 : int @32:32..32:33
+
+== semantic diagnostics ==
+error[semantic/index-out-of-bounds] 18:14..18:19 "xs[1]": index is outside the sequence: it is [1, 1], and the length is [1, 1]
+  at 18:17..18:18 "1": is [1, 1]
+error[semantic/index-out-of-bounds] 23:5..23:12 "grid[1]": index is outside the sequence: it is [1, 1], and the length is [1, 1]
+  at 23:10..23:11 "1": is [1, 1]
+error[semantic/index-out-of-bounds] 28:5..28:10 "ps[1]": index is outside the sequence: it is [1, 1], and the length is [1, 1]
+  at 28:8..28:9 "1": is [1, 1]

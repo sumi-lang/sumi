@@ -1,0 +1,8 @@
+file: accepted
+optimized: nodes 8 of 34, regions 2 of 2, calls 0 of 0
+
+== functions ==
+fn first = 1
+  steps: 2, optimized steps: 2, depth: 1, bound: 1
+fn counted = 2
+  steps: 2, optimized steps: 2, depth: 1, bound: 1

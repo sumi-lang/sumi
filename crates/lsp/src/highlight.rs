@@ -77,6 +77,8 @@ pub(crate) fn tokens(
                 | SyntaxKind::RParen
                 | SyntaxKind::LBrace
                 | SyntaxKind::RBrace
+                | SyntaxKind::LBracket
+                | SyntaxKind::RBracket
                 | SyntaxKind::Comma => Kind::Punctuation,
                 kind if kind
                     .text()

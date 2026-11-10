@@ -365,11 +365,11 @@ fn signature_tail(m: &mut Marker<'_, '_>, is_name_missing: bool) {
     if is_nth_arrow(m, 0) {
         m.token();
         m.token();
-        if !m.at(T::Ident) {
+        if !starts_type(m) {
             let recovery = m.missing(ParseRecoveryKind::Type);
-            signature_garbage(m, recovery, |m| m.at(T::Ident));
+            signature_garbage(m, recovery, starts_type);
         }
-        is_complete = m.at(T::Ident);
+        is_complete = starts_type(m);
         if is_complete {
             type_ref(m, 3);
         }
@@ -457,11 +457,27 @@ fn type_ref(p: &mut Marker<'_, '_>, field: u8) {
 /// A type in no field of its parent: a name with its arguments, or such names joined by `|`, which
 /// is never the `||` operator's first token.
 fn ty(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
-    if !p.at(T::Ident) {
-        p.missing(ParseRecoveryKind::Type);
-        return None;
-    }
-    let mut lhs = named_type(p);
+    let mut lhs = match p.current() {
+        Some(T::Ident) => named_type(p),
+        Some(T::LBracket) if p.depth() + 2 >= MAX_DEPTH => {
+            skip_deep_type(p);
+            return None;
+        }
+        Some(T::LBracket) => {
+            let mut m = p.open(Pair::Bracket);
+            type_ref(&mut m, 0);
+            if m.owns_closer(Pair::Bracket) {
+                m.token();
+            } else {
+                m.missing_closer(Pair::Bracket);
+            }
+            m.complete(N::ArrayType)
+        }
+        _ => {
+            p.missing(ParseRecoveryKind::Type);
+            return None;
+        }
+    };
     while is_union_bar(p) {
         let lhs_node = p.completed_node(&lhs);
         let mut m = p.precede(lhs);
@@ -480,6 +496,11 @@ fn ty(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
         lhs = m.complete(N::UnionType);
     }
     Some(lhs)
+}
+
+/// Whether the next token begins a type: a name, or a sequence type's `[`.
+fn starts_type(p: &Marker<'_, '_>) -> bool {
+    p.at(T::Ident) || p.at(T::LBracket)
 }
 
 fn named_type(p: &mut Marker<'_, '_>) -> CompletedMarker {
@@ -516,12 +537,14 @@ fn opens_type_list(p: &mut Marker<'_, '_>) -> bool {
 fn skip_deep_type(p: &mut Marker<'_, '_>) {
     let recovery = p.recover_tokens(ParseRecoveryKind::NestingTooDeep, 1);
     let mut m = p.start();
+    let (mut open, mut brackets) = (0u32, u32::from(m.at(T::LBracket)));
     m.token();
-    let mut open = 0u32;
-    while !m.is_at_boundary() {
+    while !m.is_at_boundary() || (brackets > 0 && m.at(T::RBracket)) {
         match m.current() {
             Some(T::Lt) => open += 1,
             Some(T::Gt) if open > 0 => open -= 1,
+            Some(T::LBracket) => brackets += 1,
+            Some(T::RBracket) if brackets > 0 => brackets -= 1,
             Some(T::Ident | T::Pipe) => {}
             Some(T::Comma) if open > 0 => {}
             _ => break,
@@ -542,7 +565,14 @@ fn type_list(p: &mut Marker<'_, '_>, kind: N, field: u8) {
     } else {
         ParseRecoveryKind::Type
     };
-    let starts_element = |m: &Marker<'_, '_>| m.at(T::Ident) || (is_params && m.at(T::Underscore));
+    let starts_element = |m: &Marker<'_, '_>| {
+        m.at(T::Ident)
+            || if is_params {
+                m.at(T::Underscore)
+            } else {
+                m.at(T::LBracket)
+            }
+    };
     let mut m = p.start();
     m.token();
     loop {
@@ -706,6 +736,31 @@ impl ListRule for ArmsRule {
     }
 }
 
+struct Elements;
+
+impl ListRule for Elements {
+    const NODE: N = N::ArrayExpr;
+    const PAIR: Pair = Pair::Bracket;
+    const ELEMENT: ParseRecoveryKind = ParseRecoveryKind::Expression;
+    const RESUMES_AT_ELEMENT: bool = true;
+
+    fn starts_element(m: &Marker<'_, '_>) -> bool {
+        m.starts_expression()
+    }
+
+    fn parse_element(m: &mut Marker<'_, '_>) {
+        operand(m);
+    }
+
+    fn follows(m: &Marker<'_, '_>) -> bool {
+        m.at(T::RBrace)
+    }
+
+    fn is_tolerated(_: T) -> bool {
+        false
+    }
+}
+
 struct Args;
 
 impl ListRule for Args {
@@ -732,6 +787,11 @@ impl ListRule for Args {
 }
 
 fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
+    let list = delimited::<R>(p);
+    p.field(&list, field);
+}
+
+fn delimited<R: ListRule>(p: &mut Marker<'_, '_>) -> CompletedMarker {
     let close = R::PAIR.closer().kind();
     let mut m = p.open(R::PAIR);
     loop {
@@ -791,8 +851,7 @@ fn delimited_list<R: ListRule>(p: &mut Marker<'_, '_>, field: u8) {
             m.missing(ParseRecoveryKind::Token(T::Comma));
         }
     }
-    let list = m.complete(R::NODE);
-    p.field(&list, field);
+    m.complete(R::NODE)
 }
 
 /// An opener the stream never closes began nothing and is garbage like the rest.
@@ -814,7 +873,7 @@ fn typed_name(p: &mut Marker<'_, '_>, kind: N) {
         type_ref(&mut m, 1);
     } else {
         m.missing(ParseRecoveryKind::Token(T::Colon));
-        if m.at(T::Ident) {
+        if starts_type(&m) {
             type_ref(&mut m, 1);
         }
     }
@@ -1117,6 +1176,19 @@ fn expr_bp(p: &mut Marker<'_, '_>, min_bp: u8, follow: ExprFollow) -> Option<Com
         if follow == ExprFollow::Range && p.at(T::Dot) {
             break;
         }
+        if p.at(T::LBracket) && !p.is_after_newline() {
+            let base = p.completed_node(&lhs);
+            let mut m = p.precede(lhs);
+            m.wrapped_field(base, 0);
+            if !m.is_joint_before() {
+                m.violation(ParseViolationKind::SpacedListOpener, 1);
+            }
+            let subscript = subscript(&mut m);
+            m.field(&subscript, 1);
+            lhs = m.complete(N::IndexExpr);
+            was_comparison = false;
+            continue;
+        }
         // A name is called; a field so written is a method of what it is read from.
         let call = match p.completed_kind(&lhs) {
             N::NameRef => Some(N::CallExpr),
@@ -1284,12 +1356,26 @@ fn prefix_or_atom(p: &mut Marker<'_, '_>, follow: ExprFollow) -> Option<Complete
             }
             m.complete(N::ParenExpr)
         }
+        T::LBracket => delimited::<Elements>(p),
         T::LBrace => block(p),
         T::IfKw => if_expr(p),
         T::MatchKw => match_expr(p),
         T::ForKw => for_expr(p),
         _ => return None,
     })
+}
+
+fn subscript(p: &mut Marker<'_, '_>) -> CompletedMarker {
+    let mut m = p.open(Pair::Bracket);
+    if let Some(index) = operand(&mut m) {
+        m.field(&index, 0);
+    }
+    if m.owns_closer(Pair::Bracket) {
+        m.token();
+    } else {
+        m.missing_closer(Pair::Bracket);
+    }
+    m.complete(N::Subscript)
 }
 
 fn leaf(p: &mut Marker<'_, '_>, kind: N) -> CompletedMarker {

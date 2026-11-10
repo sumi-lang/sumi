@@ -1,0 +1,52 @@
+tree: omitted
+
+== formatted ==
+fn first(xs: [int]) -> int = xs[0]
+fn pick(xs: [int], i: int) -> int = xs[i]
+fn drain() -> int {
+    let mut ys = [1, 2]
+    ys.pop() + ys.pop() + ys.pop()
+}
+fn outside() -> int {
+    let xs = [1, 2, 3]
+    xs[3] + xs[-1]
+}
+fn stores(i: int) {
+    let mut xs = [1, 2, 3]
+    xs[i] = 0
+    xs[i] += 1
+}
+fn lent(mut n: int) {
+    n += 1
+}
+fn lends() {
+    let mut xs = [1]
+    lent(mut xs[1])
+}
+fn unknown(xs: [int], i: int) -> int {
+    let mut ys = xs
+    if i >= 0 {
+        xs[i]
+    } else {
+        ys.pop()
+    }
+}
+fn grows(c: bool) -> int {
+    let mut xs = [1]
+    if c {
+        xs.push(2)
+    }
+    xs[1]
+}
+fn main() -> int {
+    stores(5)
+    lends()
+    first([])
+        + pick([1, 2, 3], 7)
+        + drain()
+        + outside()
+        + unknown([1], 1)
+        + unknown([], -1)
+        + grows(true)
+        + grows(false)
+}

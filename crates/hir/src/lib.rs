@@ -484,10 +484,15 @@ impl BindingId {
 }
 
 impl Names for Analysis {
+    /// A sequence type is no name of the source, nor is its own element type.
     fn decl(&self, id: DeclId) -> &str {
-        self.decl(id)
-            .name
-            .map_or("<missing>", |name| self.text(name))
+        let decl = self.decl(id);
+        match decl.name {
+            Some(name) => self.text(name),
+            None if self.graph.decl(id).element().is_some() => sumi_graph::ARRAY,
+            None if decl.is_param => "T",
+            None => "<missing>",
+        }
     }
 
     fn type_args(&self, id: DeclId) -> &[Ty] {

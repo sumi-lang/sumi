@@ -1,0 +1,96 @@
+type Point {
+    x: int,
+    y: int,
+}
+type Grid {
+    cells: [[int]],
+    width: int,
+}
+type Box<T> {
+    value: T,
+}
+impl Grid {
+    fn at(self, x: int) -> int = if 0 <= x && x < 1 {
+        [self.width][x]
+    } else {
+        0
+    }
+    fn widen(mut self) {
+        self.cells.push([self.width])
+        self.width += 1
+    }
+}
+fn count(xs: [int]) -> int = xs.len()
+fn build() -> [int] {
+    let mut xs: [int] = []
+    xs.push(1)
+    xs.push(2)
+    xs.push(3)
+    xs
+}
+fn nested() -> int {
+    let mut grid = [[1, 2], [3, 4]]
+    grid[1][0] = 9
+    grid[0].push(5)
+    grid[0][1] + grid[1][0] + grid.len() + grid[0].len()
+}
+fn records() -> int {
+    let mut ps = [Point(x: 1, y: 2), Point(x: 3, y: 4)]
+    ps[0].x += 10
+    ps[1] = Point(x: 7, y: 8)
+    ps[0].x + ps[1].y
+}
+fn bump(mut n: int) {
+    n += 1
+}
+fn swap<T>(mut a: T, mut b: T) {
+    let t = a
+    a = b
+    b = t
+}
+fn places() -> int {
+    let mut xs = [1, 2, 3]
+    bump(mut xs[1])
+    swap(mut xs[0], mut xs[2])
+    xs[0] * 100 + xs[1] * 10 + xs[2]
+}
+fn pops() -> int {
+    let mut xs = [4, 5, 6]
+    let last = xs.pop()
+    xs.push(xs.pop() + last)
+    xs[1] * 10 + xs.len()
+}
+fn empty() -> [bool] = []
+fn twice<T>(x: T) -> [T] = [x, x]
+fn boxed() -> Box<[int]> = Box<[int]>(value: [])
+fn returned(c: bool) -> [int] {
+    if c {
+        return []
+    }
+    [1]
+}
+fn loops() -> int {
+    let mut xs: [int] = []
+    for i in 0..4 {
+        xs.push(i * i)
+    }
+    xs.len()
+}
+fn guarded(xs: [int], i: int) -> int = if 0 <= i && i < 3 {
+    [1, 2, 3][i] + xs.len()
+} else {
+    0
+}
+fn methods() -> int {
+    let mut g = Grid(cells: [[1]], width: 1)
+    g.widen()
+    g.cells.len() * 10 + g.cells[0][0] + g.at(0)
+}
+fn values() -> [[int]] {
+    let made = build()
+    let mut all = [made, twice(5), returned(true), returned(false)]
+    all.push([])
+    all[4] = [empty().len(), boxed().value.len(), count([1, 2]), guarded([], 2)]
+    all
+}
+fn total() -> int = build()[2] + nested() + records() + places() + pops() + loops() + methods()

@@ -1,0 +1,15 @@
+fn first() -> int {
+    let q = [7, {
+        return 1
+        0
+    }]
+    q[0]
+}
+fn counted() -> int {
+    let mut q = [{
+        return 2
+        0
+    }]
+    q.push(1)
+    q.len() + q.pop()
+}

@@ -1,0 +1,19 @@
+fn unclosed() {
+    let xs = [1, 2
+    let ys = xs[0
+    ys
+}
+
+fn stray() {
+    let xs = [1, , 2]
+    let ys = [let]
+    xs[]
+    xs]
+    xs [0] = 1
+}
+
+fn types(a: [, b: [int, c: []) -> [ {
+    a
+}
+
+fn closed(xs: [int]) -> int = xs[0]

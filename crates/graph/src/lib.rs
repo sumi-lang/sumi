@@ -200,6 +200,14 @@ impl ShownTy<'_> {
         }
         *left -= 1;
         match ty.kind() {
+            TyKind::Decl(id) if names.decl(id) == ARRAY => {
+                out.push('[');
+                match names.type_args(id) {
+                    [element] => Self::write(*element, names, left, out),
+                    _ => out.push('…'),
+                }
+                out.push(']');
+            }
             TyKind::Decl(id) => {
                 out.push_str(names.decl(id));
                 let args = names.type_args(id);
@@ -241,6 +249,9 @@ impl fmt::Display for ShownTy<'_> {
         f.write_str(&shown)
     }
 }
+
+/// What the built-in sequence type is called, which no source name can be: it is written `[T]`.
+pub const ARRAY: &str = "[]";
 
 /// What the source calls a declared type and its fields, and what a union holds.
 pub trait Names {

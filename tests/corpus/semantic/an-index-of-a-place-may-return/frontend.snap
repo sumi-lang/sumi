@@ -1,0 +1,80 @@
+tree: omitted
+
+== formatted ==
+type P {
+    n: int
+}
+
+impl P {
+    fn grow(mut self, by: int) {
+        self.n += by
+    }
+
+    fn get(self) -> int = self.n
+}
+
+fn bump(mut x: int) {
+    x += 1
+}
+
+fn a(c: bool) -> int {
+    let mut xs = [1, 2]
+    xs[
+        if c {
+            return 7
+        } else {
+            0
+        }
+    ] = 5
+    xs[0]
+}
+
+fn b(c: bool) -> int {
+    let mut xs = [1, 2]
+    xs[
+        if c {
+            return 7
+        } else {
+            0
+        }
+    ] += 5
+    bump(
+        mut xs[
+            if c {
+                return 8
+            } else {
+                1
+            }
+        ],
+    )
+    xs[0] + xs[1]
+}
+
+fn d(c: bool) -> int {
+    let mut ps = [P(n: 1)]
+    ps[
+        if c {
+            return 9
+        } else {
+            0
+        }
+    ].grow(1)
+    let mut qs = [[1]]
+    qs[
+        if c {
+            return 10
+        } else {
+            0
+        }
+    ].push(3)
+    ps[
+        if c {
+            return 11
+        } else {
+            0
+        }
+    ].get()
+        + qs[0].len()
+}
+
+fn main() -> int = a(true) + a(false) + b(true) + b(false) + d(true) + d(false)

@@ -320,6 +320,23 @@ impl Planner<'_> {
             NodeKind::ParamList | NodeKind::ArgList => {
                 self.list(node, &els, level, SyntaxKind::LParen, SyntaxKind::RParen);
             }
+            NodeKind::ArrayExpr => {
+                self.list(
+                    node,
+                    &els,
+                    level,
+                    SyntaxKind::LBracket,
+                    SyntaxKind::RBracket,
+                );
+            }
+            NodeKind::ArrayType | NodeKind::Subscript => {
+                self.pairs(&els, |_, b| match b {
+                    El::Tok(_, SyntaxKind::RBracket) => Gap::soft_glue(level),
+                    _ => Gap::soft_glue(level + 1),
+                });
+                self.group(self.first_sig(node) + 1, self.end_sig(node), None, false);
+                self.children(&els, level + 1);
+            }
             NodeKind::TypeParamList | NodeKind::TypeArgList => {
                 self.list(node, &els, level, SyntaxKind::Lt, SyntaxKind::Gt);
             }
@@ -341,7 +358,9 @@ impl Planner<'_> {
                 self.binding(node, &els, level);
             }
             NodeKind::BinaryExpr => self.binary(node, &els, level),
-            NodeKind::MethodCallExpr | NodeKind::FieldExpr => self.members(node, level),
+            NodeKind::MethodCallExpr | NodeKind::FieldExpr | NodeKind::IndexExpr => {
+                self.members(node, level);
+            }
             NodeKind::ParenExpr => {
                 self.pairs(&els, |a, b| match (a, b) {
                     (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => {
@@ -551,15 +570,16 @@ impl Planner<'_> {
         }
     }
 
-    /// A chain of members under one value, glued. One with two calls breaks before each `.` from
-    /// its first call's on when it does not fit: the fields read before that stay with the value.
+    /// A chain of members and subscripts under one value, glued. One with two calls breaks before
+    /// each `.` from its first call's on when it does not fit: the fields read before that stay
+    /// with the value.
     fn members(&mut self, node: NodeIdx, level: u32) {
         let mut links = Vec::new();
         let mut next = Some(node);
         while let Some(link) = next.filter(|&link| {
             matches!(
                 self.tree.kind(link),
-                NodeKind::MethodCallExpr | NodeKind::FieldExpr
+                NodeKind::MethodCallExpr | NodeKind::FieldExpr | NodeKind::IndexExpr
             )
         }) {
             links.push(link);
