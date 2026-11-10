@@ -16,21 +16,19 @@ pub(crate) use source::{Params, Source, diagnostic};
 
 use crate::{Binding, Occurrence};
 
-/// A division whose divisor must exclude zero under `context`.
-pub(crate) struct Obligation {
-    pub owner: u32,
-    pub node: NodeIdx,
-    pub divisor: NodeId,
-    pub context: NodeId,
+/// What an operation needs of its operands to run.
+#[derive(Clone, Copy)]
+pub(crate) enum Need {
+    Divisor(NodeId),
+    Element { array: NodeId, index: NodeId },
+    Last(NodeId),
 }
 
-/// A read of a sequence that must be inside it under `context`: of the element at `index`, or
-/// with none of its last, which an empty one lacks.
-pub(crate) struct Access {
+/// An operation at `at` that runs under `context` only with what it needs.
+pub(crate) struct Obligation {
     pub owner: u32,
-    pub node: NodeIdx,
-    pub array: NodeId,
-    pub index: Option<NodeId>,
+    pub at: TextRange,
+    pub need: Need,
     pub context: NodeId,
 }
 
@@ -71,7 +69,6 @@ pub(crate) struct Lowered {
     /// (context, callee) of every call whose callee has a whole parameter list, whole call or not.
     pub entered: Vec<(NodeId, FunctionId)>,
     pub obligations: Vec<Obligation>,
-    pub accesses: Vec<Access>,
     pub fallthroughs: Vec<Option<Fallthrough>>,
     pub bindings: Vec<Binding>,
     /// In source order once `lower` returns.
