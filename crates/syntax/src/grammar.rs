@@ -345,8 +345,51 @@ impl BinaryOp {
     }
 }
 
+/// What an assignment does with its value: sets its place to it, or to the place's own value
+/// and it under an arithmetic operator, whose token `=` is glued to.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum AssignOp {
+    Set,
+    Arith(ArithOp),
+}
+
+impl TokenField for AssignOp {
+    const ALL: &[Self] = &[
+        Self::Set,
+        Self::Arith(ArithOp::Add),
+        Self::Arith(ArithOp::Sub),
+        Self::Arith(ArithOp::Mul),
+        Self::Arith(ArithOp::Div),
+        Self::Arith(ArithOp::Rem),
+    ];
+
+    fn read(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(Self, bool)> {
+        if first == SyntaxKind::Eq {
+            return Some((Self::Set, false));
+        }
+        match binary_operator(first, None)? {
+            (BinaryOp::Arith(op), _) if glued == Some(SyntaxKind::Eq) => {
+                Some((Self::Arith(op), true))
+            }
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for AssignOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Set => f.write_str("`=`"),
+            Self::Arith(op) => {
+                let (first, _) = BinaryOp::Arith(*op).tokens();
+                write!(f, "`{}=`", first.text())
+            }
+        }
+    }
+}
+
 /// `glued` is the kind of the token glued after `first`, if any; the `usize` is the operator's
-/// width in tokens.
+/// width in tokens. An arithmetic token `=` is glued to is an [`AssignOp`], and none.
 pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(BinaryOp, usize)> {
     let [spanning, alone] = OPERATORS_BY_FIRST[first as usize];
     if let Some(op) = spanning
@@ -355,7 +398,8 @@ pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(
     {
         return Some((op, 2));
     }
-    alone.map(|op| (op, 1))
+    let assigns = glued == Some(SyntaxKind::Eq) && matches!(alone, Some(BinaryOp::Arith(_)));
+    alone.filter(|_| !assigns).map(|op| (op, 1))
 }
 
 #[cfg(test)]

@@ -588,6 +588,19 @@ impl Gen<'_> {
         }
     }
 
+    /// A compound assignment to the integer place `place`: a divisor is one the checker proves
+    /// no zero.
+    fn compound(&mut self, place: &str, fuel: u32) -> String {
+        match self.rng.below(5) {
+            0 => format!("{place} /= {}", self.nonzero()),
+            1 => format!("{place} %= {}", self.nonzero()),
+            _ => {
+                let op = *self.rng.pick(&["+=", "-=", "*="]);
+                format!("{place} {op} {}", self.expr(Kind::Int, fuel))
+            }
+        }
+    }
+
     fn block(&mut self, kind: Kind, fuel: u32) -> String {
         let depth = self.scope.len();
         let mut lines = Vec::new();
@@ -603,8 +616,9 @@ impl Gen<'_> {
                         format!("_ = {}", self.expr(Kind::Int, fuel))
                     } else {
                         let name = self.rng.pick(&records).clone();
-                        match self.rng.below(4) {
+                        match self.rng.below(5) {
                             0 => format!("{name}.a = {}", self.expr(Kind::Int, fuel)),
+                            4 => self.compound(&format!("{name}.a"), fuel),
                             1 => format!("{name}.b = {}", self.expr(Kind::Bool, fuel)),
                             2 => format!("bump(mut {name}, {})", self.expr(Kind::Int, fuel)),
                             _ => format!("_ = reset(mut {name})"),
@@ -684,6 +698,10 @@ impl Gen<'_> {
                     if let Some((name, kind)) =
                         (!locals.is_empty()).then(|| self.rng.pick(&locals).clone())
                     {
+                        if kind == Kind::Int && self.rng.chance(1, 3) {
+                            lines.push(self.compound(&name, fuel));
+                            continue;
+                        }
                         let value = self.expr(kind, fuel);
                         format!("{name} = {value}")
                     } else {

@@ -12,7 +12,7 @@ use sumi_graph::{
 };
 use sumi_lexer::{RawIdx, SyntaxKind, TokenFlags};
 use sumi_syntax::{
-    Literal, NodeIdx, NodeKind, PrefixOp,
+    AssignOp, Literal, NodeIdx, NodeKind, PrefixOp,
     ast::{self, AstNode, View},
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
@@ -154,6 +154,10 @@ enum Decides {
 
 /// Whether what is no place has a place's shape, a name and fields, so its name is resolved.
 struct IsShaped(bool);
+
+/// The records a place's fields are of, outermost first: each one's value, its type, and the
+/// field's position in it.
+type Path = Vec<(NodeId, DeclId, usize)>;
 
 /// A place: a mutable local and the fields under it, outermost first, each with its name.
 struct Place<'s> {
@@ -1425,8 +1429,9 @@ impl<'a, 's> Builder<'a, 's> {
             .and_then(|target| self.place_of(target).ok());
         let value = assignment.value(tree).map(|value| self.lower(value.node()));
         let value = self.present(node, value);
-        // A value that returns first is assigned to nothing.
+        let op = assignment.op(tree, self.source.lexed());
         let assigned = match &place {
+            // A value that returns first is assigned to nothing.
             Some(place) if value.completes => {
                 let declaration = self.locals[place.local.index()].declaration;
                 let references = References::Version(declaration);
@@ -1434,7 +1439,13 @@ impl<'a, 's> Builder<'a, 's> {
                 self.completes_input(assigned, 0);
                 Some(assigned)
             }
-            Some(place) => self.write(place, value.input(), at),
+            Some(place) => self.path(place).and_then(|path| {
+                let value = match op {
+                    Some(AssignOp::Arith(op)) => self.combined(place, &path, op, &value, node)?,
+                    _ => value.input(),
+                };
+                Some(self.write(place, path, value, at))
+            }),
             None => None,
         };
         let id = match assigned {
@@ -1447,6 +1458,50 @@ impl<'a, 's> Builder<'a, 's> {
             self.fail();
         }
         self.value(node, id, value.control, value.completes)
+    }
+
+    /// The place's own value and `value` under `op`, for a compound assignment at `node`; none
+    /// where the place holds no integer, which is reported as the operand it is.
+    fn combined(
+        &mut self,
+        place: &Place<'s>,
+        path: &Path,
+        op: sumi_syntax::ArithOp,
+        value: &Value,
+        node: NodeIdx,
+    ) -> Option<(NodeId, TextRange)> {
+        let held = self.held(place, path);
+        let range = self.place_range(place, place.fields.len());
+        if !self.is_typed(held) {
+            return None;
+        }
+        match self.decides_at(held) {
+            Decides::Ty(ty) if ty != Ty::INT => {
+                self.source.type_mismatch(range, Ty::INT, ty, None);
+                return None;
+            }
+            Decides::Failed => return None,
+            _ => {}
+        }
+        let op = BinaryOp::Arith(arith(op));
+        let at = self.source.range(node);
+        let id = self.place(Op::Binary(op), &[(held, range), value.input()], at, None);
+        if value.is_valid {
+            self.divides(op, node, value.node);
+        }
+        Some((id, value.at))
+    }
+
+    /// A `/` or `%` at `node` owes its divisor a proof that it is no zero.
+    fn divides(&mut self, op: BinaryOp, node: NodeIdx, divisor: NodeId) {
+        if matches!(op, BinaryOp::Arith(ArithOp::Div | ArithOp::Rem)) {
+            self.lowered.obligations.push(Obligation {
+                owner: self.owner,
+                node,
+                divisor,
+                context: self.context(),
+            });
+        }
     }
 
     /// The place `target` names: a mutable local, or a field under one. Any other is reported,
@@ -1543,17 +1598,46 @@ impl<'a, 's> Builder<'a, 's> {
         )
     }
 
-    /// The value the place holds now: its local's, read through each field.
+    /// The record each field of the place is of, outermost first: none where a field is not
+    /// known, which is reported at its name.
+    fn path(&mut self, place: &Place<'s>) -> Option<Path> {
+        let mut base = self.versions.read(place.local);
+        let mut path = Vec::with_capacity(place.fields.len());
+        for (depth, &(name, node)) in place.fields.iter().enumerate() {
+            let (decl, field) = self.field_of(base, name, node)?;
+            let item = self.source.decls[decl.index()].item;
+            let is_last = depth + 1 == place.fields.len();
+            self.refer(node, Symbol::Field(item, field as u32), is_last);
+            path.push((base, decl, field));
+            if !is_last {
+                let name = self.source.field_name(name);
+                let range = self.place_range(place, depth + 1);
+                let read = (base, self.place_range(place, depth));
+                base = self.place(Op::Field(name), &[read], range, None);
+            }
+        }
+        Some(path)
+    }
+
+    /// The value the place holds now: the field of the last record on its path, or its local.
+    fn held(&mut self, place: &Place<'s>, path: &Path) -> NodeId {
+        let Some(&(base, decl, field)) = path.last() else {
+            return self.versions.read(place.local);
+        };
+        let name = self.source.fields(decl)[field].0;
+        let range = self.place_range(place, path.len());
+        let base = (base, self.place_range(place, path.len() - 1));
+        self.place(Op::Field(name), &[base], range, None)
+    }
+
+    /// The value a `mut` argument's place holds, for its parameter.
     fn read_place(&mut self, place: &Place<'s>) -> Value {
         self.locals[place.local.index()].is_read = true;
-        let mut read = self.versions.read(place.local);
-        for (depth, &(name, _)) in place.fields.iter().enumerate() {
-            let name = self.source.field_name(name);
-            let range = self.place_range(place, depth + 1);
-            let base = (read, self.place_range(place, depth));
-            read = self.place(Op::Field(name), &[base], range, None);
-        }
         let range = self.place_range(place, place.fields.len());
+        let read = match self.path(place) {
+            Some(path) => self.held(place, &path),
+            None => self.place(Op::Hole, &[], range, None),
+        };
         let is_valid = self.is_typed(read);
         if !is_valid {
             self.fail();
@@ -1601,31 +1685,17 @@ impl<'a, 's> Builder<'a, 's> {
         None
     }
 
-    /// Writes `value` to the place: its local's next version, which is every record on the way
-    /// to the field made again with what changed under it. None where a field is not known.
+    /// Writes `value` to the place: its local's next version, which is every record on `path`
+    /// made again with what changed under it.
     fn write(
         &mut self,
         place: &Place<'s>,
+        path: Path,
         value: (NodeId, TextRange),
         at: TextRange,
-    ) -> Option<NodeId> {
-        let mut base = self.versions.read(place.local);
-        let mut steps: Vec<(NodeId, DeclId, usize)> = Vec::with_capacity(place.fields.len());
-        for (depth, &(name, node)) in place.fields.iter().enumerate() {
-            let (decl, field) = self.field_of(base, name, node)?;
-            let item = self.source.decls[decl.index()].item;
-            let is_last = depth + 1 == place.fields.len();
-            self.refer(node, Symbol::Field(item, field as u32), is_last);
-            steps.push((base, decl, field));
-            if !is_last {
-                let name = self.source.field_name(name);
-                let range = self.place_range(place, depth + 1);
-                let read = (base, self.place_range(place, depth));
-                base = self.place(Op::Field(name), &[read], range, None);
-            }
-        }
+    ) -> NodeId {
         let mut value = value;
-        for (depth, (base, decl, field)) in steps.into_iter().enumerate().rev() {
+        for (depth, (base, decl, field)) in path.into_iter().enumerate().rev() {
             let range = self.place_range(place, depth);
             let count = self.source.fields(decl).len();
             let mut inputs = Vec::with_capacity(count);
@@ -1646,7 +1716,7 @@ impl<'a, 's> Builder<'a, 's> {
         if self.is_typed(assigned) {
             self.versions.set(place.local, assigned);
         }
-        Some(assigned)
+        assigned
     }
 
     /// One exit's value of a function with `mut` parameters: its result there, held to the type
@@ -1956,13 +2026,8 @@ impl<'a, 's> Builder<'a, 's> {
         let is_valid = lhs.is_valid && rhs.is_valid;
         if damaged || !is_valid {
             self.fail();
-        } else if !completes && matches!(op, BinaryOp::Arith(ArithOp::Div | ArithOp::Rem)) {
-            self.lowered.obligations.push(Obligation {
-                owner: self.owner,
-                node,
-                divisor: rhs.node,
-                context: self.context(),
-            });
+        } else if !completes {
+            self.divides(op, node, rhs.node);
         }
         self.value(node, id, control, completes)
     }
@@ -2789,7 +2854,9 @@ impl<'a, 's> Builder<'a, 's> {
         }
         // A place is read where the call begins: again, if an argument after it wrote its local.
         for (index, place) in &lent {
-            let Some(place) = place else { continue };
+            let Some(place) = place.as_ref().filter(|_| args[*index].1.is_valid) else {
+                continue;
+            };
             let mut read = args[*index].1.node;
             for _ in &place.fields {
                 read = self.graph.inputs(read)[0];
@@ -2929,9 +2996,13 @@ impl<'a, 's> Builder<'a, 's> {
                 changes = false;
                 continue;
             }
+            let Some(path) = self.path(place) else {
+                changes = false;
+                continue;
+            };
             let name = self.source.field_name(name);
             let out = self.place(Op::Field(name), &[(id, range)], range, None);
-            changes &= self.write(place, (out, range), range).is_some();
+            self.write(place, path, (out, range), range);
         }
         let result = self.declared.headers[target.index()].result;
         if !changes || !completes && matches!(result, HeaderResult::None) {
