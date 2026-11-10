@@ -1,0 +1,429 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn set@6:1..8:2 ([int] ∈ [[1, 8]; [2, 3]], int ∈ [1, 6]) -> unit ∈ unit
+  param xs@6:12..6:14: [int]
+  param v@6:23..6:24: int
+  body:
+    assignment: assign xs@6:12..6:14 : [int] @7:5..7:14
+      value: store : [int] @7:5..7:14
+        sequence: read xs@6:12..6:14 : [int]
+        index: int 0 : int @7:8..7:9
+        element: read v@6:23..6:24 : int
+    tail: make <missing> : <missing> @6:31..8:2
+
+fn fill@10:1..14:2 ([int] ∈ [[1, 8]; [2, 3]], int ∈ [7, 8]) -> unit ∈ unit
+  param xs@10:13..10:15: [int]
+  param v@10:24..10:25: int
+  result: result : <missing> @10:1..14:2
+    outcome[0]:
+      discard: after : ? @11:5..13:6
+        control: loop : unit @11:5..13:6
+        context: entry : ? @10:1..14:2
+      tail: make <missing> : <missing> @11:5..13:6
+
+fn clear@16:1..20:2 (Grid ∈ Grid([[1, 4]; [2, 4]], [3, 5])) -> unit ∈ unit
+  param grid@16:14..16:18: Grid
+  result: result : <missing> @16:1..20:2
+    outcome[0]:
+      discard: after : ? @17:5..19:6
+        control: loop : unit @17:5..19:6
+        context: entry : ? @16:1..20:2
+      tail: make <missing> : <missing> @17:5..19:6
+
+fn corner@22:1..26:2 ([[int]] ∈ [[[1, 4]; [1, 2]]; [1, 2]], int ∈ [9, 9]) -> unit ∈ unit
+  param rows@22:15..22:19: [[int]]
+  param v@22:30..22:31: int
+  result: result : <missing> @22:1..26:2
+    outcome[0]:
+      discard: after : ? @23:5..25:6
+        control: loop : unit @23:5..25:6
+        context: entry : ? @22:1..26:2
+      tail: make <missing> : <missing> @23:5..25:6
+
+fn grown@28:1..30:2 ([int] ∈ [[1, 8]; [2, 2]]) -> unit ∈ unit
+  param xs@28:14..28:16: [int]
+  body:
+    assignment: assign xs@28:14..28:16 : [int] @29:5..29:15
+      value: push : [int] @29:5..29:15
+        sequence: read xs@28:14..28:16 : [int]
+        element: int 0 : int @29:13..29:14
+    tail: make <missing> : <missing> @29:5..29:15
+
+fn put@36:1..38:2 ([P] ∈ [P([1, 3]); [2, 2]], P ∈ P([2, 2])) -> unit ∈ unit
+  param ps@36:12..36:14: [P]
+  param p@36:21..36:22: P
+  body:
+    assignment: assign ps@36:12..36:14 : [P] @37:5..37:14
+      value: store : [P] @37:5..37:14
+        sequence: read ps@36:12..36:14 : [P]
+        index: int 0 : int @37:8..37:9
+        element: read p@36:21..36:22 : P
+    tail: make <missing> : <missing> @36:27..38:2
+
+fn both@40:1..43:2 ([int] ∈ [[1, 8]; [3, 3]], [P] ∈ [P([1, 3]); [2, 2]]) -> unit ∈ unit
+  param xs@40:13..40:15: [int]
+  param ps@40:28..40:30: [P]
+  body:
+    assignment: assign xs@40:13..40:15 : [int] @41:13..41:15
+      value: field xs : [int] @41:13..41:15
+        base: call set@6:1..8:2 : <missing> @41:5..41:19
+          arg[0]: read xs@40:13..40:15 : [int]
+          arg[1]: int 1 : int @41:17..41:18
+    discard: field return : unit @41:5..41:19
+      base: call set@6:1..8:2 : <missing> @41:5..41:19
+        arg[0]: read xs@40:13..40:15 : [int]
+        arg[1]: int 1 : int @41:17..41:18
+    assignment: assign ps@40:28..40:30 : [P] @42:13..42:15
+      value: field ps : [P] @42:13..42:15
+        base: call put@36:1..38:2 : <missing> @42:5..42:25
+          arg[0]: read ps@40:28..40:30 : [P]
+          arg[1]: make P : P @42:17..42:24
+            n: int 2 : int @42:22..42:23
+    tail: make <missing> : <missing> @42:5..42:25
+
+fn row@45:1..45:49 ([[int]] ∈ [[[1, 9]; [1, 2]]; [2, 2]], int ∈ [0, 1]) -> [int] ∈ [[1, 9]; [1, 2]]
+  param grid@45:8..45:12: [[int]]
+  param y@45:23..45:24: int
+  result: copy : [int] @45:34..45:39
+    value: index : [int] @45:42..45:49
+      sequence: read grid@45:8..45:12 : [[int]]
+      index: read y@45:23..45:24 : int
+
+fn cell@47:1..47:71 ([[int]] ∈ [[[1, 9]; [1, 2]]; [2, 2]], [int] ∈ [[0, 1]; [2, 2]], int ∈ [1, 1]) -> int ∈ [1, 9]
+  param grid@47:9..47:13: [[int]]
+  param ys@47:24..47:26: [int]
+  param y@47:35..47:36: int
+  result: copy : int @47:46..47:49
+    value: index : int @47:52..47:71
+      sequence: call row@45:1..45:49 : [int] @47:52..47:68
+        arg[0]: read grid@47:9..47:13 : [[int]]
+        arg[1]: index : int @47:62..47:67
+          sequence: read ys@47:24..47:26 : [int]
+          index: read y@47:35..47:36 : int
+      index: int 0 : int @47:69..47:70
+
+fn spent@49:1..75:2 (int ∈ [1, 1]) -> int ∈ [3, +∞)
+  param n@49:10..49:11: int
+  result: result : int @49:21..49:24
+    outcome[0]:
+      let a@50:13..50:14: [int] @50:5..50:20
+        initializer: array : [int] @50:17..50:20
+          element: int 0 : int @50:18..50:19
+      discard: loop : unit @51:5..73:6
+        start: int 0 : int @51:14..51:15
+        end: read n@49:10..49:11 : int
+        carry[0]: carry a@50:13..50:14 : [int] @51:5..73:6
+          initial: read a@50:13..50:14 : [int]
+        body:
+          let i@51:9..51:10: loop index : int @51:5..73:6
+            start: int 0 : int @51:14..51:15
+            end: read n@49:10..49:11 : int
+          let b@52:17..52:18: [int] @52:9..52:24
+            initializer: array : [int] @52:21..52:24
+              element: int 0 : int @52:22..52:23
+          assignment: assign a@50:13..50:14 : [int] @53:9..53:18
+            value: push : [int] @53:9..53:18
+              sequence: read a@50:13..50:14 (carried @51:5..73:6) : [int]
+              element: read i@51:9..51:10 : int
+          discard: unit : unit @53:9..53:18
+          discard: loop : unit @54:9..71:10
+            start: int 0 : int @54:18..54:19
+            end: read n@49:10..49:11 : int
+            carry[0]: carry a@50:13..50:14 : [int] @54:9..71:10
+              initial: read a@50:13..50:14 (assigned @53:9..53:18) : [int]
+            carry[1]: carry b@52:17..52:18 : [int] @54:9..71:10
+              initial: read b@52:17..52:18 : [int]
+            body:
+              let j@54:13..54:14: loop index : int @54:9..71:10
+                start: int 0 : int @54:18..54:19
+                end: read n@49:10..49:11 : int
+              let c@55:21..55:22: [int] @55:13..55:28
+                initializer: array : [int] @55:25..55:28
+                  element: int 0 : int @55:26..55:27
+              assignment: assign b@52:17..52:18 : [int] @56:13..56:22
+                value: push : [int] @56:13..56:22
+                  sequence: read b@52:17..52:18 (carried @54:9..71:10) : [int]
+                  element: read j@54:13..54:14 : int
+              discard: unit : unit @56:13..56:22
+              discard: loop : unit @57:13..69:14
+                start: int 0 : int @57:22..57:23
+                end: read n@49:10..49:11 : int
+                carry[0]: carry a@50:13..50:14 : [int] @57:13..69:14
+                  initial: read a@50:13..50:14 (carried @54:9..71:10) : [int]
+                carry[1]: carry b@52:17..52:18 : [int] @57:13..69:14
+                  initial: read b@52:17..52:18 (assigned @56:13..56:22) : [int]
+                carry[2]: carry c@55:21..55:22 : [int] @57:13..69:14
+                  initial: read c@55:21..55:22 : [int]
+                body:
+                  let k@57:17..57:18: loop index : int @57:13..69:14
+                    start: int 0 : int @57:22..57:23
+                    end: read n@49:10..49:11 : int
+                  let d@58:25..58:26: [int] @58:17..58:32
+                    initializer: array : [int] @58:29..58:32
+                      element: int 0 : int @58:30..58:31
+                  assignment: assign c@55:21..55:22 : [int] @59:17..59:26
+                    value: push : [int] @59:17..59:26
+                      sequence: read c@55:21..55:22 (carried @57:13..69:14) : [int]
+                      element: read k@57:17..57:18 : int
+                  discard: unit : unit @59:17..59:26
+                  discard: loop : unit @60:17..67:18
+                    start: int 0 : int @60:26..60:27
+                    end: read n@49:10..49:11 : int
+                    carry[0]: carry a@50:13..50:14 : [int] @60:17..67:18
+                      initial: read a@50:13..50:14 (carried @57:13..69:14) : [int]
+                    carry[1]: carry b@52:17..52:18 : [int] @60:17..67:18
+                      initial: read b@52:17..52:18 (carried @57:13..69:14) : [int]
+                    carry[2]: carry c@55:21..55:22 : [int] @60:17..67:18
+                      initial: read c@55:21..55:22 (assigned @59:17..59:26) : [int]
+                    carry[3]: carry d@58:25..58:26 : [int] @60:17..67:18
+                      initial: read d@58:25..58:26 : [int]
+                    body:
+                      let l@60:21..60:22: loop index : int @60:17..67:18
+                        start: int 0 : int @60:26..60:27
+                        end: read n@49:10..49:11 : int
+                      let e@61:29..61:30: [int] @61:21..61:36
+                        initializer: array : [int] @61:33..61:36
+                          element: int 0 : int @61:34..61:35
+                      assignment: assign d@58:25..58:26 : [int] @62:21..62:30
+                        value: push : [int] @62:21..62:30
+                          sequence: read d@58:25..58:26 (carried @60:17..67:18) : [int]
+                          element: read l@60:21..60:22 : int
+                      discard: unit : unit @62:21..62:30
+                      discard: loop : unit @63:21..65:22
+                        start: int 0 : int @63:30..63:31
+                        end: read n@49:10..49:11 : int
+                        carry[0]: carry a@50:13..50:14 : [int] @63:21..65:22
+                          initial: read a@50:13..50:14 (carried @60:17..67:18) : [int]
+                        carry[1]: carry b@52:17..52:18 : [int] @63:21..65:22
+                          initial: read b@52:17..52:18 (carried @60:17..67:18) : [int]
+                        carry[2]: carry c@55:21..55:22 : [int] @63:21..65:22
+                          initial: read c@55:21..55:22 (carried @60:17..67:18) : [int]
+                        carry[3]: carry d@58:25..58:26 : [int] @63:21..65:22
+                          initial: read d@58:25..58:26 (assigned @62:21..62:30) : [int]
+                        carry[4]: carry e@61:29..61:30 : [int] @63:21..65:22
+                          initial: read e@61:29..61:30 : [int]
+                        body:
+                          let m@63:25..63:26: loop index : int @63:21..65:22
+                            start: int 0 : int @63:30..63:31
+                            end: read n@49:10..49:11 : int
+                          assignment: assign e@61:29..61:30 : [int] @64:25..64:34
+                            value: push : [int] @64:25..64:34
+                              sequence: read e@61:29..61:30 (carried @63:21..65:22) : [int]
+                              element: read m@63:25..63:26 : int
+                          tail: unit : unit @64:25..64:34
+                        next[0]: read a@50:13..50:14 (carried @63:21..65:22) : [int]
+                        next[1]: read b@52:17..52:18 (carried @63:21..65:22) : [int]
+                        next[2]: read c@55:21..55:22 (carried @63:21..65:22) : [int]
+                        next[3]: read d@58:25..58:26 (carried @63:21..65:22) : [int]
+                        next[4]: read e@61:29..61:30 (assigned @64:25..64:34) : [int]
+                      assignment: assign d@58:25..58:26 : [int] @66:21..66:36
+                        value: push : [int] @66:21..66:36
+                          sequence: read d@58:25..58:26 (assigned @62:21..62:30) : [int]
+                          element: len : int @66:28..66:35
+                            sequence: read e@61:29..61:30 (after loop @63:21..65:22) : [int]
+                      tail: unit : unit @66:21..66:36
+                    next[0]: read a@50:13..50:14 (carried @60:17..67:18) : [int]
+                    next[1]: read b@52:17..52:18 (carried @60:17..67:18) : [int]
+                    next[2]: read c@55:21..55:22 (carried @60:17..67:18) : [int]
+                    next[3]: read d@58:25..58:26 (assigned @66:21..66:36) : [int]
+                  assignment: assign c@55:21..55:22 : [int] @68:17..68:32
+                    value: push : [int] @68:17..68:32
+                      sequence: read c@55:21..55:22 (assigned @59:17..59:26) : [int]
+                      element: len : int @68:24..68:31
+                        sequence: read d@58:25..58:26 (after loop @60:17..67:18) : [int]
+                  tail: unit : unit @68:17..68:32
+                next[0]: read a@50:13..50:14 (carried @57:13..69:14) : [int]
+                next[1]: read b@52:17..52:18 (carried @57:13..69:14) : [int]
+                next[2]: read c@55:21..55:22 (assigned @68:17..68:32) : [int]
+              assignment: assign b@52:17..52:18 : [int] @70:13..70:28
+                value: push : [int] @70:13..70:28
+                  sequence: read b@52:17..52:18 (assigned @56:13..56:22) : [int]
+                  element: len : int @70:20..70:27
+                    sequence: read c@55:21..55:22 (after loop @57:13..69:14) : [int]
+              tail: unit : unit @70:13..70:28
+            next[0]: read a@50:13..50:14 (carried @54:9..71:10) : [int]
+            next[1]: read b@52:17..52:18 (assigned @70:13..70:28) : [int]
+          assignment: assign a@50:13..50:14 : [int] @72:9..72:24
+            value: push : [int] @72:9..72:24
+              sequence: read a@50:13..50:14 (assigned @53:9..53:18) : [int]
+              element: len : int @72:16..72:23
+                sequence: read b@52:17..52:18 (after loop @54:9..71:10) : [int]
+          tail: unit : unit @72:9..72:24
+        next[0]: read a@50:13..50:14 (assigned @72:9..72:24) : [int]
+      discard: after : ? @51:5..73:6
+        control: loop : unit @51:5..73:6
+        context: entry : ? @49:1..75:2
+      tail: len : int @74:5..74:12
+        sequence: read a@50:13..50:14 (after loop @51:5..73:6) : [int]
+
+fn main@77:1..97:2 () -> int ∈ [8, +∞)
+  result: copy : int @77:14..77:17
+    value:
+      let a@78:13..78:14: [int] @78:5..78:23
+        initializer: array : [int] @78:17..78:23
+          element: int 1 : int @78:18..78:19
+          element: int 2 : int @78:21..78:22
+      let b@79:13..79:14: [int] @79:5..79:26
+        initializer: array : [int] @79:17..79:26
+          element: int 1 : int @79:18..79:19
+          element: int 2 : int @79:21..79:22
+          element: int 3 : int @79:24..79:25
+      assignment: assign a@78:13..78:14 : [int] @80:13..80:14
+        value: field xs : [int] @80:13..80:14
+          base: call set@6:1..8:2 : <missing> @80:5..80:18
+            arg[0]: read a@78:13..78:14 : [int]
+            arg[1]: int 5 : int @80:16..80:17
+      discard: field return : unit @80:5..80:18
+        base: call set@6:1..8:2 : <missing> @80:5..80:18
+          arg[0]: read a@78:13..78:14 : [int]
+          arg[1]: int 5 : int @80:16..80:17
+      assignment: assign b@79:13..79:14 : [int] @81:13..81:14
+        value: field xs : [int] @81:13..81:14
+          base: call set@6:1..8:2 : <missing> @81:5..81:18
+            arg[0]: read b@79:13..79:14 : [int]
+            arg[1]: int 6 : int @81:16..81:17
+      discard: field return : unit @81:5..81:18
+        base: call set@6:1..8:2 : <missing> @81:5..81:18
+          arg[0]: read b@79:13..79:14 : [int]
+          arg[1]: int 6 : int @81:16..81:17
+      assignment: assign a@78:13..78:14 : [int] @82:14..82:15
+        value: field xs : [int] @82:14..82:15
+          base: call fill@10:1..14:2 : <missing> @82:5..82:19
+            arg[0]: read a@78:13..78:14 (assigned @80:13..80:14) : [int]
+            arg[1]: int 7 : int @82:17..82:18
+      discard: field return : unit @82:5..82:19
+        base: call fill@10:1..14:2 : <missing> @82:5..82:19
+          arg[0]: read a@78:13..78:14 (assigned @80:13..80:14) : [int]
+          arg[1]: int 7 : int @82:17..82:18
+      assignment: assign b@79:13..79:14 : [int] @83:14..83:15
+        value: field xs : [int] @83:14..83:15
+          base: call fill@10:1..14:2 : <missing> @83:5..83:19
+            arg[0]: read b@79:13..79:14 (assigned @81:13..81:14) : [int]
+            arg[1]: int 8 : int @83:17..83:18
+      discard: field return : unit @83:5..83:19
+        base: call fill@10:1..14:2 : <missing> @83:5..83:19
+          arg[0]: read b@79:13..79:14 (assigned @81:13..81:14) : [int]
+          arg[1]: int 8 : int @83:17..83:18
+      assignment: assign a@78:13..78:14 : [int] @84:15..84:16
+        value: field xs : [int] @84:15..84:16
+          base: call grown@28:1..30:2 : <missing> @84:5..84:17
+            arg[0]: read a@78:13..78:14 (assigned @82:14..82:15) : [int]
+      discard: field return : unit @84:5..84:17
+        base: call grown@28:1..30:2 : <missing> @84:5..84:17
+          arg[0]: read a@78:13..78:14 (assigned @82:14..82:15) : [int]
+      let small@85:13..85:18: Grid @85:5..85:50
+        initializer: make Grid : Grid @85:21..85:50
+          cells: array : [int] @85:33..85:39
+            element: int 1 : int @85:34..85:35
+            element: int 2 : int @85:37..85:38
+          width: int 3 : int @85:48..85:49
+      let large@86:13..86:18: Grid @86:5..86:56
+        initializer: make Grid : Grid @86:21..86:56
+          cells: array : [int] @86:33..86:45
+            element: int 1 : int @86:34..86:35
+            element: int 2 : int @86:37..86:38
+            element: int 3 : int @86:40..86:41
+            element: int 4 : int @86:43..86:44
+          width: int 5 : int @86:54..86:55
+      assignment: assign small@85:13..85:18 : Grid @87:15..87:20
+        value: field grid : Grid @87:15..87:20
+          base: call clear@16:1..20:2 : <missing> @87:5..87:21
+            arg[0]: read small@85:13..85:18 : Grid
+      discard: field return : unit @87:5..87:21
+        base: call clear@16:1..20:2 : <missing> @87:5..87:21
+          arg[0]: read small@85:13..85:18 : Grid
+      assignment: assign large@86:13..86:18 : Grid @88:15..88:20
+        value: field grid : Grid @88:15..88:20
+          base: call clear@16:1..20:2 : <missing> @88:5..88:21
+            arg[0]: read large@86:13..86:18 : Grid
+      discard: field return : unit @88:5..88:21
+        base: call clear@16:1..20:2 : <missing> @88:5..88:21
+          arg[0]: read large@86:13..86:18 : Grid
+      let one@89:13..89:16: [[int]] @89:5..89:24
+        initializer: array : [[int]] @89:19..89:24
+          element: array : [int] @89:20..89:23
+            element: int 1 : int @89:21..89:22
+      let two@90:13..90:16: [[int]] @90:5..90:35
+        initializer: array : [[int]] @90:19..90:35
+          element: array : [int] @90:20..90:26
+            element: int 1 : int @90:21..90:22
+            element: int 2 : int @90:24..90:25
+          element: array : [int] @90:28..90:34
+            element: int 3 : int @90:29..90:30
+            element: int 4 : int @90:32..90:33
+      assignment: assign one@89:13..89:16 : [[int]] @91:16..91:19
+        value: field rows : [[int]] @91:16..91:19
+          base: call corner@22:1..26:2 : <missing> @91:5..91:23
+            arg[0]: read one@89:13..89:16 : [[int]]
+            arg[1]: int 9 : int @91:21..91:22
+      discard: field return : unit @91:5..91:23
+        base: call corner@22:1..26:2 : <missing> @91:5..91:23
+          arg[0]: read one@89:13..89:16 : [[int]]
+          arg[1]: int 9 : int @91:21..91:22
+      assignment: assign two@90:13..90:16 : [[int]] @92:16..92:19
+        value: field rows : [[int]] @92:16..92:19
+          base: call corner@22:1..26:2 : <missing> @92:5..92:23
+            arg[0]: read two@90:13..90:16 : [[int]]
+            arg[1]: int 9 : int @92:21..92:22
+      discard: field return : unit @92:5..92:23
+        base: call corner@22:1..26:2 : <missing> @92:5..92:23
+          arg[0]: read two@90:13..90:16 : [[int]]
+          arg[1]: int 9 : int @92:21..92:22
+      let ps@93:13..93:15: [P] @93:5..93:36
+        initializer: array : [P] @93:18..93:36
+          element: make P : P @93:19..93:26
+            n: int 1 : int @93:24..93:25
+          element: make P : P @93:28..93:35
+            n: int 3 : int @93:33..93:34
+      assignment: assign b@79:13..79:14 : [int] @94:14..94:15
+        value: field xs : [int] @94:14..94:15
+          base: call both@40:1..43:2 : <missing> @94:5..94:24
+            arg[0]: read b@79:13..79:14 (assigned @83:14..83:15) : [int]
+            arg[1]: read ps@93:13..93:15 : [P]
+      assignment: assign ps@93:13..93:15 : [P] @94:21..94:23
+        value: field ps : [P] @94:21..94:23
+          base: call both@40:1..43:2 : <missing> @94:5..94:24
+            arg[0]: read b@79:13..79:14 (assigned @83:14..83:15) : [int]
+            arg[1]: read ps@93:13..93:15 : [P]
+      discard: field return : unit @94:5..94:24
+        base: call both@40:1..43:2 : <missing> @94:5..94:24
+          arg[0]: read b@79:13..79:14 (assigned @83:14..83:15) : [int]
+          arg[1]: read ps@93:13..93:15 : [P]
+      let rest@95:9..95:13: int @95:5..95:57
+        initializer: eager + : int @95:16..95:57
+          lhs: eager + : int @95:16..95:46
+            lhs: field n : int @95:16..95:23
+              base: index : P @95:16..95:21
+                sequence: read ps@93:13..93:15 (assigned @94:21..94:23) : [P]
+                index: int 1 : int @95:19..95:20
+            rhs: call cell@47:1..47:71 : int @95:26..95:46
+              arg[0]: read two@90:13..90:16 (assigned @92:16..92:19) : [[int]]
+              arg[1]: array : [int] @95:36..95:42
+                element: int 0 : int @95:37..95:38
+                element: int 1 : int @95:40..95:41
+              arg[2]: int 1 : int @95:44..95:45
+          rhs: call spent@49:1..75:2 : int @95:49..95:57
+            arg[0]: int 1 : int @95:55..95:56
+      tail: eager + : int @96:5..96:52
+        lhs: eager + : int @96:5..96:45
+          lhs: eager + : int @96:5..96:33
+            lhs: eager + : int @96:5..96:16
+              lhs: index : int @96:5..96:9
+                sequence: read a@78:13..78:14 (assigned @84:15..84:16) : [int]
+                index: int 2 : int @96:7..96:8
+              rhs: index : int @96:12..96:16
+                sequence: read b@79:13..79:14 (assigned @94:14..94:15) : [int]
+                index: int 2 : int @96:14..96:15
+            rhs: index : int @96:19..96:33
+              sequence: field cells : [int] @96:19..96:30
+                base: read large@86:13..86:18 (assigned @88:15..88:20) : Grid
+              index: int 3 : int @96:31..96:32
+          rhs: index : int @96:36..96:45
+            sequence: index : [int] @96:36..96:42
+              sequence: read two@90:13..90:16 (assigned @92:16..92:19) : [[int]]
+              index: int 1 : int @96:40..96:41
+            index: int 0 : int @96:43..96:44
+        rhs: read rest@95:9..95:13 : int

@@ -1,0 +1,97 @@
+type Grid {
+    cells: [int],
+    width: int,
+}
+
+fn set(mut xs: [int], v: int) {
+    xs[0] = v
+}
+
+fn fill(mut xs: [int], v: int) {
+    for i in 0..2 {
+        xs[i] = v
+    }
+}
+
+fn clear(mut grid: Grid) {
+    for i in 0..2 {
+        grid.cells[i] = grid.width
+    }
+}
+
+fn corner(mut rows: [[int]], v: int) {
+    for _i in 0..1 {
+        rows[0][0] = v
+    }
+}
+
+fn grown(mut xs: [int]) {
+    xs.push(0)
+}
+
+type P {
+    n: int,
+}
+
+fn put(mut ps: [P], p: P) {
+    ps[0] = p
+}
+
+fn both(mut xs: [int], mut ps: [P]) {
+    set(mut xs, 1)
+    put(mut ps, P(n: 2))
+}
+
+fn row(grid: [[int]], y: int) -> [int] = grid[y]
+
+fn cell(grid: [[int]], ys: [int], y: int) -> int = row(grid, ys[y])[0]
+
+fn spent(n: int) -> int {
+    let mut a = [0]
+    for i in 0..n {
+        let mut b = [0]
+        a.push(i)
+        for j in 0..n {
+            let mut c = [0]
+            b.push(j)
+            for k in 0..n {
+                let mut d = [0]
+                c.push(k)
+                for l in 0..n {
+                    let mut e = [0]
+                    d.push(l)
+                    for m in 0..n {
+                        e.push(m)
+                    }
+                    d.push(e.len())
+                }
+                c.push(d.len())
+            }
+            b.push(c.len())
+        }
+        a.push(b.len())
+    }
+    a.len()
+}
+
+fn main() -> int {
+    let mut a = [1, 2]
+    let mut b = [1, 2, 3]
+    set(mut a, 5)
+    set(mut b, 6)
+    fill(mut a, 7)
+    fill(mut b, 8)
+    grown(mut a)
+    let mut small = Grid(cells: [1, 2], width: 3)
+    let mut large = Grid(cells: [1, 2, 3, 4], width: 5)
+    clear(mut small)
+    clear(mut large)
+    let mut one = [[1]]
+    let mut two = [[1, 2], [3, 4]]
+    corner(mut one, 9)
+    corner(mut two, 9)
+    let mut ps = [P(n: 1), P(n: 3)]
+    both(mut b, mut ps)
+    let rest = ps[1].n + cell(two, [0, 1], 1) + spent(1)
+    a[2] + b[2] + large.cells[3] + two[1][0] + rest
+}

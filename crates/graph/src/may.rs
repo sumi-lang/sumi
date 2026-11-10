@@ -1062,6 +1062,21 @@ impl Thresholds {
     }
 }
 
+impl May {
+    /// What an element of a sequence here may hold, at whatever index.
+    pub fn element(&self, decls: &[Decl], unions: &Unions) -> Self {
+        let mut result = Self::NONE;
+        for (decl, fields) in self.decls.iter() {
+            match (fields, decls[decl.index()].element()) {
+                (Fields::Elements(_, element), _) => result.join(element),
+                (Fields::Any, Some(element)) => result.join(&Self::every(element, unions)),
+                (Fields::Any, None) | (Fields::Known(_), _) => false,
+            };
+        }
+        result
+    }
+}
+
 /// Every operator over-approximates the concrete one on every member of its operands.
 impl Domain for May {
     type Fault = Infallible;
@@ -1194,15 +1209,7 @@ impl Domain for May {
     }
 
     fn index(&self, _: &Self, decls: &[Decl], unions: &Unions) -> Result<Self, Infallible> {
-        let mut result = Self::NONE;
-        for (decl, fields) in self.decls.iter() {
-            match (fields, decls[decl.index()].element()) {
-                (Fields::Elements(_, element), _) => result.join(element),
-                (Fields::Any, Some(element)) => result.join(&Self::every(element, unions)),
-                (Fields::Any, None) | (Fields::Known(_), _) => false,
-            };
-        }
-        Ok(result)
+        Ok(self.element(decls, unions))
     }
 
     /// Which element is replaced is not tracked, so the others' values stay possible.
