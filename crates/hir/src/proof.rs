@@ -28,6 +28,8 @@ const MAX_REQUIREMENTS: usize = 16;
 const MAX_EXCUSES: usize = 3;
 /// The most conditions a proof reads on the way to an operation, the nearest first.
 const MAX_GUARDS: usize = 64;
+/// The most times a recursive group is read for what its members need of one another.
+const MAX_ROUNDS: usize = 4;
 /// The most facts and bounds one claim is led through, one after another and in all.
 const MAX_DEPTH: u32 = 4;
 const MAX_STEPS: u32 = 256;
@@ -763,9 +765,36 @@ pub(crate) fn check(
     // Numbered callees first, so what a callee needs is known where its callers are read.
     let components = Components::new(&rows, |callee| callee as usize);
     for component in 0..components.count() {
+        let members = components.members(component);
         let inside = |call: &Call| components.of[call.callee.index()] as usize == component;
         let mut bodies: HashMap<usize, Body<'_>, FxBuildHasher> = HashMap::default();
-        for &member in components.members(component) {
+        let read = |member: usize| Body::new(graph, typing, lowered, summaries, member);
+        // What a member of a recursive group needs goes round to the members that call it,
+        // with nothing reported, until a round adds nothing or the rounds are spent.
+        let is_recursive =
+            (members.iter()).any(|&member| calls[member as usize].iter().any(|call| inside(call)));
+        for _ in 0..if is_recursive { MAX_ROUNDS } else { 0 } {
+            let mut grows = false;
+            for &member in members {
+                let member = member as usize;
+                let needs = |call: &&&Call| !checker.requires[call.callee.index()].is_empty();
+                let owing: Vec<&Call> = calls[member].iter().filter(needs).copied().collect();
+                if open[member].is_empty() && owing.is_empty() {
+                    continue;
+                }
+                let body = bodies.entry(member).or_insert_with(|| read(member));
+                for &index in &open[member] {
+                    grows |= checker.obligation(body, member, index, false);
+                }
+                for call in owing {
+                    grows |= checker.call(body, call, true, false);
+                }
+            }
+            if !grows {
+                break;
+            }
+        }
+        for &member in members {
             let member = member as usize;
             let needs = |call: &&&Call| !checker.requires[call.callee.index()].is_empty();
             let outward: Vec<&Call> = (calls[member].iter().filter(|call| !inside(call)))
@@ -775,26 +804,23 @@ pub(crate) fn check(
             if open[member].is_empty() && outward.is_empty() {
                 continue;
             }
-            let body = Body::new(graph, typing, lowered, summaries, member);
+            let body = bodies.entry(member).or_insert_with(|| read(member));
             for &index in &open[member] {
-                checker.obligation(&body, member, index);
+                checker.obligation(body, member, index, true);
             }
             for call in outward {
-                checker.call(&body, call, true);
+                checker.call(body, call, true, true);
             }
-            bodies.insert(member, body);
         }
-        // A call inside a recursive group is held to what its callee needs where it stands.
-        for &member in components.members(component) {
+        // What is still owed at a call inside the group is proved where the call stands.
+        for &member in members {
             let member = member as usize;
             for call in calls[member].iter().filter(|call| inside(call)) {
                 if checker.requires[call.callee.index()].is_empty() {
                     continue;
                 }
-                let body = bodies
-                    .entry(member)
-                    .or_insert_with(|| Body::new(graph, typing, lowered, summaries, member));
-                checker.call(body, call, false);
+                let body = bodies.entry(member).or_insert_with(|| read(member));
+                checker.call(body, call, false, true);
             }
         }
     }
@@ -904,8 +930,8 @@ impl Checker<'_, '_> {
 
     /// Adds what `function` needs, unless it needs as much already: the same claims for an
     /// operation of the same kind, or one claim that a form over the same paths is at least zero
-    /// where this one's is, of which the lesser form stays.
-    fn require(&mut self, function: usize, requirement: Requirement) {
+    /// where this one's is, of which the lesser form stays. Whether it now needs more.
+    fn require(&mut self, function: usize, requirement: Requirement) -> bool {
         let obligations = &self.lowered.obligations;
         let code = |requirement: &Requirement| obligations[requirement.origin].need.code();
         let only =
@@ -918,18 +944,20 @@ impl Checker<'_, '_> {
                 continue;
             }
             if known.needs == requirement.needs && known.unless == requirement.unless {
-                return;
+                return false;
             }
             if let (Some(mine), Some(theirs)) = (only(known), only(&requirement))
                 && mine.terms() == theirs.terms()
             {
-                if theirs.constant_term() < mine.constant_term() {
+                let is_more = theirs.constant_term() < mine.constant_term();
+                if is_more {
                     *known = requirement;
                 }
-                return;
+                return is_more;
             }
         }
         self.requires[function].push(requirement);
+        true
     }
 
     /// Whether what is owed at `at` is reported for the first time; `need` is the operation's.
@@ -943,29 +971,41 @@ impl Checker<'_, '_> {
         self.reported.insert((at, need.code().name, per, other))
     }
 
-    fn obligation(&mut self, body: &Body<'_>, function: usize, index: usize) {
+    /// Holds an operation to what it needs, reporting what is neither proved nor passed to
+    /// the function's callers only if `reports`. Whether the function now needs more.
+    fn obligation(
+        &mut self,
+        body: &Body<'_>,
+        function: usize,
+        index: usize,
+        reports: bool,
+    ) -> bool {
         let obligation = &self.lowered.obligations[index];
+        let mut grows = false;
         for any in unmet(self.typing, &obligation.need) {
             let needs: Vec<Claim> = any.iter().filter_map(|&owed| body.claim(owed)).collect();
             let context = obligation.context;
             let passed = self.owe(body, function, &needs, &[], context, index, true, true);
             match passed {
                 None => {}
-                Some(Passed::Up(requirement)) => self.require(function, requirement),
+                Some(Passed::Up(requirement)) => grows |= self.require(function, requirement),
+                Some(Passed::Nowhere) if !reports => {}
                 Some(Passed::Nowhere) => {
                     if self.once(obligation.at, &obligation.need, obligation.owner) {
                         self.report(obligation);
                     }
-                    return;
+                    break;
                 }
             }
         }
+        grows
     }
 
     /// Holds a call to what its callee needs: each requirement where the parameters are the
-    /// call's arguments.
-    fn call(&mut self, body: &Body<'_>, call: &Call, passes: bool) {
+    /// call's arguments. `reports` and the result are `obligation`'s.
+    fn call(&mut self, body: &Body<'_>, call: &Call, passes: bool, reports: bool) -> bool {
         let caller = call.caller.index();
+        let mut grows = false;
         let args: Vec<&Sym> = (self.graph.inputs(call.node).iter())
             .map(|&arg| body.sym(arg))
             .collect();
@@ -994,7 +1034,8 @@ impl Checker<'_, '_> {
                 body, caller, &needs, &unless, context, origin, is_exact, passes,
             ) {
                 None => {}
-                Some(Passed::Up(requirement)) => self.require(caller, requirement),
+                Some(Passed::Up(requirement)) => grows |= self.require(caller, requirement),
+                Some(Passed::Nowhere) if !reports => {}
                 Some(Passed::Nowhere) => {
                     let code = self.lowered.obligations[origin].need.code();
                     let at = self.spans.origin(call.node);
@@ -1009,6 +1050,7 @@ impl Checker<'_, '_> {
                 }
             }
         }
+        grows
     }
 
     fn report(&mut self, obligation: &Obligation) {

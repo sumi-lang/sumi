@@ -395,7 +395,7 @@ impl Gen<'_> {
         let sequences = self.locals(Kind::Seq);
         if kind == Kind::Int && !sequences.is_empty() && self.rng.chance(1, 4) {
             let q = self.rng.pick(&sequences).clone();
-            return match self.rng.below(8) {
+            return match self.rng.below(10) {
                 0 => format!("{q}[0]"),
                 1 => format!("{q}[1]"),
                 2 => format!("{q}.len()"),
@@ -404,6 +404,9 @@ impl Gen<'_> {
                 4 => format!("at({q}, {q}.len() - 1)"),
                 5 => format!("total({q})"),
                 6 => format!("ends({q}, 1)"),
+                // What `skip` needs goes through `hop`, which it calls in turn.
+                7 => format!("hop({q}, {q}.len())"),
+                8 => format!("skip({q}, {})", self.rng.between(0, 1)),
                 _ => format!("{q}[{q}.len() - 2]"),
             };
         }
@@ -516,7 +519,7 @@ impl Gen<'_> {
         if self.is_doubtful && self.rng.chance(1, 2) {
             let p = self.rng.pick(&sequences).clone();
             let y = self.rng.pick(&locals).clone();
-            return Some(match self.rng.below(12) {
+            return Some(match self.rng.below(14) {
                 0 => format!("if 0 <= {x} && {x} <= {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
                 1 => format!("if 0 <= {x} && {x} < {p}.len() {{ {q}[{x}] }} else {{ {other} }}"),
                 2 => format!("if 0 <= {y} && {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
@@ -532,6 +535,10 @@ impl Gen<'_> {
                 10 => format!(
                     "if {x} > 0 && {x} <= {p}.len() {{ at({q}, {x} - 1) }} else {{ {other} }}"
                 ),
+                11 => format!("hop({q}, {x})"),
+                12 => {
+                    format!("if {x} >= 0 {{ skip({q}, {x} + {q}.len() - 2) }} else {{ {other} }}")
+                }
                 _ => format!("part({other}, {q}.len() - 2)"),
             });
         }
@@ -1132,6 +1139,8 @@ fn program_of(seed: u64, is_doubtful: bool) -> String {
          fn tidy(mut g: [[int]]) { for y in 0..g.len() { for x in 0..g[y].len() { g[y][x] = 0 } } }\n\
          fn wipe(mut g: [[int]]) { for y in 0..g.len() { g[y] = [] } }\n\
          fn trade(mut q: [int], i: int, j: int) { exchange(mut q[i], mut q[j]) }\n\
+         fn hop(q: [int], i: int) -> int = if i <= 0 { 0 } else { skip(q, i - 1) }\n\
+         fn skip(q: [int], i: int) -> int = q[i] + hop(q, i)\n\
          fn wrapped(q: [int], k: int) -> int = \
          if q.len() > 0 && k >= 0 { q[k % q.len()] } else { 0 }\n\
          impl R {\n\
