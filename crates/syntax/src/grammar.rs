@@ -131,13 +131,11 @@ pub fn starts_item(kind: SyntaxKind) -> bool {
     matches!(kind, T::FnKw | T::TypeKw)
 }
 
-/// A glued prefix operator opens an operand, so it continues nothing; nor does an assignment's
-/// operator, which follows its target on one line.
+/// A glued prefix operator opens an operand, so it continues nothing.
 pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool {
     kind == T::ElseKw
         || match binary_operator(kind, glued) {
             Some((_, 2)) => true,
-            Some(_) if AssignOp::read(kind, glued).is_some() => false,
             Some(_) => glued.is_none() || !is_prefix_operator(kind),
             None => false,
         }
@@ -391,7 +389,7 @@ impl fmt::Display for AssignOp {
 }
 
 /// `glued` is the kind of the token glued after `first`, if any; the `usize` is the operator's
-/// width in tokens.
+/// width in tokens. An arithmetic token `=` is glued to is an [`AssignOp`], and none.
 pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(BinaryOp, usize)> {
     let [spanning, alone] = OPERATORS_BY_FIRST[first as usize];
     if let Some(op) = spanning
@@ -400,7 +398,8 @@ pub fn binary_operator(first: SyntaxKind, glued: Option<SyntaxKind>) -> Option<(
     {
         return Some((op, 2));
     }
-    alone.map(|op| (op, 1))
+    let assigns = glued == Some(SyntaxKind::Eq) && matches!(alone, Some(BinaryOp::Arith(_)));
+    alone.filter(|_| !assigns).map(|op| (op, 1))
 }
 
 #[cfg(test)]

@@ -104,3 +104,8 @@ fn once() -> int {
         5 }
     p.x
 }
+fn tallied() -> int {
+    let mut seen = 0
+    seen += 1
+    3
+}

@@ -1,5 +1,5 @@
 file: accepted
-optimized: nodes 159 of 419, regions 22 of 29, calls 8 of 12
+optimized: nodes 161 of 427, regions 23 of 30, calls 8 of 12
 
 == functions ==
 fn fields = 307
@@ -20,3 +20,5 @@ fn compound = 216
   steps: 40, optimized steps: 1, depth: 1, bound: 1
 fn once = 15
   steps: 16, optimized steps: 1, depth: 1, bound: 1
+fn tallied = 3
+  steps: 2, optimized steps: 1, depth: 1, bound: 1

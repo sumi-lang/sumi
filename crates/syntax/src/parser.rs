@@ -840,7 +840,7 @@ fn statement(p: &mut Marker<'_, '_>) {
         _ => {
             let recovery = p.recovery_checkpoint();
             if let Some(lhs) = expr_bp(p, 0, ExprFollow::Anything) {
-                let width = assign_op(p).filter(|_| !p.is_at_boundary());
+                let width = assign_op(p, 0).filter(|_| !p.is_at_boundary());
                 if let (false, Some(width)) = (p.recovered_since(recovery), width) {
                     let lhs_node = p.completed_node(&lhs);
                     let mut m = p.precede(lhs);
@@ -984,7 +984,8 @@ fn is_displaced_closer(p: &Marker<'_, '_>) -> bool {
     }
     // An opener may continue the operand instead: a call, or a body.
     p.nth(1).is_some_and(|next| {
-        matches!(next, T::Eq | T::Colon)
+        next == T::Colon
+            || assign_op(p, 1).is_some()
             || introduces_statement(next)
             || (starts_expression(next) && !is_opener(next))
     })
@@ -996,7 +997,8 @@ fn is_garbage_in_expression(p: &Marker<'_, '_>, follow: ExprFollow) -> bool {
         || (follow == ExprFollow::Anything && p.at(T::LBrace))
         || p.current().is_some_and(|kind| {
             !starts_statement(kind)
-                && !matches!(kind, T::Eq | T::Comma | T::ElseKw)
+                && !matches!(kind, T::Comma | T::ElseKw)
+                && assign_op(p, 0).is_none()
                 && !is_closer(kind)
                 && !starts_item(kind)
                 && binary_op(p, 0).is_none()
@@ -1378,26 +1380,24 @@ fn if_block(p: &mut Marker<'_, '_>) -> Option<CompletedMarker> {
     }
 }
 
-/// The width is in tokens. A `-` is subtraction whatever its spacing, which the caller checks;
-/// an operator `=` is glued to is an assignment's, and none.
+/// The width is in tokens. A `-` is subtraction whatever its spacing; the caller checks the
+/// spacing.
 fn binary_op(p: &Marker<'_, '_>, n: usize) -> Option<(BinaryOp, usize)> {
     let glued = if p.is_nth_joint(n) {
         p.nth(n + 1)
     } else {
         None
     };
-    if matches!(
-        AssignOp::read(p.nth(n)?, glued),
-        Some((AssignOp::Arith(_), _))
-    ) {
-        return None;
-    }
     binary_operator(p.nth(n)?, glued)
 }
 
-/// The width in tokens of the assignment operator a statement's expression is followed by.
-fn assign_op(p: &Marker<'_, '_>) -> Option<usize> {
-    let glued = if p.is_nth_joint(0) { p.nth(1) } else { None };
-    let (_, is_glued) = AssignOp::read(p.current()?, glued)?;
+/// The width in tokens of the assignment operator at the `n`th token.
+fn assign_op(p: &Marker<'_, '_>, n: usize) -> Option<usize> {
+    let glued = if p.is_nth_joint(n) {
+        p.nth(n + 1)
+    } else {
+        None
+    };
+    let (_, is_glued) = AssignOp::read(p.nth(n)?, glued)?;
     Some(1 + usize::from(is_glued))
 }

@@ -130,15 +130,12 @@ fn fields@51:1..57:2 () -> int ∈ [1, 1]
           x: field x : int @53:26..53:29
             base: read m@52:13..52:14 : Point
           y: int 2 : int @53:34..53:35
-      discard: int 1 : int @54:12..54:13
-      discard: field z : ? @54:5..54:8
-        base: read m@52:13..52:14 : Point
       discard: hole : ? @54:5..54:13
-      discard: int 1 : int @55:14..55:15
-      discard: field y : ? @55:5..55:10
-        base: field x : int @55:5..55:8
-          base: read m@52:13..52:14 : Point
+        part[0]: int 1 : int @54:12..54:13
+      discard: field x : int @55:5..55:8
+        base: read m@52:13..52:14 : Point
       discard: hole : ? @55:5..55:15
+        part[0]: int 1 : int @55:14..55:15
       tail: field x : int @56:5..56:8
         base: read p@53:9..53:10 : Point
 
@@ -227,8 +224,8 @@ fn compounds@69:1..77:2 (int ∈ ∅) -> int ∈ ∅
             rhs: bool true : bool @74:12..74:16
           y: field y : int @74:5..74:6
             base: read m@71:13..71:14 : Point
-      discard: int 1 : int @75:13..75:14
       discard: hole : ? @75:5..75:14
+        part[0]: int 1 : int @75:13..75:14
       tail: eager + : int @76:5..76:12
         lhs: field x : int @76:5..76:8
           base: read m@71:13..71:14 (assigned @74:5..74:16) : Point
@@ -328,9 +325,9 @@ error[semantic/type-mismatch] 47:15..47:18 "m.x": expected Point, found int
   at 15:10..15:22 "mut p: Point": declared here
 error[semantic/unknown-name] 48:5..48:11 "absent": unknown function `absent`
 error[semantic/mut-argument] 53:26..53:29 "m.x": a field takes a value: `mut` is written for a `mut` parameter
-error[semantic/unknown-field] 54:5..54:8 "m.z": `Point` has no field `z`
+error[semantic/unknown-field] 54:7..54:8 "z": `Point` has no field `z`
   at 1:6..1:11 "Point": declared here
-error[semantic/unknown-field] 55:5..55:10 "m.x.y": `int` has no field `y`
+error[semantic/unknown-field] 55:9..55:10 "y": `int` has no field `y`
 error[semantic/overlapping-places] 61:26..61:32 "l.from": this place overlaps another the call changes
   at 61:14..61:20 "l.from": also changed here
 error[semantic/overlapping-places] 62:21..62:25 "l.to": this place overlaps another the call changes

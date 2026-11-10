@@ -486,6 +486,17 @@ fn once@101:1..106:2 () -> int ∈ [15, 15]
       tail: field x : int @105:5..105:8
         base: read p@102:13..102:14 (assigned @103:5..104:12) : Point
 
+fn tallied@107:1..111:2 () -> int ∈ [3, 3]
+  result: copy : int @107:17..107:20
+    value:
+      let seen@108:13..108:17: int @108:5..108:21
+        initializer: int 0 : int @108:20..108:21
+      assignment: assign seen@108:13..108:17 : int @109:5..109:14
+        value: eager + : int @109:5..109:14
+          lhs: read seen@108:13..108:17 : int
+          rhs: int 1 : int @109:13..109:14
+      tail: int 3 : int @110:5..110:6
+
 fn swap<Point>@15:1..19:2 (Point ∈ Point([2, 2], [0, 0]), Point ∈ Point([3, 3], [4, 4])) -> unit ∈ unit
   param a@15:16..15:17: Point
   param b@15:26..15:27: Point
@@ -537,3 +548,4 @@ fn swap<Box<int>>@15:1..19:2 (Box<int> ∈ Box<int>([8, 8]), Box<int> ∈ Box<in
 == semantic diagnostics ==
 warning[semantic/constant-condition] 84:8..84:26 "was && !flag.value": condition is always true
   at 84:59..84:64 "{ 0 }": this branch never runs
+warning[semantic/unused-name] 108:13..108:17 "seen": local `seen` is assigned but never read

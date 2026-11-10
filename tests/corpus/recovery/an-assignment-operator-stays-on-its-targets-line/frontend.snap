@@ -1,0 +1,83 @@
+== tree ==
+SourceFile! 1:1..21:1
+  FnItem! 1:1..6:2
+    Name 1:4..1:13 "next_line"
+    ParamList 1:13..1:21
+      Param 1:14..1:20
+        Name 1:14..1:15 "x"
+        TypeRef 1:17..1:20 "int"
+    TypeRef 1:25..1:28 "int"
+    Block! 1:29..6:2
+      LetStmt 2:5..2:18
+        Name 2:13..2:14 "y"
+        NameRef 2:17..2:18 "x"
+      NameRef 3:5..3:6 "y"
+      Error! 4:5..4:9 "+= 1"
+      NameRef 5:5..5:6 "y"
+  FnItem! 7:1..10:2
+    Name 7:4..7:17 "missing_value"
+    ParamList 7:17..7:19 "()"
+    TypeRef 7:23..7:26 "int"
+    Block! 7:27..10:2
+      LetStmt 8:5..8:18
+        Name 8:13..8:14 "y"
+        LiteralExpr 8:17..8:18 "1"
+      AssignStmt! 9:5..9:9
+        NameRef 9:5..9:6 "y"
+  FnItem! 11:1..14:2
+    Name 11:4..11:18 "in_an_argument"
+    ParamList 11:18..11:26
+      Param 11:19..11:25
+        Name 11:19..11:20 "x"
+        TypeRef 11:22..11:25 "int"
+    TypeRef 11:30..11:33 "int"
+    Block! 11:34..14:2
+      LetStmt 12:5..12:18
+        Name 12:13..12:14 "y"
+        NameRef 12:17..12:18 "x"
+      CallExpr! 13:5..13:22
+        NameRef 13:5..13:14 "next_line"
+        ArgList! 13:14..13:22
+          Arg 13:15..13:16
+            NameRef 13:15..13:16 "y"
+          Error! 13:17..13:19 "+="
+          Arg 13:20..13:21
+            LiteralExpr 13:20..13:21 "1"
+  FnItem! 15:1..20:2
+    Name 15:4..15:11 "doubled"
+    ParamList 15:11..15:19
+      Param 15:12..15:18
+        Name 15:12..15:13 "x"
+        TypeRef 15:15..15:18 "int"
+    TypeRef 15:23..15:26 "int"
+    Block! 15:27..20:2
+      LetStmt 16:5..16:18
+        Name 16:13..16:14 "y"
+        NameRef 16:17..16:18 "x"
+      AssignStmt! 17:5..17:12
+        NameRef 17:5..17:6 "y"
+        Error! 17:9..17:10 "="
+        LiteralExpr 17:11..17:12 "5"
+      AssignStmt! 18:5..18:12
+        NameRef 18:5..18:6 "y"
+        Error! 18:9..18:10 "="
+        LiteralExpr 18:11..18:12 "5"
+      NameRef 19:5..19:6 "y"
+
+== evidence ==
+ExpectedStatement at 4:5
+ExpectedExpression at 10:1
+Expected(Comma) at 13:17
+ExpectedExpression at 13:17
+ExpectedExpression at 17:9
+ExpectedExpression at 18:9
+
+== diagnostics ==
+error[syntax/expected-statement] 4:5..4:6 "+": expected a statement
+  at 4:5..4:9 "+= 1": skipped while recovering
+error[syntax/expected-expression] 10:1: expected an expression
+error[syntax/expected-token] 13:17: expected `,`
+error[syntax/expected-expression] 13:17..13:18 "+": expected an expression
+  at 13:17..13:19 "+=": skipped while recovering
+error[syntax/expected-expression] 17:9..17:10 "=": expected an expression
+error[syntax/expected-expression] 18:9..18:10 "=": expected an expression

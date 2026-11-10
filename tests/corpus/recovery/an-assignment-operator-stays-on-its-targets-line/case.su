@@ -1,0 +1,20 @@
+fn next_line(x: int) -> int {
+    let mut y = x
+    y
+    += 1
+    y
+}
+fn missing_value() -> int {
+    let mut y = 1
+    y *=
+}
+fn in_an_argument(x: int) -> int {
+    let mut y = x
+    next_line(y += 1)
+}
+fn doubled(x: int) -> int {
+    let mut y = x
+    y +== 5
+    y -== 5
+    y
+}
