@@ -37,7 +37,7 @@ impl Parsed {
         assert!(items.next().is_none(), "exactly one item");
         match item {
             sumi_syntax::ast::Item::FnItem(item) => item,
-            sumi_syntax::ast::Item::TypeItem(_) => panic!("a function item"),
+            other => panic!("a function item, not {other:?}"),
         }
     }
 }
@@ -123,6 +123,9 @@ fn views_walk_a_function_from_signature_to_leaves() {
         .expect("a parameter list")
         .params(tree)
         .map(|param| {
+            let sumi_syntax::ast::AnyParam::Param(param) = param else {
+                panic!("a named parameter")
+            };
             (
                 parsed.text(param.name(tree).expect("a name")),
                 parsed.text(param.type_ref(tree).expect("a type")),

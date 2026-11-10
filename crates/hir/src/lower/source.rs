@@ -14,6 +14,7 @@ use sumi_syntax::{
 };
 use sumi_text::{TextRange, TextSize};
 
+use super::declare::SELF;
 use super::join;
 use crate::codes;
 use crate::{Occurrence, Symbol};
@@ -651,7 +652,8 @@ impl<'s> Source<'s> {
                 );
                 return None;
             }
-            if let Some(decl) = param.and_then(Ty::as_decl) {
+            // `Self` is no occurrence of its type's name.
+            if let Some(decl) = param.and_then(Ty::as_decl).filter(|_| name != SELF) {
                 self.refer(at, Symbol::Type(decl));
             }
             return Some(ty);

@@ -438,7 +438,7 @@ macro_rules! grammar {
 grammar! {
     struct SourceFile { items: [Item] }
 
-    enum Item as CleanItem { FnItem, TypeItem }
+    enum Item as CleanItem { FnItem, TypeItem, ImplItem }
 
     /// `'fn' Name TypeParamList? ParamList ('->' ret:Type)? '='? body:Expr`.
     struct FnItem {
@@ -454,9 +454,15 @@ grammar! {
     struct TypeParamList { params: [Name] }
     tokens { Lt, Comma?, Gt }
 
-    /// `'(' (Param (',' Param)* ','?)? ')'`.
-    struct ParamList { params: [Param] }
+    /// `'(' (AnyParam (',' AnyParam)* ','?)? ')'`.
+    struct ParamList { params: [AnyParam] }
     tokens { LParen, Comma?, RParen }
+
+    enum AnyParam as CleanAnyParam { Param, SelfParam }
+
+    /// `'mut'? 'self'`: a method's receiver, of its `impl`'s type.
+    struct SelfParam {}
+    tokens { mutable: MutKw?, SelfKw }
 
     /// `'mut'? Name ':' Type`.
     struct Param { name: Name, type_ref: Type }
@@ -465,6 +471,15 @@ grammar! {
     /// `'type' Name TypeParamList? FieldList`.
     struct TypeItem { name: Name, type_params: Option<TypeParamList>, field_list: FieldList }
     tokens { TypeKw }
+
+    /// `'impl' target:NameRef TypeParamList? MethodList`: methods of the type `target` names, at
+    /// type parameters named afresh.
+    struct ImplItem { target: NameRef, type_params: Option<TypeParamList>, method_list: MethodList }
+    tokens { ImplKw }
+
+    /// `'{' FnItem* '}'`.
+    struct MethodList { methods: [FnItem] }
+    tokens { LBrace, RBrace }
 
     /// `'{' (Field (',' Field)* ','?)? '}'`.
     struct FieldList { fields: [Field] }
@@ -513,11 +528,13 @@ grammar! {
 
     enum Expr as CleanExpr {
         NameRef,
+        SelfExpr,
         LiteralExpr,
         PrefixExpr,
         BinaryExpr,
         ParenExpr,
         CallExpr,
+        MethodCallExpr,
         FieldExpr,
         IfExpr,
         MatchExpr,
@@ -528,6 +545,10 @@ grammar! {
     /// A use of a name, `Ident`.
     struct NameRef {}
     tokens { Ident }
+
+    /// `'self'`: a method's receiver, in its body.
+    struct SelfExpr {}
+    tokens { SelfKw }
 
     /// `IntLiteral | 'true' | 'false'`.
     struct LiteralExpr {}
@@ -544,6 +565,10 @@ grammar! {
 
     /// `callee:NameRef TypeArgList? ArgList`.
     struct CallExpr { callee: NameRef, type_args: Option<TypeArgList>, arg_list: ArgList }
+
+    /// `callee:FieldExpr TypeArgList? ArgList`: the receiver and the method's name, then the rest
+    /// of its arguments.
+    struct MethodCallExpr { callee: FieldExpr, type_args: Option<TypeArgList>, arg_list: ArgList }
 
     /// `'(' (Arg (',' Arg)* ','?)? ')'`.
     struct ArgList { args: [Arg] }

@@ -7,6 +7,8 @@
   default; without the server or with it disabled, only comments remain highlighted.
 - Highlight every occurrence of the name under the cursor, its declaration and assignments as
   writes and its reads as reads.
+- Mark a name where it is written, by an assignment or by a method that changes its receiver, with
+  the `modification` modifier, which a theme can style.
 - Continue a comment line on Enter with `//`, unless the comment is empty or follows code.
 - Add **Sumi: Restart Language Server**, and restart the server when `sumi.server.path` changes
   instead of asking for a window reload.

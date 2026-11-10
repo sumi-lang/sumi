@@ -1,0 +1,12 @@
+tree: omitted
+
+== formatted ==
+type B<T> {
+    v: T,
+}
+
+impl B<T> {
+    fn make(self) -> Self = Self(v: self.v)
+}
+
+fn main() -> int = B(v: 3).make().v

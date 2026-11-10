@@ -323,7 +323,7 @@ impl Planner<'_> {
             NodeKind::TypeParamList | NodeKind::TypeArgList => {
                 self.list(node, &els, level, SyntaxKind::Lt, SyntaxKind::Gt);
             }
-            NodeKind::Block => self.block(&els, level),
+            NodeKind::Block | NodeKind::MethodList => self.block(&els, level),
             NodeKind::FieldList | NodeKind::ArmList => {
                 self.pairs(&els, |a, b| match (a, b) {
                     (El::Tok(_, SyntaxKind::LBrace), El::Tok(_, SyntaxKind::RBrace)) => {
@@ -341,6 +341,7 @@ impl Planner<'_> {
                 self.binding(node, &els, level);
             }
             NodeKind::BinaryExpr => self.binary(node, &els, level),
+            NodeKind::MethodCallExpr | NodeKind::FieldExpr => self.members(node, level),
             NodeKind::ParenExpr => {
                 self.pairs(&els, |a, b| match (a, b) {
                     (El::Tok(_, SyntaxKind::LParen), El::Tok(_, SyntaxKind::RParen)) => {
@@ -365,18 +366,18 @@ impl Planner<'_> {
                 self.pairs(&els, |_, _| Gap::glue(level));
                 self.children(&els, level);
             }
-            NodeKind::Param | NodeKind::Field | NodeKind::Arg => {
+            NodeKind::Param | NodeKind::SelfParam | NodeKind::Field | NodeKind::Arg => {
                 self.pairs(&els, |_, b| match b {
                     El::Tok(_, SyntaxKind::Colon) => Gap::glue(level),
                     _ => Gap::space(level),
                 });
                 self.children(&els, level);
             }
-            NodeKind::PrefixExpr | NodeKind::CallExpr | NodeKind::FieldExpr | NodeKind::TypeRef => {
+            NodeKind::PrefixExpr | NodeKind::CallExpr | NodeKind::TypeRef => {
                 self.pairs(&els, |_, _| Gap::glue(level));
                 self.children(&els, level);
             }
-            NodeKind::TypeItem => {
+            NodeKind::TypeItem | NodeKind::ImplItem => {
                 self.pairs(&els, |_, b| match b {
                     El::Node(_, NodeKind::TypeParamList) => Gap::glue(level),
                     _ => Gap::space(level),
@@ -398,6 +399,7 @@ impl Planner<'_> {
             }
             NodeKind::Name
             | NodeKind::NameRef
+            | NodeKind::SelfExpr
             | NodeKind::LiteralExpr
             | NodeKind::RestPattern
             | NodeKind::Error => {
@@ -546,6 +548,57 @@ impl Planner<'_> {
             let els = self.elements(link);
             chained = self.operator(&els, level, cont, None);
             self.release(els);
+        }
+    }
+
+    /// A chain of members under one value, glued. One with two calls breaks before each `.` from
+    /// its first call's on when it does not fit: the fields read before that stay with the value.
+    fn members(&mut self, node: NodeIdx, level: u32) {
+        let mut links = Vec::new();
+        let mut next = Some(node);
+        while let Some(link) = next.filter(|&link| {
+            matches!(
+                self.tree.kind(link),
+                NodeKind::MethodCallExpr | NodeKind::FieldExpr
+            )
+        }) {
+            links.push(link);
+            next = self.tree.child_in_field(link, 0);
+        }
+        let is_call = |planner: &Self, link| planner.tree.kind(link) == NodeKind::MethodCallExpr;
+        let calls = links.iter().filter(|&&link| is_call(self, link)).count();
+        let cont = if calls >= 2 { level + 1 } else { level };
+        // From the value up, so a link knows whether a call came before it.
+        let mut first_break = None;
+        for at in (0..links.len()).rev() {
+            let link = links[at];
+            let is_callee = at > 0 && is_call(self, links[at - 1]);
+            let breaks = calls >= 2 && (first_break.is_some() || is_callee);
+            let els = self.elements(link);
+            self.pairs(&els, |_, b| match b {
+                El::Tok(_, SyntaxKind::Dot) if breaks => Gap::soft_glue(cont),
+                _ => Gap::glue(cont),
+            });
+            if breaks && first_break.is_none() {
+                first_break = els.iter().find_map(|el| match *el {
+                    El::Tok(sig, SyntaxKind::Dot) => Some(sig),
+                    _ => None,
+                });
+            }
+            for (index, &el) in els.iter().enumerate() {
+                if let El::Node(child, _) = el {
+                    // The first child is the link below, or the value under the last one.
+                    if index > 0 {
+                        self.visit(child, cont);
+                    } else if at + 1 == links.len() {
+                        self.visit(child, level);
+                    }
+                }
+            }
+            self.release(els);
+        }
+        if let Some(first) = first_break {
+            self.group(first, self.end_sig(node), None, false);
         }
     }
 

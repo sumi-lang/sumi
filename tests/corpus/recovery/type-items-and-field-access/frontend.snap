@@ -52,12 +52,13 @@ SourceFile! 1:1..14:1
         ArgList! 10:11..10:15
           Arg! 10:12..10:14
             NameRef 10:12..10:13 "x"
-  FnItem! 11:1..12:5
+  FnItem 11:1..12:5
     Name 11:4..11:5 "j"
     ParamList 11:5..11:7 "()"
-    Block! 11:8..12:5
-      NameRef 11:10..11:11 "p"
-      Error! 12:1..12:3 ".x"
+    Block 11:8..12:5
+      FieldExpr 11:10..12:3
+        NameRef 11:10..11:11 "p"
+        NameRef 12:2..12:3 "x"
   FnItem 13:1..13:17
     Name 13:4..13:5 "k"
     ParamList 13:5..13:7 "()"
@@ -79,7 +80,6 @@ ExpectedStatement at 7:10
 Unexpected at 8:11
 ExpectedStatement at 9:11
 ExpectedExpression at 10:14
-ExpectedStatement at 12:1
 
 == diagnostics ==
 error[syntax/expected-name] 2:1: expected a name
@@ -100,8 +100,6 @@ error[syntax/unexpected-syntax] 8:11..8:12 ".": unexpected syntax in expression
 error[syntax/expected-statement] 9:11..9:12 ".": expected a statement
   at 9:11..9:13 ".1": skipped while recovering
 error[syntax/expected-expression] 10:14: expected an expression
-error[syntax/expected-statement] 12:1..12:2 ".": expected a statement
-  at 12:1..12:3 ".x": skipped while recovering
 
 == fixed ==
 remaining: syntax/expected-expression, syntax/expected-name, syntax/expected-statement, syntax/expected-token, syntax/expected-type, syntax/unexpected-syntax
@@ -141,8 +139,8 @@ fn i() {
     g(x:)
 }
 fn j() {
-    p
-    .x }
+    p.x
+}
 fn k() {
     p.x
 }

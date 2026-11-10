@@ -1,0 +1,283 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 35
+
+== graph ==
+fn sum@10:5..10:35 (Point ∈ ∅) -> int ∈ ∅
+  param self@10:12..10:16: Point
+  body: eager + : int @10:20..10:35
+    lhs: field x : int @10:20..10:26
+      base: read self@10:12..10:16 : Point
+    rhs: field y : int @10:29..10:35
+      base: read self@10:12..10:16 : Point
+
+fn sum@11:5..11:21 (Point ∈ ∅) -> int ∈ ∅
+  param self@11:12..11:16: Point
+  body: int 0 : int @11:20..11:21
+
+fn x@12:5..12:19 (Point ∈ ∅) -> int ∈ ∅
+  param self@12:10..12:14: Point
+  body: int 1 : int @12:18..12:19
+
+fn shift@13:5..15:6 (Point ∈ ∅, int ∈ ∅) -> unit ∈ ∅
+  param self@13:18..13:22: Point
+  param dx@13:24..13:26: int
+  body:
+    assignment: assign self@13:18..13:22 : Point @14:9..14:21
+      value: make Point : Point @14:9..14:21
+        x: eager + : int @14:9..14:21
+          lhs: field x : int @14:9..14:15
+            base: read self@13:18..13:22 : Point
+          rhs: read dx@13:24..13:26 : int
+        y: field y : int @14:9..14:13
+          base: read self@13:18..13:22 : Point
+    tail: make <missing> : <missing> @13:33..15:6
+
+fn origin@16:5..16:45 () -> Point ∈ Point([0, 0], [0, 0])
+  result: copy : Point @16:20..16:25
+    value: make Point : Point @16:28..16:45
+      x: int 0 : int @16:37..16:38
+      y: int 0 : int @16:43..16:44
+
+fn late@17:5..17:32 signature: unavailable
+  param dx@17:13..17:15: int
+  param self@17:22..17:26: ?
+  body: read dx@17:13..17:15 : int
+
+fn stay@18:5..20:6 (Point ∈ ∅) -> unit ∈ ∅
+  param self@18:13..18:17: Point
+  result: copy : unit @18:12..18:18
+    value:
+      discard: hole : ? @19:9..19:19
+        part[0]: int 1 : int @19:18..19:19
+      tail: unit : unit @18:19..20:6
+
+fn swap@21:5..25:6 (Point ∈ ∅, Point ∈ ∅) -> unit ∈ ∅
+  param self@21:17..21:21: Point
+  param other@21:27..21:32: Point
+  body:
+    let old@22:13..22:16: Point @22:9..22:23
+      initializer: read self@21:17..21:21 : Point
+    assignment: assign self@21:17..21:21 : Point @23:9..23:21
+      value: read other@21:27..21:32 : Point
+    assignment: assign other@21:27..21:32 : Point @24:9..24:20
+      value: read old@22:13..22:16 : Point
+    tail: make <missing> : <missing> @21:41..25:6
+
+fn pick<T>@26:5..30:6 (Point ∈ ∅, T ∈ ∅, T ∈ ∅) -> T ∈ ∅
+  param self@26:16..26:20: Point
+  param a@26:22..26:23: T
+  param b@26:28..26:29: T
+  result: copy : T @26:37..26:38
+    value: if : T @26:41..30:6
+      scrutinee: eager > : bool @26:44..26:54
+        lhs: field x : int @26:44..26:50
+          base: read self@26:16..26:20 : Point
+        rhs: int 0 : int @26:53..26:54
+      then: read a@26:22..26:23 : T
+      else: read b@26:28..26:29 : T
+
+fn lost@33:5..33:22 signature: unavailable
+  param self@33:13..33:17: ?
+  body: int 1 : int @33:21..33:22
+
+fn double@36:5..36:27 signature: unavailable
+  param self@36:15..36:19: ?
+  body: read self@36:15..36:19 : ?
+
+fn bare@39:5..39:22 signature: unavailable
+  param self@39:13..39:17: ?
+  body: int 1 : int @39:21..39:22
+
+fn wide<T, U>@42:5..42:22 signature: unavailable
+  param self@42:13..42:17: ?
+  body: int 1 : int @42:21..42:22
+
+fn again<T>@45:5..45:40 (Box<T> ∈ ∅, T ∈ ∅) -> T ∈ ∅
+  param self@45:17..45:21: Box<T>
+  param other@45:23..45:28: T
+  body: read other@45:23..45:28 : T
+
+fn free@47:1..47:21 signature: unavailable
+  param self@47:9..47:13: ?
+  body: read self@47:9..47:13 : ?
+
+fn other@48:1..48:18 signature: unavailable
+  body: hole : ? @48:14..48:18
+
+fn calls@49:1..72:2 (int ∈ ∅) -> unit ∈ ∅
+  param n@49:10..49:11: int
+  result: copy : unit @49:9..49:17
+    value:
+      let p@50:9..50:10: Point @50:5..50:30
+        initializer: make Point : Point @50:13..50:30
+          x: int 1 : int @50:22..50:23
+          y: int 2 : int @50:28..50:29
+      let q@51:13..51:14: Point @51:5..51:34
+        initializer: make Point : Point @51:17..51:34
+          x: int 3 : int @51:26..51:27
+          y: int 4 : int @51:32..51:33
+      discard: field return : unit @52:5..52:15
+        base: call shift@13:5..15:6 : <missing> @52:5..52:15
+          arg[0]: read p@50:9..50:10 : Point
+          arg[1]: int 3 : int @52:13..52:14
+      discard: field return : unit @53:5..53:31
+        base: call shift@13:5..15:6 : <missing> @53:5..53:31
+          arg[0]: make Point : Point @53:5..53:22
+            x: int 1 : int @53:14..53:15
+            y: int 2 : int @53:20..53:21
+          arg[1]: int 1 : int @53:29..53:30
+      discard: hole : ? @54:5..54:17
+        part[0]: field x : int @54:5..54:8
+          base: read q@51:13..51:14 : Point
+        part[1]: int 1 : int @54:15..54:16
+      discard: hole : ? @55:5..55:13
+        part[0]: read q@51:13..51:14 : Point
+      discard: hole : ? @56:5..56:10
+        part[0]: read q@51:13..51:14 : Point
+      discard: hole : ? @57:5..57:15
+        part[0]: read q@51:13..51:14 : Point
+      discard: field shift : ? @58:5..58:12
+        base: read q@51:13..51:14 : Point
+      discard: hole : ? @59:5..59:15
+        part[0]: read n@49:10..49:11 : int
+      discard: field return : unit @60:5..60:14
+        base: call shift@13:5..15:6 : <missing> @60:5..60:14
+          arg[0]: read q@51:13..51:14 : Point
+      discard: field return : unit @61:5..61:18
+        base: call shift@13:5..15:6 : <missing> @61:5..61:18
+          arg[0]: read q@51:13..51:14 : Point
+          arg[1]: int 1 : int @61:13..61:14
+          arg[2]: int 2 : int @61:16..61:17
+      assignment: assign q@51:13..51:14 : Point @62:5..62:6
+        value: field self : Point @62:5..62:6
+          base: call shift@13:5..15:6 : <missing> @62:5..62:18
+            arg[0]: read q@51:13..51:14 : Point
+            arg[1]: bool true : bool @62:13..62:17
+      discard: field return : unit @62:5..62:18
+        base: call shift@13:5..15:6 : <missing> @62:5..62:18
+          arg[0]: read q@51:13..51:14 : Point
+          arg[1]: bool true : bool @62:13..62:17
+      discard: field return : unit @63:5..63:19
+        base: call shift@13:5..15:6 : <missing> @63:5..63:19
+          arg[0]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+          arg[1]: int 1 : int @63:17..63:18
+      discard: hole : ? @64:5..64:20
+        part[0]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+        part[1]: int 1 : int @64:18..64:19
+      discard: field return : unit @65:5..65:19
+        base: call shift@13:5..15:6 : <missing> @65:5..65:19
+          arg[0]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+          arg[1]: hole : ? @65:17..65:18
+      discard: field return : unit @66:5..66:14
+        base: call swap@21:5..25:6 : <missing> @66:5..66:14
+          arg[0]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+          arg[1]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+      discard: field return : unit @67:5..67:18
+        base: call swap@21:5..25:6 : <missing> @67:5..67:18
+          arg[0]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+          arg[1]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+      discard: call pick@26:5..30:6 : int @68:5..68:20
+        arg[0]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+        arg[1]: int 1 : int @68:12..68:13
+        arg[2]: bool true : bool @68:15..68:19
+      discard: hole : ? @69:5..69:28
+        part[0]: read q@51:13..51:14 (assigned @62:5..62:6) : Point
+        part[1]: int 1 : int @69:23..69:24
+        part[2]: int 2 : int @69:26..69:27
+      discard: hole : ? @70:5..70:21
+        part[0]: hole : ? @70:5..70:12
+        part[1]: int 1 : int @70:19..70:20
+      tail: hole : ? @71:5..71:23
+        part[0]: hole : ? @71:5..71:14
+        part[1]: int 1 : int @71:21..71:22
+
+fn again@74:5..74:53 signature: unavailable
+  param self@74:14..74:18: Point
+  body: hole : ? @74:22..74:53
+    part[0]: field x : int @74:35..74:41
+      base: read self@74:14..74:18 : Point
+    part[1]: field y : int @74:46..74:52
+      base: read self@74:14..74:18 : Point
+
+fn copy@75:5..75:47 (Point ∈ ∅) -> Point ∈ ∅
+  param self@75:13..75:17: Point
+  body: make Point : Point @75:21..75:47
+    x: field x : int @75:29..75:35
+      base: read self@75:13..75:17 : Point
+    y: field y : int @75:40..75:46
+      base: read self@75:13..75:17 : Point
+
+fn pick<int>@26:5..30:6 (Point ∈ ∅, int ∈ ∅, int ∈ ∅) -> int ∈ ∅
+  param self@26:16..26:20: Point
+  param a@26:22..26:23: int
+  param b@26:28..26:29: int
+  result: copy : int @26:37..26:38
+    value: if : int @26:41..30:6
+      scrutinee: eager > : bool @26:44..26:54
+        lhs: field x : int @26:44..26:50
+          base: read self@26:16..26:20 : Point
+        rhs: int 0 : int @26:53..26:54
+      then: read a@26:22..26:23 : int
+      else: read b@26:28..26:29 : int
+
+== semantic diagnostics ==
+error[semantic/duplicate-name] 8:6..8:10 "Self": `Self` is the type an `impl` is of
+error[semantic/duplicate-name] 11:8..11:11 "sum": `sum` is already a method of `Point`
+  at 10:8..10:11 "sum": declared here
+error[semantic/duplicate-name] 12:8..12:9 "x": `x` is already a field of `Point`
+  at 2:5..2:6 "x": declared here
+error[semantic/invalid-self] 17:22..17:26 "self": `self` is a method's first parameter
+error[semantic/immutable-assignment] 19:9..19:13 "self": cannot assign to immutable local `self`
+  at 18:13..18:17 "self": declared here
+error[semantic/unknown-type] 32:6..32:13 "Missing": unknown type `Missing`
+error[semantic/unknown-type] 35:6..35:9 "int": `int` is a built-in type, and takes no `impl`
+error[semantic/type-arguments] 38:6..38:9 "Box": expected 1 type parameters, found 0
+  at 5:6..5:9 "Box": declared here
+error[semantic/type-arguments] 41:9..41:15 "<T, U>": expected 1 type parameters, found 2
+  at 5:6..5:9 "Box": declared here
+error[semantic/duplicate-name] 45:14..45:15 "T": duplicate type parameter `T`
+  at 44:10..44:11 "T": declared here
+error[semantic/invalid-self] 47:9..47:13 "self": `self` is a method's receiver, and this function is in no `impl`
+error[semantic/invalid-self] 48:14..48:18 "self": `self` is a method's receiver, and this function takes none
+error[semantic/immutable-assignment] 52:5..52:6 "p": `shift` changes its receiver, and `p` is immutable
+  at 50:9..50:10 "p": declared here
+  at 13:14..13:22 "mut self": the receiver is `mut` here
+error[semantic/invalid-assignment-target] 53:5..53:22 "Point(x: 1, y: 2)": `shift` changes its receiver, which is no place: a place is a `mut` name, or a field under one
+  at 13:14..13:22 "mut self": the receiver is `mut` here
+error[semantic/unknown-method] 54:9..54:14 "shift": `int` has no method `shift`
+error[semantic/unknown-method] 55:7..55:11 "nope": `Point` has no method `nope`
+  at 1:6..1:11 "Point": declared here
+error[semantic/not-callable] 56:7..56:8 "y": `y` is a field of `Point`, not a method
+  at 1:6..1:11 "Point": declared here
+error[semantic/unknown-method] 57:7..57:13 "origin": `origin` takes no `self`, so it is called on no value
+  at 16:8..16:14 "origin": declared here
+error[semantic/unknown-field] 58:5..58:12 "q.shift": `shift` is a method of `Point`: a call of it takes `()`
+  at 1:6..1:11 "Point": declared here
+error[semantic/unknown-method] 59:7..59:13 "double": `int` has no method `double`
+error[semantic/arity] 60:5..60:14 "q.shift()": expected 1 arguments, found 0
+  at 13:5..15:6 "fn shift(mut self, dx: int) {\n        self.x += dx\n    }": declared here
+error[semantic/arity] 61:5..61:18 "q.shift(1, 2)": expected 1 arguments, found 2
+  at 13:5..15:6 "fn shift(mut self, dx: int) {\n        self.x += dx\n    }": declared here
+error[semantic/type-mismatch] 62:13..62:17 "true": expected int, found bool
+  at 13:24..13:31 "dx: int": declared here
+error[semantic/labeled-argument] 63:13..63:15 "dx": a function's arguments take no labels
+  at 13:5..15:6 "fn shift(mut self, dx: int) {\n        self.x += dx\n    }": declared here
+error[semantic/type-arguments] 64:12..64:17 "<int>": expected 0 type arguments, found 1
+  at 13:8..13:13 "shift": declared here
+error[semantic/invalid-assignment-target] 65:17..65:18 "1": this is no place: a place is a `mut` name, or a field under one
+error[semantic/mut-argument] 65:17..65:18 "1": parameter `dx` of `shift` is not `mut`
+  at 13:24..13:31 "dx: int": declared here
+error[semantic/mut-argument] 66:12..66:13 "q": parameter `other` of `swap` is `mut`; write `mut` before the place it changes
+  at 21:23..21:39 "mut other: Point": declared here
+error[semantic/overlapping-places] 67:16..67:17 "q": this place overlaps another the call changes
+  at 67:5..67:6 "q": also changed here
+error[semantic/unused-value] 68:5..68:20 "q.pick(1, true)": unused value of type int; use `_ =` to discard it
+error[semantic/type-mismatch] 68:15..68:19 "true": expected int, found bool
+  at 26:28..26:32 "b: T": declared here
+error[semantic/type-arguments] 69:11..69:22 "<int, bool>": expected 1 type arguments, found 2
+  at 26:8..26:12 "pick": declared here
+error[semantic/unknown-name] 70:5..70:12 "missing": unknown name `missing`
+error[semantic/unknown-field] 71:7..71:14 "missing": `Point` has no field `missing`
+  at 1:6..1:11 "Point": declared here
+error[semantic/type-arguments] 74:26..74:31 "<int>": expected 0 type arguments, found 1

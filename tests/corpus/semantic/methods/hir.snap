@@ -1,0 +1,514 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn sum@22:5..22:35 (Point ∈ Point([0, 13], [0, 4])) -> int ∈ [0, 17]
+  param self@22:12..22:16: Point
+  body: eager + : int @22:20..22:35
+    lhs: field x : int @22:20..22:26
+      base: read self@22:12..22:16 : Point
+    rhs: field y : int @22:29..22:35
+      base: read self@22:12..22:16 : Point
+
+fn shifted@23:5..23:74 (Point ∈ Point([1, 4], [2, 4]), int ∈ [1, 10]) -> Point ∈ Point([2, 14], [2, 4])
+  param self@23:16..23:20: Point
+  param dx@23:22..23:24: int
+  result: copy : Point @23:34..23:39
+    value: make Point : Point @23:42..23:74
+      x: eager + : int @23:51..23:62
+        lhs: field x : int @23:51..23:57
+          base: read self@23:16..23:20 : Point
+        rhs: read dx@23:22..23:24 : int
+      y: field y : int @23:67..23:73
+        base: read self@23:16..23:20 : Point
+
+fn shift@24:5..26:6 (Point ∈ Point([0, 3], [0, 4]), int ∈ [1, 10]) -> unit ∈ unit
+  param self@24:18..24:22: Point
+  param dx@24:24..24:26: int
+  body:
+    assignment: assign self@24:18..24:22 : Point @25:9..25:21
+      value: make Point : Point @25:9..25:21
+        x: eager + : int @25:9..25:21
+          lhs: field x : int @25:9..25:15
+            base: read self@24:18..24:22 : Point
+          rhs: read dx@24:24..24:26 : int
+        y: field y : int @25:9..25:13
+          base: read self@24:18..24:22 : Point
+    tail: make <missing> : <missing> @24:33..26:6
+
+fn bump@27:5..30:6 (Point ∈ Point([0, 0], [0, 0])) -> int ∈ [1, 1]
+  param self@27:17..27:21: Point
+  body:
+    assignment: assign self@27:17..27:21 : Point @28:9..28:13
+      value: field self : Point @28:9..28:13
+        base: call shift@24:5..26:6 : <missing> @28:9..28:22
+          arg[0]: read self@27:17..27:21 : Point
+          arg[1]: int 1 : int @28:20..28:21
+    discard: field return : unit @28:9..28:22
+      base: call shift@24:5..26:6 : <missing> @28:9..28:22
+        arg[0]: read self@27:17..27:21 : Point
+        arg[1]: int 1 : int @28:20..28:21
+    tail: make <missing> : <missing> @29:9..29:19
+
+fn reset@31:5..33:6 (Point ∈ Point([4, 4], [9, 9])) -> unit ∈ unit
+  param self@31:18..31:22: Point
+  body:
+    assignment: assign self@31:18..31:22 : Point @32:9..32:33
+      value: make Point : Point @32:16..32:33
+        x: int 0 : int @32:25..32:26
+        y: int 0 : int @32:31..32:32
+    tail: make <missing> : <missing> @31:24..33:6
+
+fn length@36:5..36:54 (Line ∈ Line(Point([1, 1], [0, 0]), Point([13, 13], [4, 4]))) -> int ∈ [16, 16]
+  param self@36:15..36:19: Line
+  body: eager - : int @36:23..36:54
+    lhs: call sum@22:5..22:35 : int @36:23..36:36
+      arg[0]: field to : Point @36:23..36:30
+        base: read self@36:15..36:19 : Line
+    rhs: call sum@22:5..22:35 : int @36:39..36:54
+      arg[0]: field from : Point @36:39..36:48
+        base: read self@36:15..36:19 : Line
+
+fn get<T>@39:5..39:35 (Box<T> ∈ ∅) -> T ∈ ∅
+  param self@39:12..39:16: Box<T>
+  result: copy : T @39:21..39:22
+    value: field value : T @39:25..39:35
+      base: read self@39:12..39:16 : Box<T>
+
+fn same<T>@40:5..40:33 (Box<T> ∈ ∅) -> Box<T> ∈ ∅
+  param self@40:13..40:17: Box<T>
+  result: copy : Box<T> @40:22..40:26
+    value: read self@40:13..40:17 : Box<T>
+
+fn set<T>@41:5..43:6 (Box<T> ∈ ∅, T ∈ ∅) -> unit ∈ ∅
+  param self@41:16..41:20: Box<T>
+  param value@41:22..41:27: T
+  body:
+    assignment: assign self@41:16..41:20 : Box<T> @42:9..42:27
+      value: make Box : Box<T> @42:9..42:27
+        value: read value@41:22..41:27 : T
+    tail: make <missing> : <missing> @41:32..43:6
+
+fn with<T, U>@44:5..44:61 (Box<T> ∈ ∅, U ∈ ∅) -> Box<U> ∈ ∅
+  param self@44:16..44:20: Box<T>
+  param other@44:22..44:27: U
+  result: copy : Box<U> @44:35..44:41
+    value: make Box : Box<U> @44:44..44:61
+      value: read other@44:22..44:27 : U
+
+fn both<T, U>@45:5..45:80 (Box<T> ∈ ∅, U ∈ ∅) -> Box<T> ∈ ∅
+  param self@45:16..45:20: Box<T>
+  param other@45:22..45:27: U
+  body: call with@44:5..44:61 : Box<T> @45:34..45:80
+    arg[0]: make Box : Box<Box<U>> @45:34..45:63
+      value: make Box : Box<U> @45:45..45:62
+        value: read other@45:22..45:27 : U
+    arg[1]: field value : T @45:69..45:79
+      base: read self@45:16..45:20 : Box<T>
+
+fn area@48:5..48:40 (Circle ∈ Circle([2, 2])) -> int ∈ [12, 12]
+  param self@48:13..48:17: Circle
+  body: eager * : int @48:21..48:40
+    lhs: eager * : int @48:21..48:36
+      lhs: field r : int @48:21..48:27
+        base: read self@48:13..48:17 : Circle
+      rhs: field r : int @48:30..48:36
+        base: read self@48:13..48:17 : Circle
+    rhs: int 3 : int @48:39..48:40
+
+fn area@51:5..51:42 (Square ∈ Square([3, 3])) -> int ∈ [9, 9]
+  param self@51:13..51:17: Square
+  body: eager * : int @51:21..51:42
+    lhs: field side : int @51:21..51:30
+      base: read self@51:13..51:17 : Square
+    rhs: field side : int @51:33..51:42
+      base: read self@51:13..51:17 : Square
+
+fn next@54:5..57:6 (Counter ∈ Counter([0, 1])) -> int ∈ [1, 2]
+  param self@54:17..54:21: Counter
+  body:
+    assignment: assign self@54:17..54:21 : Counter @55:9..55:20
+      value: make Counter : Counter @55:9..55:20
+        n: eager + : int @55:9..55:20
+          lhs: field n : int @55:9..55:15
+            base: read self@54:17..54:21 : Counter
+          rhs: int 1 : int @55:19..55:20
+    tail: make <missing> : <missing> @56:9..56:15
+
+fn add@58:5..60:6 (Counter ∈ Counter([2, 2]), int ∈ [3, 3]) -> unit ∈ unit
+  param self@58:16..58:20: Counter
+  param by@58:22..58:24: int
+  body:
+    assignment: assign self@58:16..58:20 : Counter @59:9..59:21
+      value: make Counter : Counter @59:9..59:21
+        n: eager + : int @59:9..59:21
+          lhs: field n : int @59:9..59:15
+            base: read self@58:16..58:20 : Counter
+          rhs: read by@58:22..58:24 : int
+    tail: make <missing> : <missing> @58:31..60:6
+
+fn take@61:5..64:6 (Counter ∈ Counter([5, 5]), Counter ∈ Counter([7, 7])) -> unit ∈ unit
+  param self@61:17..61:21: Counter
+  param other@61:27..61:32: Counter
+  body:
+    assignment: assign self@61:17..61:21 : Counter @62:9..62:26
+      value: make Counter : Counter @62:9..62:26
+        n: eager + : int @62:9..62:26
+          lhs: field n : int @62:9..62:15
+            base: read self@61:17..61:21 : Counter
+          rhs: field n : int @62:19..62:26
+            base: read other@61:27..61:32 : Counter
+    assignment: assign other@61:27..61:32 : Counter @63:9..63:20
+      value: make Counter : Counter @63:9..63:20
+        n: int 0 : int @63:19..63:20
+    tail: make <missing> : <missing> @61:43..64:6
+
+fn down@65:5..69:6 (Counter ∈ Counter([6, 6]), int ∈ [0, 3]) -> int ∈ [6, +∞)
+  param self@65:13..65:17: Counter
+  param n@65:19..65:20: int
+  result: copy : int @65:30..65:33
+    value: if : int @65:36..69:6
+      scrutinee: eager <= : bool @65:39..65:45
+        lhs: read n@65:19..65:20 : int
+        rhs: int 0 : int @65:44..65:45
+      then: field n : int @66:9..66:15
+        base: read self@65:13..65:17 : Counter
+      else: eager + : int @68:9..68:29
+        lhs: call down@65:5..69:6 : int @68:9..68:25
+          arg[0]: read self@65:13..65:17 : Counter
+          arg[1]: eager - : int @68:19..68:24
+            lhs: read n@65:19..65:20 [n <= 0 fails@65:39..65:45] : int
+            rhs: int 1 : int @68:23..68:24
+        rhs: int 1 : int @68:28..68:29
+
+fn even@70:5..74:6 (Counter ∈ Counter([4, 4]), int ∈ [0, 4]) -> bool ∈ {true, false}
+  param self@70:13..70:17: Counter
+  param n@70:19..70:20: int
+  result: copy : bool @70:30..70:34
+    value: if : bool @70:37..74:6
+      scrutinee: eager <= : bool @70:40..70:46
+        lhs: read n@70:19..70:20 : int
+        rhs: int 0 : int @70:45..70:46
+      then: bool true : bool @71:9..71:13
+      else: call odd@75:5..79:6 : bool @73:9..73:24
+        arg[0]: read self@70:13..70:17 : Counter
+        arg[1]: eager - : int @73:18..73:23
+          lhs: read n@70:19..70:20 [n <= 0 fails@70:40..70:46] : int
+          rhs: int 1 : int @73:22..73:23
+
+fn odd@75:5..79:6 (Counter ∈ Counter([4, 4]), int ∈ [0, 3]) -> bool ∈ {true, false}
+  param self@75:12..75:16: Counter
+  param n@75:18..75:19: int
+  body: if : bool @75:28..79:6
+    scrutinee: eager <= : bool @75:31..75:37
+      lhs: read n@75:18..75:19 : int
+      rhs: int 0 : int @75:36..75:37
+    then: bool false : bool @76:9..76:14
+    else: call even@70:5..74:6 : bool @78:9..78:25
+      arg[0]: read self@75:12..75:16 : Counter
+      arg[1]: eager - : int @78:19..78:24
+        lhs: read n@75:18..75:19 [n <= 0 fails@75:31..75:37] : int
+        rhs: int 1 : int @78:23..78:24
+
+fn area@81:1..84:2 (Circle | Square ∈ Circle([2, 2]) ∪ Square([3, 3])) -> int ∈ [9, 12]
+  param shape@81:9..81:14: Circle | Square
+  result: copy : int @81:36..81:39
+    value: match : int @81:42..84:2
+      scrutinee: read shape@81:9..81:14 : Circle | Square
+      Circle:
+        let c@82:12..82:13: narrow to Circle : Circle @82:12..82:13
+          scrutinee: read shape@81:9..81:14 : Circle | Square
+        tail: call area@48:5..48:40 : int @82:18..82:26
+          arg[0]: read c@82:12..82:13 : Circle
+      Square:
+        let s@83:12..83:13: narrow to Square : Square @83:12..83:13
+          scrutinee: read shape@81:9..81:14 : Circle | Square
+        tail: call area@51:5..51:42 : int @83:18..83:26
+          arg[0]: read s@83:12..83:13 : Square
+
+fn values@85:1..88:2 () -> int ∈ [22, 22]
+  result: copy : int @85:16..85:19
+    value:
+      let p@86:9..86:10: Point @86:5..86:30
+        initializer: make Point : Point @86:13..86:30
+          x: int 1 : int @86:22..86:23
+          y: int 2 : int @86:28..86:29
+      tail: eager + : int @87:5..87:72
+        lhs: call sum@22:5..22:35 : int @87:5..87:24
+          arg[0]: call shifted@23:5..23:74 : Point @87:5..87:18
+            arg[0]: read p@86:9..86:10 : Point
+            arg[1]: int 10 : int @87:15..87:17
+        rhs: call sum@22:5..22:35 : int @87:27..87:72
+          arg[0]: call shifted@23:5..23:74 : Point @87:27..87:66
+            arg[0]: call shifted@23:5..23:74 : Point @87:27..87:55
+              arg[0]: make Point : Point @87:27..87:44
+                x: int 3 : int @87:36..87:37
+                y: int 4 : int @87:42..87:43
+              arg[1]: int 1 : int @87:53..87:54
+            arg[1]: int 1 : int @87:64..87:65
+
+fn places@89:1..94:2 () -> int ∈ [1601, 1601]
+  result: copy : int @89:16..89:19
+    value:
+      let l@90:13..90:14: Line @90:5..90:69
+        initializer: make Line : Line @90:17..90:69
+          from: make Point : Point @90:28..90:45
+            x: int 0 : int @90:37..90:38
+            y: int 0 : int @90:43..90:44
+          to: make Point : Point @90:51..90:68
+            x: int 3 : int @90:60..90:61
+            y: int 4 : int @90:66..90:67
+      assignment: assign l@90:13..90:14 : Line @91:5..91:9
+        value: make Line : Line @91:5..91:9
+          from: field from : Point @91:5..91:6
+            base: read l@90:13..90:14 : Line
+          to: field self : Point @91:5..91:9
+            base: call shift@24:5..26:6 : <missing> @91:5..91:19
+              arg[0]: field to : Point @91:5..91:9
+                base: read l@90:13..90:14 : Line
+              arg[1]: int 10 : int @91:16..91:18
+      discard: field return : unit @91:5..91:19
+        base: call shift@24:5..26:6 : <missing> @91:5..91:19
+          arg[0]: field to : Point @91:5..91:9
+            base: read l@90:13..90:14 : Line
+          arg[1]: int 10 : int @91:16..91:18
+      assignment: assign l@90:13..90:14 : Line @92:15..92:21
+        value: make Line : Line @92:15..92:21
+          from: field self : Point @92:15..92:21
+            base: call bump@27:5..30:6 : <missing> @92:15..92:28
+              arg[0]: field from : Point @92:15..92:21
+                base: read l@90:13..90:14 (assigned @91:5..91:9) : Line
+          to: field to : Point @92:15..92:16
+            base: read l@90:13..90:14 (assigned @91:5..91:9) : Line
+      let got@92:9..92:12: int @92:5..92:28
+        initializer: field return : int @92:15..92:28
+          base: call bump@27:5..30:6 : <missing> @92:15..92:28
+            arg[0]: field from : Point @92:15..92:21
+              base: read l@90:13..90:14 (assigned @91:5..91:9) : Line
+      tail: eager + : int @93:5..93:27
+        lhs: eager * : int @93:5..93:21
+          lhs: call length@36:5..36:54 : int @93:5..93:15
+            arg[0]: read l@90:13..90:14 (assigned @92:15..92:21) : Line
+          rhs: int 100 : int @93:18..93:21
+        rhs: read got@92:9..92:12 : int
+
+fn reads_after_its_arguments@95:1..99:2 () -> int ∈ [5, 5]
+  result: copy : int @95:35..95:38
+    value:
+      let c@96:13..96:14: Counter @96:5..96:30
+        initializer: make Counter : Counter @96:17..96:30
+          n: int 0 : int @96:28..96:29
+      assignment: assign c@96:13..96:14 : Counter @97:11..97:12
+        value: field self : Counter @97:11..97:12
+          base: call next@54:5..57:6 : <missing> @97:11..97:19
+            arg[0]: read c@96:13..96:14 : Counter
+      assignment: assign c@96:13..96:14 : Counter @97:22..97:23
+        value: field self : Counter @97:22..97:23
+          base: call next@54:5..57:6 : <missing> @97:22..97:30
+            arg[0]: read c@96:13..96:14 (assigned @97:11..97:12) : Counter
+      assignment: assign c@96:13..96:14 : Counter @97:5..97:6
+        value: field self : Counter @97:5..97:6
+          base: call add@58:5..60:6 : <missing> @97:5..97:31
+            arg[0]: read c@96:13..96:14 (assigned @97:22..97:23) : Counter
+            arg[1]: eager + : int @97:11..97:30
+              lhs: field return : int @97:11..97:19
+                base: call next@54:5..57:6 : <missing> @97:11..97:19
+                  arg[0]: read c@96:13..96:14 : Counter
+              rhs: field return : int @97:22..97:30
+                base: call next@54:5..57:6 : <missing> @97:22..97:30
+                  arg[0]: read c@96:13..96:14 (assigned @97:11..97:12) : Counter
+      discard: field return : unit @97:5..97:31
+        base: call add@58:5..60:6 : <missing> @97:5..97:31
+          arg[0]: read c@96:13..96:14 (assigned @97:22..97:23) : Counter
+          arg[1]: eager + : int @97:11..97:30
+            lhs: field return : int @97:11..97:19
+              base: call next@54:5..57:6 : <missing> @97:11..97:19
+                arg[0]: read c@96:13..96:14 : Counter
+            rhs: field return : int @97:22..97:30
+              base: call next@54:5..57:6 : <missing> @97:22..97:30
+                arg[0]: read c@96:13..96:14 (assigned @97:11..97:12) : Counter
+      tail: field n : int @98:5..98:8
+        base: read c@96:13..96:14 (assigned @97:5..97:6) : Counter
+
+fn takes@100:1..105:2 () -> int ∈ [1200, 1200]
+  result: copy : int @100:15..100:18
+    value:
+      let a@101:13..101:14: Counter @101:5..101:30
+        initializer: make Counter : Counter @101:17..101:30
+          n: int 5 : int @101:28..101:29
+      let b@102:13..102:14: Counter @102:5..102:30
+        initializer: make Counter : Counter @102:17..102:30
+          n: int 7 : int @102:28..102:29
+      assignment: assign a@101:13..101:14 : Counter @103:5..103:6
+        value: field self : Counter @103:5..103:6
+          base: call take@61:5..64:6 : <missing> @103:5..103:18
+            arg[0]: read a@101:13..101:14 : Counter
+            arg[1]: read b@102:13..102:14 : Counter
+      assignment: assign b@102:13..102:14 : Counter @103:16..103:17
+        value: field other : Counter @103:16..103:17
+          base: call take@61:5..64:6 : <missing> @103:5..103:18
+            arg[0]: read a@101:13..101:14 : Counter
+            arg[1]: read b@102:13..102:14 : Counter
+      discard: field return : unit @103:5..103:18
+        base: call take@61:5..64:6 : <missing> @103:5..103:18
+          arg[0]: read a@101:13..101:14 : Counter
+          arg[1]: read b@102:13..102:14 : Counter
+      tail: eager + : int @104:5..104:20
+        lhs: eager * : int @104:5..104:14
+          lhs: field n : int @104:5..104:8
+            base: read a@101:13..101:14 (assigned @103:5..103:6) : Counter
+          rhs: int 100 : int @104:11..104:14
+        rhs: field n : int @104:17..104:20
+          base: read b@102:13..102:14 (assigned @103:16..103:17) : Counter
+
+fn generic@106:1..116:2 () -> int ∈ [7, 7]
+  result: copy : int @106:17..106:20
+    value:
+      let b@107:13..107:14: Box<int> @107:5..107:30
+        initializer: make Box : Box<int> @107:17..107:30
+          value: int 5 : int @107:28..107:29
+      assignment: assign b@107:13..107:14 : Box<int> @108:5..108:6
+        value: field self : Box<int> @108:5..108:6
+          base: call set@41:5..43:6 : <missing> @108:5..108:13
+            arg[0]: read b@107:13..107:14 : Box<int>
+            arg[1]: int 7 : int @108:11..108:12
+      discard: field return : unit @108:5..108:13
+        base: call set@41:5..43:6 : <missing> @108:5..108:13
+          arg[0]: read b@107:13..107:14 : Box<int>
+          arg[1]: int 7 : int @108:11..108:12
+      let c@109:9..109:10: Box<bool> @109:5..109:38
+        initializer: call with@44:5..44:61 : Box<bool> @109:13..109:38
+          arg[0]: call same@40:5..40:33 : Box<int> @109:13..109:21
+            arg[0]: read b@107:13..107:14 (assigned @108:5..108:6) : Box<int>
+          arg[1]: bool true : bool @109:33..109:37
+      let d@110:9..110:10: Box<int> @110:5..110:28
+        initializer: call both@45:5..45:80 : Box<int> @110:13..110:28
+          arg[0]: read b@107:13..107:14 (assigned @108:5..108:6) : Box<int>
+          arg[1]: call get@39:5..39:35 : bool @110:20..110:27
+            arg[0]: read c@109:9..109:10 : Box<bool>
+      tail: if : int @111:5..115:6
+        scrutinee: lazy and : bool @111:8..111:44
+          lhs: eager == : bool @111:8..111:20
+            lhs: call get@39:5..39:35 : int @111:8..111:15
+              arg[0]: read d@110:9..110:10 : Box<int>
+            rhs: int 7 : int @111:19..111:20
+          rhs: eager == : bool @111:24..111:44
+            lhs: call get@39:5..39:35 : int @111:24..111:39
+              arg[0]: call with@44:5..44:61 : Box<int> @111:24..111:33
+                arg[0]: read d@110:9..110:10 : Box<int>
+                arg[1]: int 1 : int @111:31..111:32
+            rhs: int 1 : int @111:43..111:44
+        then: call get@39:5..39:35 : int @112:9..112:16
+          arg[0]: read b@107:13..107:14 (assigned @108:5..108:6) : Box<int>
+        else: int 0 : int @114:9..114:10
+
+fn resets@117:1..121:2 () -> int ∈ [0, 0]
+  result: copy : int @117:16..117:19
+    value:
+      let p@118:13..118:14: Point @118:5..118:34
+        initializer: make Point : Point @118:17..118:34
+          x: int 4 : int @118:26..118:27
+          y: int 9 : int @118:32..118:33
+      assignment: assign p@118:13..118:14 : Point @119:5..119:6
+        value: field self : Point @119:5..119:6
+          base: call reset@31:5..33:6 : <missing> @119:5..119:14
+            arg[0]: read p@118:13..118:14 : Point
+      discard: field return : unit @119:5..119:14
+        base: call reset@31:5..33:6 : <missing> @119:5..119:14
+          arg[0]: read p@118:13..118:14 : Point
+      tail: call sum@22:5..22:35 : int @120:5..120:12
+        arg[0]: read p@118:13..118:14 (assigned @119:5..119:6) : Point
+
+fn recursion@122:1..126:2 () -> int ∈ [6, +∞)
+  result: copy : int @122:19..122:22
+    value: eager + : int @122:25..126:2
+      lhs: call down@65:5..69:6 : int @122:25..122:46
+        arg[0]: make Counter : Counter @122:25..122:38
+          n: int 6 : int @122:36..122:37
+        arg[1]: int 3 : int @122:44..122:45
+      rhs: if : int @122:49..126:2
+        scrutinee: call even@70:5..74:6 : bool @122:52..122:73
+          arg[0]: make Counter : Counter @122:52..122:65
+            n: int 4 : int @122:63..122:64
+          arg[1]: int 4 : int @122:71..122:72
+        then: int 10 : int @123:5..123:7
+        else: int 0 : int @125:5..125:6
+
+fn members@127:1..127:65 () -> int ∈ [18, 24]
+  result: copy : int @127:17..127:20
+    value: eager + : int @127:23..127:65
+      lhs: call area@81:1..84:2 : int @127:23..127:41
+        arg[0]: make Circle : Circle @127:28..127:40
+          r: int 2 : int @127:38..127:39
+      rhs: call area@81:1..84:2 : int @127:44..127:65
+        arg[0]: make Square : Square @127:49..127:64
+          side: int 3 : int @127:62..127:63
+
+fn with<Box<U>, T>@44:5..44:61 (Box<Box<U>> ∈ ∅, T ∈ ∅) -> Box<T> ∈ ∅
+  param self@44:16..44:20: Box<Box<U>>
+  param other@44:22..44:27: T
+  result: copy : Box<T> @44:35..44:41
+    value: make Box : Box<T> @44:44..44:61
+      value: read other@44:22..44:27 : T
+
+fn set<int>@41:5..43:6 (Box<int> ∈ Box<int>([5, 5]), int ∈ [7, 7]) -> unit ∈ unit
+  param self@41:16..41:20: Box<int>
+  param value@41:22..41:27: int
+  body:
+    assignment: assign self@41:16..41:20 : Box<int> @42:9..42:27
+      value: make Box : Box<int> @42:9..42:27
+        value: read value@41:22..41:27 : int
+    tail: make <missing> : <missing> @41:32..43:6
+
+fn same<int>@40:5..40:33 (Box<int> ∈ Box<int>([7, 7])) -> Box<int> ∈ Box<int>([7, 7])
+  param self@40:13..40:17: Box<int>
+  result: copy : Box<int> @40:22..40:26
+    value: read self@40:13..40:17 : Box<int>
+
+fn with<int, bool>@44:5..44:61 (Box<int> ∈ Box<int>([7, 7]), bool ∈ {true}) -> Box<bool> ∈ Box<bool>({true})
+  param self@44:16..44:20: Box<int>
+  param other@44:22..44:27: bool
+  result: copy : Box<bool> @44:35..44:41
+    value: make Box : Box<bool> @44:44..44:61
+      value: read other@44:22..44:27 : bool
+
+fn get<bool>@39:5..39:35 (Box<bool> ∈ Box<bool>({true})) -> bool ∈ {true}
+  param self@39:12..39:16: Box<bool>
+  result: copy : bool @39:21..39:22
+    value: field value : bool @39:25..39:35
+      base: read self@39:12..39:16 : Box<bool>
+
+fn both<int, bool>@45:5..45:80 (Box<int> ∈ Box<int>([7, 7]), bool ∈ {true}) -> Box<int> ∈ Box<int>([7, 7])
+  param self@45:16..45:20: Box<int>
+  param other@45:22..45:27: bool
+  body: call with@44:5..44:61 : Box<int> @45:34..45:80
+    arg[0]: make Box : Box<Box<bool>> @45:34..45:63
+      value: make Box : Box<bool> @45:45..45:62
+        value: read other@45:22..45:27 : bool
+    arg[1]: field value : int @45:69..45:79
+      base: read self@45:16..45:20 : Box<int>
+
+fn get<int>@39:5..39:35 (Box<int> ∈ Box<int>([1, 7])) -> int ∈ [1, 7]
+  param self@39:12..39:16: Box<int>
+  result: copy : int @39:21..39:22
+    value: field value : int @39:25..39:35
+      base: read self@39:12..39:16 : Box<int>
+
+fn with<int, int>@44:5..44:61 (Box<int> ∈ Box<int>([7, 7]), int ∈ [1, 1]) -> Box<int> ∈ Box<int>([1, 1])
+  param self@44:16..44:20: Box<int>
+  param other@44:22..44:27: int
+  result: copy : Box<int> @44:35..44:41
+    value: make Box : Box<int> @44:44..44:61
+      value: read other@44:22..44:27 : int
+
+fn with<Box<bool>, int>@44:5..44:61 (Box<Box<bool>> ∈ Box<Box<bool>>(Box<bool>({true})), int ∈ [7, 7]) -> Box<int> ∈ Box<int>([7, 7])
+  param self@44:16..44:20: Box<Box<bool>>
+  param other@44:22..44:27: int
+  result: copy : Box<int> @44:35..44:41
+    value: make Box : Box<int> @44:44..44:61
+      value: read other@44:22..44:27 : int
+
+== semantic diagnostics ==
+warning[semantic/constant-condition] 111:8..111:44 "d.get() == 7 && d.with(1).get() == 1": condition is always true
+  at 113:12..115:6 "{\n        0\n    }": this branch never runs

@@ -106,7 +106,7 @@ pub fn starts_expression(kind: SyntaxKind) -> bool {
         || is_prefix_operator(kind)
         || matches!(
             kind,
-            T::Ident | T::IfKw | T::ForKw | T::MatchKw | T::LParen | T::LBrace
+            T::Ident | T::SelfKw | T::IfKw | T::ForKw | T::MatchKw | T::LParen | T::LBrace
         )
 }
 
@@ -123,17 +123,19 @@ pub fn can_end_statement(kind: SyntaxKind) -> bool {
     is_literal(kind)
         || matches!(
             kind,
-            T::Ident | T::ReturnKw | T::Underscore | T::RParen | T::RBrace | T::Error
+            T::Ident | T::SelfKw | T::ReturnKw | T::Underscore | T::RParen | T::RBrace | T::Error
         )
 }
 
 pub fn starts_item(kind: SyntaxKind) -> bool {
-    matches!(kind, T::FnKw | T::TypeKw)
+    matches!(kind, T::FnKw | T::TypeKw | T::ImplKw)
 }
 
-/// A glued prefix operator opens an operand, so it continues nothing.
+/// A glued prefix operator opens an operand, so it continues nothing; a `.` glued to a name is a
+/// member of what the line before ends with.
 pub fn continues_statement(kind: SyntaxKind, glued: Option<SyntaxKind>) -> bool {
     kind == T::ElseKw
+        || (kind == T::Dot && glued == Some(T::Ident))
         || match binary_operator(kind, glued) {
             Some((_, 2)) => true,
             Some(_) => glued.is_none() || !is_prefix_operator(kind),
@@ -454,6 +456,9 @@ mod tests {
         assert!(!continues_statement(T::Pipe, None));
         assert!(!continues_statement(T::Eq, None));
         assert!(continues_statement(T::ElseKw, None));
+        assert!(continues_statement(T::Dot, Some(T::Ident)));
+        assert!(!continues_statement(T::Dot, Some(T::Dot)));
+        assert!(!continues_statement(T::Dot, None));
         assert!(!continues_statement(T::Ident, None));
     }
 }

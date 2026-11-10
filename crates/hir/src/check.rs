@@ -39,6 +39,9 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             type_args: type_args.iter().copied().collect(),
             result,
             product: header.product,
+            target: declared.items[header.generic.index()]
+                .method
+                .map(|method| method.target),
             is_complete: false,
             depth: None,
         })

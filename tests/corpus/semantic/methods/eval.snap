@@ -1,0 +1,20 @@
+file: accepted
+optimized: nodes 207 of 386, regions 47 of 50, calls 10 of 38
+
+== functions ==
+fn values = 22
+  steps: 38, optimized steps: 1, depth: 2, bound: 2
+fn places = 1601
+  steps: 65, optimized steps: 1, depth: 3, bound: 3
+fn reads_after_its_arguments = 5
+  steps: 40, optimized steps: 1, depth: 2, bound: 2
+fn takes = 1200
+  steps: 28, optimized steps: 1, depth: 2, bound: 2
+fn generic = 7
+  steps: 50, optimized steps: 1, depth: 3, bound: 3
+fn resets = 0
+  steps: 19, optimized steps: 1, depth: 2, bound: 2
+fn recursion = 19
+  steps: 82, optimized steps: 67, depth: 6, bound: 6
+fn members = 21
+  steps: 24, optimized steps: 11, depth: 3, bound: 3

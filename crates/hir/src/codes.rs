@@ -53,6 +53,12 @@ sumi_frontend::codes! {
     /// A field read or label naming no field of the type it is applied to.
     UNKNOWN_FIELD: Error = "unknown-field";
 
+    /// A method call naming no method of its receiver's type.
+    UNKNOWN_METHOD: Error = "unknown-method";
+
+    /// `self` in a function that is in no `impl`, or anywhere but first among its parameters.
+    INVALID_SELF: Error = "invalid-self";
+
     /// A construction leaving a field of its type without a value.
     MISSING_FIELD: Error = "missing-field";
 

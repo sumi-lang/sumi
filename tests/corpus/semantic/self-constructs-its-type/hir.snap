@@ -1,0 +1,25 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn make<T>@6:5..6:44 (B<T> ∈ ∅) -> B<T> ∈ ∅
+  param self@6:13..6:17: B<T>
+  result: copy : B<T> @6:22..6:26
+    value: make B : B<T> @6:29..6:44
+      v: field v : T @6:37..6:43
+        base: read self@6:13..6:17 : B<T>
+
+fn main@10:1..10:36 () -> int ∈ [3, 3]
+  result: copy : int @10:14..10:17
+    value: field v : int @10:20..10:36
+      base: call make@6:5..6:44 : B<int> @10:20..10:34
+        arg[0]: make B : B<int> @10:20..10:27
+          v: int 3 : int @10:25..10:26
+
+fn make<int>@6:5..6:44 (B<int> ∈ B<int>([3, 3])) -> B<int> ∈ B<int>([3, 3])
+  param self@6:13..6:17: B<int>
+  result: copy : B<int> @6:22..6:26
+    value: make B : B<int> @6:29..6:44
+      v: field v : int @6:37..6:43
+        base: read self@6:13..6:17 : B<int>

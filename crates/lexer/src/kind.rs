@@ -128,11 +128,13 @@ tokens! {
     FnKw: keyword "fn",
     ForKw: keyword "for",
     IfKw: keyword "if",
+    ImplKw: keyword "impl",
     InKw: keyword "in",
     LetKw: keyword "let",
     MatchKw: keyword "match",
     MutKw: keyword "mut",
     ReturnKw: keyword "return",
+    SelfKw: keyword "self",
     TrueKw: keyword "true",
     TypeKw: keyword "type",
 

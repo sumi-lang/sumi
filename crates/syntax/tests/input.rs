@@ -270,12 +270,11 @@ fn leading_operators_continue() {
     assert!(!has_boundary("a\n&& b"));
     assert!(!has_boundary("a\n|| b"));
 
-    // `=`, `&`, `|`, `!`, and `.` are not binary operators.
+    // `=`, `&`, `|`, and `!` are not binary operators.
     assert!(has_boundary("a\n= b"));
     assert!(has_boundary("a\n& b"));
     assert!(has_boundary("a\n| b"));
     assert!(has_boundary("a\n!b"));
-    assert!(has_boundary("a\n.b()"));
 }
 
 #[test]
@@ -291,7 +290,10 @@ fn call_arguments_stay_on_the_callee_line() {
 }
 
 #[test]
-fn leading_dots_do_not_continue_until_member_access_exists() {
+fn a_leading_dot_glued_to_a_name_continues() {
+    assert!(!has_boundary("a\n.b()"));
+    assert!(has_boundary("a\n. b"));
+    assert!(has_boundary("a\n..b"));
     check(
         "let value = base\n    .offset(dx)\n    .scale(2)\nlet other = 1",
         &[
@@ -299,12 +301,12 @@ fn leading_dots_do_not_continue_until_member_access_exists() {
             r#"Ident "value""#,
             r#"Eq "=""#,
             r#"Ident "base""#,
-            r#"Dot "." newline boundary joint"#,
+            r#"Dot "." newline joint"#,
             r#"Ident "offset" joint"#,
             r#"LParen "(" joint partner 8"#,
             r#"Ident "dx" joint"#,
             r#"RParen ")" partner 6"#,
-            r#"Dot "." newline boundary joint"#,
+            r#"Dot "." newline joint"#,
             r#"Ident "scale" joint"#,
             r#"LParen "(" joint partner 13"#,
             r#"IntLiteral "2" joint"#,

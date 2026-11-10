@@ -1,0 +1,18 @@
+impl Point {
+    let stray = 1
+    fn sum(self) = self.x + self.y
+    type Inner {}
+    fn shift(mut self, dx: int) {
+        self.x += dx
+    }
+}
+
+impl {
+    fn orphan(self) = 1
+}
+
+impl Point
+fn after() = 1
+
+impl Point {
+    fn open(self, mut) = self.

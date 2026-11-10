@@ -13,12 +13,13 @@ use sumi_syntax::{
     NodeIdx, NodeKind,
     ast::{self, AstNode, View},
 };
-use sumi_text::TextRange;
+use sumi_text::{TextRange, TextSize};
 
 use super::body::GenericCall;
 use super::source::{NameMap, Params, Source, TypeItem};
 use crate::codes;
 use crate::dependency::{Components, Rows};
+use crate::{Occurrence, Symbol};
 
 /// What an item name denotes.
 #[derive(Clone, Copy)]
@@ -28,6 +29,9 @@ pub(super) enum Named {
     /// Declared more than once, so a use of it is reported nowhere but at the declarations.
     Ambiguous,
 }
+
+/// What a method's body calls the type its `impl` is of.
+pub(crate) const SELF: &str = "Self";
 
 /// The field of a function's product that holds its result, which no parameter can be named.
 pub(crate) const RESULT: &str = "return";
@@ -39,6 +43,8 @@ pub(crate) struct Header {
     /// What a function with `mut` parameters returns: its result, then each one's final value
     /// under its name. A call reads the fields apart.
     pub product: Option<DeclId>,
+    /// What `Self` names in a method: its `impl`'s type at the type parameters in scope.
+    pub receiver: Option<Ty>,
     pub item: NodeIdx,
     /// The item's instance at its own type parameters, which every symbol of the function names;
     /// itself for that instance.
@@ -74,6 +80,8 @@ pub(crate) struct Parameter<'s> {
     pub(super) ty: Option<Ty>,
     pub(super) is_duplicate: bool,
     pub(super) is_mut: bool,
+    /// Where its name is written: for `self`, the keyword.
+    pub(super) at: Option<TextRange>,
 }
 
 impl<'s> Parameter<'s> {
@@ -84,9 +92,27 @@ impl<'s> Parameter<'s> {
     }
 }
 
-pub(super) struct FnItem<'s> {
+pub(crate) struct FnItem<'s> {
     pub item: ast::FnItem,
     pub params: Vec<&'s str>,
+    pub method: Option<Method>,
+}
+
+/// What makes a function item a method: the type item its `impl` is of, and how many of its type
+/// parameters, the first ones, are the `impl`'s.
+#[derive(Clone, Copy)]
+pub(crate) struct Method {
+    pub target: DeclId,
+    pub impl_params: usize,
+}
+
+/// Where a function item stands: on its own, in an `impl` whose type did not resolve, or in one
+/// whose type did.
+#[derive(Clone, Copy)]
+enum Within {
+    File,
+    Unknown,
+    Impl(Method),
 }
 
 pub(crate) struct Declarations<'s> {
@@ -99,13 +125,48 @@ pub(crate) struct Declarations<'s> {
     /// By function, its parameters as declared, whole list or not.
     pub parameters: Vec<Vec<Parameter<'s>>>,
     /// By function item, which its ID as a function indexes.
-    pub(super) items: Vec<FnItem<'s>>,
+    pub(crate) items: Vec<FnItem<'s>>,
+    /// By type item and name, the method first so named, with where: none for a name it shares.
+    pub(crate) methods: HashMap<(DeclId, &'s str), (NodeIdx, Option<FunctionId>), FxBuildHasher>,
+    /// By name, every method so named, of whatever type.
+    pub(super) methods_named: NameMap<'s, Vec<FunctionId>>,
     instances: HashMap<(FunctionId, Rc<[Ty]>), FunctionId, FxBuildHasher>,
     /// The calls no instance's body makes: each would be at a type that grows without end.
     pub(super) unbounded: HashSet<NodeIdx, FxBuildHasher>,
 }
 
 impl<'s> Declarations<'s> {
+    /// Takes a method's name in the namespace of its type, where a field or another method may
+    /// hold it already.
+    fn claim_method(
+        &mut self,
+        source: &mut Source<'s>,
+        target: DeclId,
+        (name, node): (&'s str, NodeIdx),
+        method: FunctionId,
+    ) {
+        let names = &source.decls[target.index()];
+        let field = names.index_of(name).map(|field| names.fields[field].1);
+        let earlier = self.methods.get(&(target, name)).map(|&(first, _)| first);
+        if let Some(first) = field.or(earlier) {
+            let what = if field.is_some() {
+                "a field"
+            } else {
+                "a method"
+            };
+            source.error(
+                node,
+                codes::DUPLICATE_NAME,
+                format!("`{name}` is already {what} of `{}`", names.name),
+                Some((source.range(first), "declared here")),
+            );
+            self.methods.insert((target, name), (first, None));
+            return;
+        }
+        self.methods.insert((target, name), (node, Some(method)));
+        self.methods_named.entry(name).or_default().push(method);
+    }
+
     /// The instance of the generic function `generic` at `args`, declared on first use, so its
     /// body is lowered in its turn; none past the limit on instances.
     pub(super) fn instance(
@@ -130,7 +191,8 @@ impl<'s> Declarations<'s> {
         let scope = item.params.iter().copied().zip(args.iter().copied());
         let scope = std::mem::replace(&mut source.scope, scope.collect());
         let was_muted = std::mem::replace(&mut source.is_muted, true);
-        let (mut header, parameters) = header(source, graph, item.item);
+        let within = item.method.map_or(Within::File, Within::Impl);
+        let (mut header, parameters) = header(source, graph, item.item, within);
         source.scope = scope;
         source.is_muted = was_muted;
         header.generic = generic;
@@ -166,6 +228,18 @@ impl Order {
         if (0..items.len()).any(|item| inferred(FunctionId::new(item))) {
             for (caller, item) in items.iter().enumerate() {
                 for call in under(source, item.item.node()) {
+                    if let Some(call) = ast::MethodCallExpr::cast(tree, call) {
+                        // Which type's method it is waits on the receiver's type.
+                        let name = call.callee(tree).and_then(|callee| callee.field(tree));
+                        let name = name.map(|name| source.text(name.node()));
+                        let named = name.and_then(|name| declarations.methods_named.get(name));
+                        let named = named.into_iter().flatten();
+                        reads.extend(
+                            named
+                                .filter(|&&method| inferred(method))
+                                .map(|method| (caller, method.index() as u32)),
+                        );
+                    }
                     let Some(call) = ast::CallExpr::cast(tree, call) else {
                         continue;
                     };
@@ -255,13 +329,8 @@ fn type_params<'s>(
         let Some((name, node)) = source.name(Some(param)) else {
             continue;
         };
-        if Ty::scalar(name).is_some() {
-            source.error(
-                node,
-                codes::DUPLICATE_NAME,
-                format!("`{name}` is a built-in type"),
-                None,
-            );
+        if let Some(taken) = taken(name) {
+            source.error(node, codes::DUPLICATE_NAME, taken, None);
         } else if let Some(&(_, first)) = params.iter().find(|&&(earlier, _)| earlier == name) {
             source.error(
                 node,
@@ -274,6 +343,15 @@ fn type_params<'s>(
         }
     }
     params
+}
+
+/// Why no type or type parameter takes `name`, for one the language holds.
+fn taken(name: &str) -> Option<String> {
+    if name == SELF {
+        Some(format!("`{SELF}` is the type an `impl` is of"))
+    } else {
+        Ty::scalar(name).map(|_| format!("`{name}` is a built-in type"))
+    }
 }
 
 /// The type items first, so a signature names any of them; the function items in their own order,
@@ -290,16 +368,31 @@ pub(crate) fn declare<'s>(
         .iter()
         .filter_map(|item| match item {
             ast::Item::TypeItem(item) => Some(*item),
-            ast::Item::FnItem(_) => None,
+            ast::Item::FnItem(_) | ast::Item::ImplItem(_) => None,
         })
         .collect();
-    let fn_items: Vec<ast::FnItem> = items
+    let impls: Vec<ast::ImplItem> = items
         .iter()
         .filter_map(|item| match item {
-            ast::Item::FnItem(item) => Some(*item),
-            ast::Item::TypeItem(_) => None,
+            ast::Item::ImplItem(item) => Some(*item),
+            ast::Item::TypeItem(_) | ast::Item::FnItem(_) => None,
         })
         .collect();
+    // In source order, a method where its `impl` stands: each with the `impl` it is in.
+    let mut fn_items: Vec<(ast::FnItem, Option<usize>)> = Vec::new();
+    let mut holder = 0;
+    for item in items {
+        match item {
+            ast::Item::FnItem(item) => fn_items.push((*item, None)),
+            ast::Item::ImplItem(item) => {
+                let methods = item.method_list(tree);
+                let methods = methods.into_iter().flat_map(|list| list.methods(tree));
+                fn_items.extend(methods.map(|method| (method, Some(holder))));
+                holder += 1;
+            }
+            ast::Item::TypeItem(_) => {}
+        }
+    }
     for (index, item) in type_items.iter().enumerate() {
         let name = source.name(item.name(tree));
         let decl = source.declare(
@@ -309,13 +402,8 @@ pub(crate) fn declare<'s>(
         );
         debug_assert_eq!(decl.index(), index, "a type item's ID is its position");
         if let Some((text, node)) = name {
-            if Ty::scalar(text).is_some() {
-                source.error(
-                    node,
-                    codes::DUPLICATE_NAME,
-                    format!("`{text}` is a built-in type"),
-                    None,
-                );
+            if let Some(taken) = taken(text) {
+                source.error(node, codes::DUPLICATE_NAME, taken, None);
             } else {
                 claim_name(
                     source,
@@ -346,6 +434,11 @@ pub(crate) fn declare<'s>(
         .map(|item| declare_params(source, item.type_params(tree)))
         .collect();
     let fn_scopes: Vec<Vec<(&'s str, Ty)>> = fn_items
+        .iter()
+        .map(|(item, _)| declare_params(source, item.type_params(tree)))
+        .collect();
+    // An `impl`'s type parameters are its own names, in scope before each of its methods' own.
+    let impl_scopes: Vec<Vec<(&'s str, Ty)>> = impls
         .iter()
         .map(|item| declare_params(source, item.type_params(tree)))
         .collect();
@@ -406,30 +499,71 @@ pub(crate) fn declare<'s>(
         names,
         parameters: Vec::with_capacity(fn_items.len()),
         items: Vec::with_capacity(fn_items.len()),
+        methods: HashMap::default(),
+        methods_named: NameMap::default(),
         instances: HashMap::default(),
         unbounded: HashSet::default(),
     };
     // Most functions take no type parameter, and share the one list of none.
     let no_args: Rc<[Ty]> = Rc::from([]);
-    for (item, scope) in fn_items.iter().zip(fn_scopes) {
-        let name = source.name(item.name(tree));
+    let targets: Vec<Option<DeclId>> = impls
+        .iter()
+        .zip(&impl_scopes)
+        .map(|(item, scope)| implemented(source, *item, scope.len()))
+        .collect();
+    for (&(item, holder), mut scope) in fn_items.iter().zip(fn_scopes) {
+        let mut within = Within::File;
+        if let Some(holder) = holder {
+            let outer = &impl_scopes[holder];
+            scope.retain(|&(name, ty)| {
+                let Some(&(_, first)) = outer.iter().find(|&&(outer, _)| outer == name) else {
+                    return true;
+                };
+                let node = |ty: Ty| {
+                    let decl = ty.as_decl().expect("a type parameter is a declared type");
+                    source.decls[decl.index()].origin
+                };
+                source.error(
+                    node(ty),
+                    codes::DUPLICATE_NAME,
+                    format!("duplicate type parameter `{name}`"),
+                    Some((source.range(node(first)), "declared here")),
+                );
+                false
+            });
+            scope.splice(0..0, outer.iter().copied());
+            within = targets[holder].map_or(Within::Unknown, |target| {
+                Within::Impl(Method {
+                    target,
+                    impl_params: outer.len(),
+                })
+            });
+        }
         let args: Rc<[Ty]> = if scope.is_empty() {
             no_args.clone()
         } else {
             scope.iter().map(|&(_, ty)| ty).collect()
         };
         source.scope = scope;
-        let (header, parameters) = header(source, graph, *item);
+        let (header, parameters) = header(source, graph, item, within);
         let id = header.generic;
-        if let Some(name) = name {
-            claim_name(
+        let method = match within {
+            Within::Impl(method) => Some(method),
+            Within::File | Within::Unknown => None,
+        };
+        match (source.name(item.name(tree)), within) {
+            (Some(name), Within::File) => claim_name(
                 source,
                 &mut declarations.names,
                 &mut declared_at,
                 name,
                 Named::Function(id),
                 "function",
-            );
+            ),
+            (Some(name), Within::Impl(method)) => {
+                declarations.claim_method(source, method.target, name, id);
+            }
+            _ => {}
         }
         if !args.is_empty() {
             declarations.instances.insert((id, args.clone()), id);
@@ -438,12 +572,52 @@ pub(crate) fn declare<'s>(
         declarations.type_args.push(args);
         declarations.parameters.push(parameters);
         declarations.items.push(FnItem {
-            item: *item,
+            item,
             params: source.scope.iter().map(|&(name, _)| name).collect(),
+            method,
         });
     }
     source.scope.clear();
     declarations
+}
+
+/// The type item an `impl` is of, at as many type parameters as it declares; reported where it
+/// names none, or with another count.
+fn implemented(source: &mut Source<'_>, item: ast::ImplItem, params: usize) -> Option<DeclId> {
+    let tree = source.tree;
+    let target = item.target(tree)?.node();
+    let name = source.text(target);
+    let Some(&named) = source.type_names.get(name) else {
+        let message = if Ty::scalar(name).is_some() {
+            format!("`{name}` is a built-in type, and takes no `impl`")
+        } else {
+            format!("unknown type `{name}`")
+        };
+        source.error(target, codes::UNKNOWN_TYPE, message, None);
+        return None;
+    };
+    let decl = named?;
+    source.references.push(Occurrence {
+        range: source.range(target),
+        symbol: Symbol::Type(decl),
+        is_write: false,
+    });
+    let expected = source.type_items[decl.index()].params.len();
+    let list = item.type_params(tree);
+    let written = list.map_or(0, |list| list.params(tree).count());
+    if written != expected {
+        let at = list.map_or(target, |list| list.node());
+        let declared = source.decls[decl.index()].name_node;
+        source.error(
+            at,
+            codes::TYPE_ARGUMENTS,
+            format!("expected {expected} type parameters, found {written}"),
+            declared.map(|node| (source.range(node), "declared here")),
+        );
+        return None;
+    }
+    // A type parameter refused its name is reported, and leaves the type no instance to be.
+    (params == expected).then_some(decl)
 }
 
 /// The header of the next function, which is `item` at the type parameters in scope: its
@@ -452,14 +626,55 @@ fn header<'s>(
     source: &mut Source<'s>,
     graph: &mut GraphBuilder,
     item: ast::FnItem,
+    within: Within,
 ) -> (Header, Vec<Parameter<'s>>) {
     let tree = source.tree;
     let name = source.name(item.name(tree));
     let list = item.param_list(tree);
     let whole_list = list.filter(|list| !tree.has_error(list.node()));
+    // `Self` is the `impl`'s type at its type parameters, which the scope holds first.
+    let receiver = match within {
+        Within::Impl(method) if method.impl_params == 0 => Some(Ty::decl(method.target)),
+        Within::Impl(method) => {
+            let args = source.scope[..method.impl_params].iter();
+            let args = args.map(|&(_, ty)| ty).collect();
+            let at = source.range(item.node());
+            source.instantiate(method.target, args, at).map(Ty::decl)
+        }
+        Within::File | Within::Unknown => None,
+    };
+    let scoped = source.scope.len();
+    source.scope.extend(receiver.map(|ty| (SELF, ty)));
     let mut params: Vec<Parameter> = Vec::new();
     if let Some(list) = list {
         for param in list.params(tree) {
+            let param = match param {
+                ast::AnyParam::Param(param) => param,
+                ast::AnyParam::SelfParam(param) => {
+                    let node = param.node();
+                    // `self` stands last in the parameter, after its `mut`.
+                    let end = source.range(node).end();
+                    let at = TextRange::new(TextSize::new(end.to_u32() - 4), end);
+                    let is_first = params.is_empty();
+                    if !is_first || matches!(within, Within::File) {
+                        let message = if is_first {
+                            "`self` is a method's receiver, and this function is in no `impl`"
+                        } else {
+                            "`self` is a method's first parameter"
+                        };
+                        source.report(at, codes::INVALID_SELF, message, []);
+                    }
+                    params.push(Parameter {
+                        node,
+                        name: Some(("self", node)),
+                        ty: receiver.filter(|_| is_first),
+                        is_duplicate: false,
+                        is_mut: param.mutable(tree, source.lexed()),
+                        at: Some(at),
+                    });
+                    continue;
+                }
+            };
             // A parameter without a type is a syntax error the parser already reported.
             let ty = param.type_ref(tree).and_then(|ty| source.ty(ty));
             let name = source.name(param.name(tree));
@@ -483,6 +698,7 @@ fn header<'s>(
                 ty,
                 is_duplicate: first.is_some(),
                 is_mut: param.mutable(tree, source.lexed()),
+                at: name.map(|(_, node)| source.range(node)),
             });
         }
     }
@@ -528,11 +744,13 @@ fn header<'s>(
         source.define(decl, names, fields, Vec::new());
         decl
     });
+    source.scope.truncate(scoped);
     let id = graph.function(types);
     let header = Header {
         name: name.map(|(_, node)| source.range(node)),
         result,
         product,
+        receiver,
         item: item.node(),
         generic: id,
     };
@@ -802,7 +1020,7 @@ pub(super) fn unbounded_calls(
                 passed.push(Passed {
                     from: first[call.caller.index()] + param,
                     to: first[call.callee.index()] + position,
-                    grows: (arg != ty).then_some(call.call.node()),
+                    grows: (arg != ty).then_some(call.site.node),
                 });
                 sites.push((call, position));
             }
@@ -810,19 +1028,21 @@ pub(super) fn unbounded_calls(
     }
     for (index, _) in growing(count, &passed) {
         let (call, position) = sites[index];
-        if declarations.unbounded.insert(call.call.node()) {
+        if declarations.unbounded.insert(call.site.node) {
             let message = format!(
                 "type argument `{}` grows with every call around this cycle, so the calls have no \
                  last instance",
                 source.show(call.args[position])
             );
-            // The argument where it is written, else the name whose arguments decide it.
-            let written = call.call.type_args(tree);
-            let written = written.and_then(|list| list.args(tree).nth(position));
-            let at = written.map(|arg| arg.node());
-            let at = at.or(call.call.callee(tree).map(|callee| callee.node()));
+            // The argument where it is written, else the name whose arguments decide it. A
+            // method's list is of its own type parameters, which follow its `impl`'s.
+            let callee = &declarations.items[call.callee.index()];
+            let own = position.checked_sub(callee.method.map_or(0, |method| method.impl_params));
+            let written = call.site.list.zip(own);
+            let written = written.and_then(|(list, own)| list.args(tree).nth(own));
+            let at = written.map(|arg| arg.node()).or(call.site.name);
             source.error(
-                at.unwrap_or(call.call.node()),
+                at.unwrap_or(call.site.node),
                 codes::POLYMORPHIC_RECURSION,
                 message,
                 None,

@@ -1,0 +1,127 @@
+type Point {
+    x: int,
+    y: int,
+}
+type Line {
+    from: Point,
+    to: Point,
+}
+type Box<T> {
+    value: T,
+}
+type Circle {
+    r: int,
+}
+type Square {
+    side: int,
+}
+type Counter {
+    n: int,
+}
+impl Point {
+    fn sum(self) = self.x + self.y
+    fn shifted(self, dx: int) -> Point = Point(x: self.x + dx, y: self.y)
+    fn shift(mut self, dx: int) {
+        self.x += dx
+    }
+    fn bump(mut self) -> int {
+        self.shift(1)
+        self.sum()
+    }
+    fn reset(mut self) {
+        self = Point(x: 0, y: 0)
+    }
+}
+impl Line {
+    fn length(self) = self.to.sum() - self.from.sum()
+}
+impl Box<T> {
+    fn get(self) -> T = self.value
+    fn same(self) -> Self = self
+    fn set(mut self, value: T) {
+        self.value = value
+    }
+    fn with<U>(self, other: U) -> Box<U> = Box(value: other)
+    fn both<U>(self, other: U) = Box(value: Box(value: other)).with(self.value)
+}
+impl Circle {
+    fn area(self) = self.r * self.r * 3
+}
+impl Square {
+    fn area(self) = self.side * self.side
+}
+impl Counter {
+    fn next(mut self) -> int {
+        self.n += 1
+        self.n
+    }
+    fn add(mut self, by: int) {
+        self.n += by
+    }
+    fn take(mut self, mut other: Counter) {
+        self.n += other.n
+        other.n = 0
+    }
+    fn down(self, n: int) -> int = if n <= 0 {
+        self.n
+    } else {
+        self.down(n - 1) + 1
+    }
+    fn even(self, n: int) -> bool = if n <= 0 {
+        true
+    } else {
+        self.odd(n - 1)
+    }
+    fn odd(self, n: int) = if n <= 0 {
+        false
+    } else {
+        self.even(n - 1)
+    }
+}
+fn area(shape: Circle | Square) -> int = match shape {
+    Circle(c) => c.area(),
+    Square(s) => s.area(),
+}
+fn values() -> int {
+    let p = Point(x: 1, y: 2)
+    p.shifted(10).sum() + Point(x: 3, y: 4).shifted(1).shifted(1).sum()
+}
+fn places() -> int {
+    let mut l = Line(from: Point(x: 0, y: 0), to: Point(x: 3, y: 4))
+    l.to.shift(10)
+    let got = l.from.bump()
+    l.length() * 100 + got
+}
+fn reads_after_its_arguments() -> int {
+    let mut c = Counter(n: 0)
+    c.add(c.next() + c.next())
+    c.n
+}
+fn takes() -> int {
+    let mut a = Counter(n: 5)
+    let mut b = Counter(n: 7)
+    a.take(mut b)
+    a.n * 100 + b.n
+}
+fn generic() -> int {
+    let mut b = Box(value: 5)
+    b.set(7)
+    let c = b.same().with<bool>(true)
+    let d = b.both(c.get())
+    if d.get() == 7 && d.with(1).get() == 1 {
+        b.get()
+    } else {
+        0
+    }
+}
+fn resets() -> int {
+    let mut p = Point(x: 4, y: 9)
+    p.reset()
+    p.sum()
+}
+fn recursion() -> int = Counter(n: 6).down(3) + if Counter(n: 4).even(4) {
+    10
+} else {
+    0
+}
+fn members() -> int = area(Circle(r: 2)) + area(Square(side: 3))

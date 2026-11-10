@@ -121,7 +121,7 @@ suite("Sumi extension", () => {
       "function", "parameter", "variable", "keyword", "type", "number", "comment",
       "operator", "boolean", "punctuation", "invalid", "property", "typeParameter",
     ]);
-    assert.deepEqual(legend.tokenModifiers, ["declaration", "readonly"]);
+    assert.deepEqual(legend.tokenModifiers, ["declaration", "readonly", "modification"]);
     const tokens = await vscode.commands.executeCommand<vscode.SemanticTokens>(
       "vscode.provideDocumentSemanticTokens", document.uri,
     );

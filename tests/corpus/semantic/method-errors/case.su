@@ -1,0 +1,76 @@
+type Point {
+    x: int,
+    y: int,
+}
+type Box<T> {
+    value: T,
+}
+type Self {}
+impl Point {
+    fn sum(self) = self.x + self.y
+    fn sum(self) = 0
+    fn x(self) = 1
+    fn shift(mut self, dx: int) {
+        self.x += dx
+    }
+    fn origin() -> Point = Point(x: 0, y: 0)
+    fn late(dx: int, self) = dx
+    fn stay(self) {
+        self.x = 1
+    }
+    fn swap(mut self, mut other: Point) {
+        let old = self
+        self = other
+        other = old
+    }
+    fn pick<T>(self, a: T, b: T) -> T = if self.x > 0 {
+        a
+    } else {
+        b
+    }
+}
+impl Missing {
+    fn lost(self) = 1
+}
+impl int {
+    fn double(self) = self
+}
+impl Box {
+    fn bare(self) = 1
+}
+impl Box<T, U> {
+    fn wide(self) = 1
+}
+impl Box<T> {
+    fn again<T>(self, other: T) = other
+}
+fn free(self) = self
+fn other() = self
+fn calls(n: int) {
+    let p = Point(x: 1, y: 2)
+    let mut q = Point(x: 3, y: 4)
+    p.shift(3)
+    Point(x: 1, y: 2).shift(1)
+    q.x.shift(1)
+    q.nope()
+    q.y()
+    q.origin()
+    q.shift
+    n.double()
+    q.shift()
+    q.shift(1, 2)
+    q.shift(true)
+    q.shift(dx: 1)
+    q.shift<int>(1)
+    q.shift(mut 1)
+    q.swap(q)
+    q.swap(mut q)
+    q.pick(1, true)
+    q.pick<int, bool>(1, 2)
+    missing.shift(1)
+    q.missing.shift(1)
+}
+impl Point {
+    fn again(self) = Self<int>(x: self.x, y: self.y)
+    fn copy(self) = Self(x: self.x, y: self.y)
+}
