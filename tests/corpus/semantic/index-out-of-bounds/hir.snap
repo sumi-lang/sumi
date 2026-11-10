@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 11
+semantic errors: 10
 
 == graph ==
 fn first@1:1..1:35 ([int] ∈ [∅; [0, 0]]) -> int ∈ ∅
@@ -216,26 +216,30 @@ fn main@38:1..42:2 () -> int ∈ ∅
           arg[0]: bool false : bool @41:116..41:121
 
 == semantic diagnostics ==
-error[semantic/index-out-of-bounds] 1:30..1:35 "xs[0]": index is outside the sequence: it is [0, 0], and the length is [0, 0]
-  at 1:33..1:34 "0": is [0, 0]
-error[semantic/index-out-of-bounds] 2:37..2:42 "xs[i]": index is outside the sequence: it is [7, 7], and the length is [3, 3]
-  at 41:33..41:34 "7": argument is [7, 7]
 error[semantic/index-out-of-bounds] 5:27..5:35 "ys.pop()": the sequence is empty, and has no last element
 error[semantic/index-out-of-bounds] 9:5..9:10 "xs[3]": index is outside the sequence: it is [3, 3], and the length is [3, 3]
   at 9:8..9:9 "3": is [3, 3]
 error[semantic/index-out-of-bounds] 9:13..9:19 "xs[-1]": index is outside the sequence: it is [-1, -1], and the length is [3, 3]
   at 9:16..9:18 "-1": is [-1, -1]
 warning[semantic/unused-name] 12:13..12:15 "xs": local `xs` is assigned but never read
-error[semantic/index-out-of-bounds] 13:5..13:10 "xs[i]": index is outside the sequence: it is [5, 5], and the length is [3, 3]
-  at 39:12..39:13 "5": argument is [5, 5]
-error[semantic/index-out-of-bounds] 14:5..14:10 "xs[i]": index is outside the sequence: it is [5, 5], and the length is [3, 3]
-  at 39:12..39:13 "5": argument is [5, 5]
 error[semantic/index-out-of-bounds] 21:14..21:19 "xs[1]": index is outside the sequence: it is [1, 1], and the length is [1, 1]
   at 21:17..21:18 "1": is [1, 1]
-error[semantic/index-out-of-bounds] 26:9..26:14 "xs[i]": index is outside the sequence: it is [1, 1], and the length is [0, 1]
-  at 25:8..25:14 "i >= 0": is [1, 1] under this guard
-  at 41:73..41:74 "1": argument is [1, 1]
-  at 41:90..41:92 "-1": argument is [-1, -1]
-error[semantic/index-out-of-bounds] 28:9..28:17 "ys.pop()": the sequence may be empty: its length is [0, 1]
 error[semantic/index-out-of-bounds] 36:5..36:10 "xs[1]": index may be outside the sequence: it is [1, 1], and the length is [1, 2]
   at 36:8..36:9 "1": is [1, 1]
+error[semantic/index-out-of-bounds] 39:5..39:14 "stores(5)": index is outside the sequence: `stores` needs `i <= 2`
+  at 13:5..13:10 "xs[i]": indexed here
+  at 39:12..39:13 "5": `i` is 5
+error[semantic/index-out-of-bounds] 41:5..41:14 "first([])": index is outside the sequence: `first` needs `xs.len() >= 1`
+  at 1:30..1:35 "xs[0]": indexed here
+  at 41:11..41:13 "[]": `xs.len()` is 0
+error[semantic/index-out-of-bounds] 41:17..41:35 "pick([1, 2, 3], 7)": index is outside the sequence: `pick` needs `i < xs.len()`
+  at 2:37..2:42 "xs[i]": indexed here
+  at 41:22..41:31 "[1, 2, 3]": `xs.len()` is 3
+  at 41:33..41:34 "7": `i` is 7
+error[semantic/index-out-of-bounds] 41:60..41:75 "unknown([1], 1)": index is outside the sequence: `unknown` needs `i < xs.len()`
+  at 26:9..26:14 "xs[i]": indexed here
+  at 41:68..41:71 "[1]": `xs.len()` is 1
+  at 41:73..41:74 "1": `i` is 1
+error[semantic/index-out-of-bounds] 41:78..41:93 "unknown([], -1)": the sequence is empty: `unknown` needs `xs.len() >= 1` or `i >= 0`
+  at 28:9..28:17 "ys.pop()": its last element is taken here
+  at 41:86..41:88 "[]": `xs.len()` is 0

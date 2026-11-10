@@ -1,0 +1,37 @@
+tree: omitted
+
+== formatted ==
+type Grid {
+    cells: [int],
+    width: int,
+}
+
+fn at(xs: [int], i: int) -> int = xs[i]
+
+fn half(a: int, b: int) -> int = a / b
+
+fn cell(g: Grid, i: int) -> int = g.cells[i]
+
+fn at2(rows: [[int]], y: int, x: int) -> int = rows[y][x]
+
+fn pair(xs: [int], i: int) -> int = xs[i] + xs[i] + xs[i + 1]
+
+fn mix(xs: [int], i: int, d: int) -> int = xs[i] / d
+
+fn count(xs: [int], i: int, n: int) -> int = if n > 0 {
+    xs[i] + count(xs, i, n - 1)
+} else {
+    0
+}
+
+fn through(xs: [int], i: int) -> int = at(xs, i + 1)
+
+fn main() -> int {
+    let small = Grid(cells: [1, 2], width: 2)
+    let large = Grid(cells: [3, 4, 5, 6], width: 2)
+    let a = at([1, 2, 3], 2) + at([4], 0) + half(8, 2) + half(9, -3)
+    let b = cell(small, 1) + cell(large, 3) + at2([[1, 2], [3, 4]], 1, 1) + at2([[5]], 0, 0)
+    let c = pair([1, 2, 3], 1) + pair([4, 5], 0) + mix([6, 8], 1, 2) + mix([9], 0, -3)
+    let d = count([1, 2, 3], 2, 2) + count([7], 0, 1) + count([], 5, 0)
+    a + b + c + d + through([1, 2], 0) + through([5, 6, 7], 1) + small.width + large.width
+}

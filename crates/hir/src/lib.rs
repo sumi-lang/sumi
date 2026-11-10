@@ -332,8 +332,19 @@ impl<'a> Program<'a> {
         );
         signature
     }
-    /// `args` must lie within `ranges(function).params`; only the match against the signature is
-    /// asserted.
+    /// Whether a run of `function` on `args` is one its callers may make: beside lying within
+    /// `ranges(function).params`, the arguments stand to one another as every call was held to.
+    pub fn admits(self, function: FunctionId, args: &[Value]) -> bool {
+        let graph = &self.analysis.graph;
+        let types = summary::Types {
+            decls: graph.decls(),
+            unions: graph.unions(),
+        };
+        let mut requires = self.function(function).requires.iter();
+        requires.all(|requirement| requirement.holds(args, types))
+    }
+    /// `args` must lie within `ranges(function).params` and be ones `admits` allows; only the
+    /// match against the signature is asserted.
     pub fn machine(self, function: FunctionId, args: &[Value]) -> Machine<'a> {
         self.check_arguments(function, args);
         Machine::new(
@@ -343,7 +354,7 @@ impl<'a> Program<'a> {
             self.function(function).depth_bound(),
         )
     }
-    /// Evaluate within `ranges(function).params`, without the machine's observable trace.
+    /// Evaluate at arguments `machine` takes, without the machine's observable trace.
     pub fn evaluate(self, function: FunctionId, args: &[Value]) -> Value {
         let result = self.check_arguments(function, args).result;
         self.known(function, result).unwrap_or_else(|| {
@@ -386,8 +397,8 @@ fn finish(machine: Machine<'_>) -> Value {
 }
 
 /// A valid file through the middle end: the optimized graph a backend takes, each node's origin in
-/// the analysis's graph, and the facts proved there. A run within `ranges` returns what the
-/// analysis's graph does.
+/// the analysis's graph, and the facts proved there. A run at arguments `Program::machine` takes
+/// returns what the analysis's graph does.
 pub struct Compiled<'a> {
     program: Program<'a>,
     optimized: sumi_opt::Optimized,
@@ -408,7 +419,7 @@ impl<'a> Compiled<'a> {
     pub fn may(&self, node: NodeId) -> &'a May {
         self.program.may(self.origin(node))
     }
-    /// `args` must lie within `ranges(function).params`; only the match against the signature is
+    /// `args` must be ones `Program::machine` takes; only the match against the signature is
     /// asserted.
     pub fn machine(&self, function: FunctionId, args: &[Value]) -> Machine<'_> {
         self.program.check_arguments(function, args);
@@ -419,7 +430,7 @@ impl<'a> Compiled<'a> {
             self.program.function(function).depth_bound(),
         )
     }
-    /// Evaluate within `ranges(function).params`, without the machine's observable trace.
+    /// Evaluate at arguments `machine` takes, without the machine's observable trace.
     pub fn evaluate(&self, function: FunctionId, args: &[Value]) -> Value {
         finish(self.machine(function, args))
     }
@@ -437,6 +448,8 @@ pub struct Function {
     target: Option<DeclId>,
     is_complete: bool,
     depth: Option<u64>,
+    /// What its callers are held to, for the operations under it to run.
+    requires: Vec<proof::Requirement>,
 }
 
 impl Function {

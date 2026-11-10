@@ -44,6 +44,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
                 .map(|method| method.target),
             is_complete: false,
             depth: None,
+            requires: Vec::new(),
         })
         .collect();
     let failed = checked.failed;
@@ -56,7 +57,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let values = Values::delivered(&graph, &lowered, &summaries);
     let any = AnyValues::new(&graph, &lowered, &summaries);
     let typing = Typing::new(checked.types, values);
-    proof::check(
+    let requires = proof::check(
         &mut source,
         &graph,
         &spans,
@@ -64,7 +65,11 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         &lowered,
         &summaries,
         &failed,
+        &functions,
     );
+    for (function, requires) in functions.iter_mut().zip(requires) {
+        function.requires = requires;
+    }
     exhaustive(
         &mut source,
         &graph,

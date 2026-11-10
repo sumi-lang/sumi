@@ -349,7 +349,8 @@ error[semantic/immutable-assignment] 73:5..73:6 "p": cannot assign to immutable 
   at 70:9..70:10 "p": declared here
 error[semantic/type-mismatch] 74:12..74:16 "true": expected int, found bool
 error[semantic/type-mismatch] 75:5..75:9 "flag": expected int, found bool
-error[semantic/division-by-zero] 80:5..80:13 "m.y /= d": division by zero
-  at 84:32..84:33 "0": argument is 0
 error[semantic/division-by-zero] 81:5..81:13 "m.x %= 0": division by zero
   at 81:12..81:13 "0": is 0
+error[semantic/division-by-zero] 84:23..84:34 "divisors(0)": division by zero: `divisors` needs `d != 0`
+  at 80:5..80:13 "m.y /= d": divided here
+  at 84:32..84:33 "0": `d` is 0

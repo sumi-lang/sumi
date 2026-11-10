@@ -7,7 +7,7 @@ use std::rc::Rc;
 use rustc_hash::FxBuildHasher;
 use sumi_graph::{
     ArithOp, BinaryOp, Case, CmpOp, Decl, DeclId, Domain, FieldName, Fields, FunctionId, Graph,
-    Int, Ints, May, NodeId, Op, Run, Ty, TyKind, Unions,
+    Int, Ints, May, NodeId, Op, Run, Ty, TyKind, Unions, Value,
 };
 
 use crate::dependency::{Components, Rows};
@@ -111,6 +111,40 @@ impl Path {
         self.root
     }
 
+    /// The value the path holds where the parameters are `args`; none where a step finds none.
+    fn value(&self, args: &[Value], cx: Types<'_>) -> Option<Value> {
+        let Root::Param(index) = self.root else {
+            return None;
+        };
+        let admits = |value: &Value, ty: Ty| cx.unions.fits(value.ty(), ty);
+        let mut value = args
+            .get(index as usize)
+            .filter(|arg| admits(arg, self.ty))?
+            .clone();
+        for step in self.steps.iter() {
+            let Value::Decl(record) = &value else {
+                return None;
+            };
+            value = match step {
+                &Step::Field(name, ty) => {
+                    let field = cx.decls[record.decl().index()].index_of(name)?;
+                    record
+                        .fields()
+                        .get(field)
+                        .filter(|field| admits(field, ty))?
+                        .clone()
+                }
+                Step::Element(index, _) => {
+                    let index =
+                        usize::try_from(i64::try_from(&index.value(args, cx)?).ok()?).ok()?;
+                    record.fields().get(index)?.clone()
+                }
+                Step::Len => Value::Int(Int::from(record.fields().len() as i64)),
+            };
+        }
+        Some(value)
+    }
+
     pub fn steps(&self) -> &[Step] {
         &self.steps
     }
@@ -174,6 +208,16 @@ impl Path {
         indices.max().unwrap_or(0)
     }
 
+    /// Whether the path is of the function's parameters alone, its indices too.
+    pub fn is_given(&self) -> bool {
+        let mut indices = self.steps.iter().filter_map(|step| match step {
+            Step::Element(index, _) => Some(index),
+            Step::Field(..) | Step::Len => None,
+        });
+        matches!(self.root, Root::Param(_))
+            && indices.all(|index| index.terms.iter().all(|(path, _)| path.is_given()))
+    }
+
     /// What the path holds where the parameters hold `args`.
     fn at(&self, args: &[&Sym], cx: Types<'_>) -> Sym {
         let arg = match self.root {
@@ -188,7 +232,7 @@ impl Path {
     }
 
     /// The values the path holds where its root holds what `roots` gives it.
-    fn among<R: Roots + ?Sized>(&self, roots: &R, cx: Types<'_>) -> May {
+    pub fn among<R: Roots + ?Sized>(&self, roots: &R, cx: Types<'_>) -> May {
         let Some(root) = roots.may(self.root) else {
             return May::NONE;
         };
@@ -234,6 +278,22 @@ impl Form {
 
     pub fn terms(&self) -> &[(Path, i64)] {
         &self.terms
+    }
+
+    pub fn constant_term(&self) -> &Int {
+        &self.constant
+    }
+
+    /// The integer the form is where the parameters are `args`; none where a path holds none.
+    pub fn value(&self, args: &[Value], cx: Types<'_>) -> Option<Int> {
+        let mut sum = self.constant.clone();
+        for (path, coefficient) in &self.terms {
+            let Value::Int(held) = path.value(args, cx)? else {
+                return None;
+            };
+            sum = &sum + &(&held * &Int::from(*coefficient));
+        }
+        Some(sum)
     }
 
     /// The form plus `factor` times `other`; none past an `i64` coefficient.
@@ -292,7 +352,7 @@ impl Form {
 
     /// The form where the parameters hold `args`: nothing where a path holds nothing, and unknown
     /// where one is no form.
-    fn at(&self, args: &[&Sym], cx: Types<'_>) -> Sym {
+    pub fn at(&self, args: &[&Sym], cx: Types<'_>) -> Sym {
         let mut sum = Some(Self::constant(self.constant.clone()));
         for (path, coefficient) in &self.terms {
             let held = path.at(args, cx);
@@ -798,7 +858,7 @@ impl Sym {
         }
     }
 
-    fn is_none(&self) -> bool {
+    pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 

@@ -1,0 +1,235 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn at@6:1..6:40 ([int] ∈ [[1, 7]; [1, 3]], int ∈ [0, 2]) -> int ∈ [1, 7]
+  param xs@6:7..6:9: [int]
+  param i@6:18..6:19: int
+  result: copy : int @6:29..6:32
+    value: index : int @6:35..6:40
+      sequence: read xs@6:7..6:9 : [int]
+      index: read i@6:18..6:19 : int
+
+fn half@8:1..8:39 (int ∈ [8, 9], int ∈ [-3, 2] \ 0) -> int ∈ [-9, 9] \ 0
+  param a@8:9..8:10: int
+  param b@8:17..8:18: int
+  result: copy : int @8:28..8:31
+    value: eager / : int @8:34..8:39
+      lhs: read a@8:9..8:10 : int
+      rhs: read b@8:17..8:18 : int
+
+fn cell@10:1..10:45 (Grid ∈ Grid([[1, 6]; [2, 4]], [2, 2]), int ∈ [1, 3]) -> int ∈ [1, 6]
+  param g@10:9..10:10: Grid
+  param i@10:18..10:19: int
+  result: copy : int @10:29..10:32
+    value: index : int @10:35..10:45
+      sequence: field cells : [int] @10:35..10:42
+        base: read g@10:9..10:10 : Grid
+      index: read i@10:18..10:19 : int
+
+fn at2@12:1..12:58 ([[int]] ∈ [[[1, 5]; [1, 2]]; [1, 2]], int ∈ [0, 1], int ∈ [0, 1]) -> int ∈ [1, 5]
+  param rows@12:8..12:12: [[int]]
+  param y@12:23..12:24: int
+  param x@12:31..12:32: int
+  result: copy : int @12:42..12:45
+    value: index : int @12:48..12:58
+      sequence: index : [int] @12:48..12:55
+        sequence: read rows@12:8..12:12 : [[int]]
+        index: read y@12:23..12:24 : int
+      index: read x@12:31..12:32 : int
+
+fn pair@14:1..14:62 ([int] ∈ [[1, 5]; [2, 3]], int ∈ [0, 1]) -> int ∈ [3, 15]
+  param xs@14:9..14:11: [int]
+  param i@14:20..14:21: int
+  result: copy : int @14:31..14:34
+    value: eager + : int @14:37..14:62
+      lhs: eager + : int @14:37..14:50
+        lhs: index : int @14:37..14:42
+          sequence: read xs@14:9..14:11 : [int]
+          index: read i@14:20..14:21 : int
+        rhs: index : int @14:45..14:50
+          sequence: read xs@14:9..14:11 : [int]
+          index: read i@14:20..14:21 : int
+      rhs: index : int @14:53..14:62
+        sequence: read xs@14:9..14:11 : [int]
+        index: eager + : int @14:56..14:61
+          lhs: read i@14:20..14:21 : int
+          rhs: int 1 : int @14:60..14:61
+
+fn mix@16:1..16:53 ([int] ∈ [[6, 9]; [1, 2]], int ∈ [0, 1], int ∈ [-3, 2] \ 0) -> int ∈ [-9, 9] \ 0
+  param xs@16:8..16:10: [int]
+  param i@16:19..16:20: int
+  param d@16:27..16:28: int
+  result: copy : int @16:38..16:41
+    value: eager / : int @16:44..16:53
+      lhs: index : int @16:44..16:49
+        sequence: read xs@16:8..16:10 : [int]
+        index: read i@16:19..16:20 : int
+      rhs: read d@16:27..16:28 : int
+
+fn count@18:1..18:97 ([int] ∈ [[1, 7]; [0, 3]], int ∈ [0, 5], int ∈ [0, 2]) -> int ∈ [0, +∞)
+  param xs@18:10..18:12: [int]
+  param i@18:21..18:22: int
+  param n@18:29..18:30: int
+  result: copy : int @18:40..18:43
+    value: if : int @18:46..18:97
+      scrutinee: eager > : bool @18:49..18:54
+        lhs: read n@18:29..18:30 : int
+        rhs: int 0 : int @18:53..18:54
+      then: eager + : int @18:57..18:84
+        lhs: index : int @18:57..18:62
+          sequence: read xs@18:10..18:12 : [int]
+          index: read i@18:21..18:22 : int
+        rhs: call count@18:1..18:97 : int @18:65..18:84
+          arg[0]: read xs@18:10..18:12 : [int]
+          arg[1]: read i@18:21..18:22 : int
+          arg[2]: eager - : int @18:78..18:83
+            lhs: read n@18:29..18:30 [n > 0 holds@18:49..18:54] : int
+            rhs: int 1 : int @18:82..18:83
+      else: int 0 : int @18:94..18:95
+
+fn through@20:1..20:53 ([int] ∈ [[1, 7]; [2, 3]], int ∈ [0, 1]) -> int ∈ [1, 7]
+  param xs@20:12..20:14: [int]
+  param i@20:23..20:24: int
+  result: copy : int @20:34..20:37
+    value: call at@6:1..6:40 : int @20:40..20:53
+      arg[0]: read xs@20:12..20:14 : [int]
+      arg[1]: eager + : int @20:47..20:52
+        lhs: read i@20:23..20:24 : int
+        rhs: int 1 : int @20:51..20:52
+
+fn main@22:1..30:2 () -> int ∈ [4, +∞)
+  result: copy : int @22:14..22:17
+    value:
+      let small@23:9..23:14: Grid @23:5..23:46
+        initializer: make Grid : Grid @23:17..23:46
+          cells: array : [int] @23:29..23:35
+            element: int 1 : int @23:30..23:31
+            element: int 2 : int @23:33..23:34
+          width: int 2 : int @23:44..23:45
+      let large@24:9..24:14: Grid @24:5..24:52
+        initializer: make Grid : Grid @24:17..24:52
+          cells: array : [int] @24:29..24:41
+            element: int 3 : int @24:30..24:31
+            element: int 4 : int @24:33..24:34
+            element: int 5 : int @24:36..24:37
+            element: int 6 : int @24:39..24:40
+          width: int 2 : int @24:50..24:51
+      let a@25:9..25:10: int @25:5..25:69
+        initializer: eager + : int @25:13..25:69
+          lhs: eager + : int @25:13..25:55
+            lhs: eager + : int @25:13..25:42
+              lhs: call at@6:1..6:40 : int @25:13..25:29
+                arg[0]: array : [int] @25:16..25:25
+                  element: int 1 : int @25:17..25:18
+                  element: int 2 : int @25:20..25:21
+                  element: int 3 : int @25:23..25:24
+                arg[1]: int 2 : int @25:27..25:28
+              rhs: call at@6:1..6:40 : int @25:32..25:42
+                arg[0]: array : [int] @25:35..25:38
+                  element: int 4 : int @25:36..25:37
+                arg[1]: int 0 : int @25:40..25:41
+            rhs: call half@8:1..8:39 : int @25:45..25:55
+              arg[0]: int 8 : int @25:50..25:51
+              arg[1]: int 2 : int @25:53..25:54
+          rhs: call half@8:1..8:39 : int @25:58..25:69
+            arg[0]: int 9 : int @25:63..25:64
+            arg[1]: int -3 : int @25:66..25:68
+      let b@26:9..26:10: int @26:5..26:93
+        initializer: eager + : int @26:13..26:93
+          lhs: eager + : int @26:13..26:74
+            lhs: eager + : int @26:13..26:44
+              lhs: call cell@10:1..10:45 : int @26:13..26:27
+                arg[0]: read small@23:9..23:14 : Grid
+                arg[1]: int 1 : int @26:25..26:26
+              rhs: call cell@10:1..10:45 : int @26:30..26:44
+                arg[0]: read large@24:9..24:14 : Grid
+                arg[1]: int 3 : int @26:42..26:43
+            rhs: call at2@12:1..12:58 : int @26:47..26:74
+              arg[0]: array : [[int]] @26:51..26:67
+                element: array : [int] @26:52..26:58
+                  element: int 1 : int @26:53..26:54
+                  element: int 2 : int @26:56..26:57
+                element: array : [int] @26:60..26:66
+                  element: int 3 : int @26:61..26:62
+                  element: int 4 : int @26:64..26:65
+              arg[1]: int 1 : int @26:69..26:70
+              arg[2]: int 1 : int @26:72..26:73
+          rhs: call at2@12:1..12:58 : int @26:77..26:93
+            arg[0]: array : [[int]] @26:81..26:86
+              element: array : [int] @26:82..26:85
+                element: int 5 : int @26:83..26:84
+            arg[1]: int 0 : int @26:88..26:89
+            arg[2]: int 0 : int @26:91..26:92
+      let c@27:9..27:10: int @27:5..27:87
+        initializer: eager + : int @27:13..27:87
+          lhs: eager + : int @27:13..27:69
+            lhs: eager + : int @27:13..27:49
+              lhs: call pair@14:1..14:62 : int @27:13..27:31
+                arg[0]: array : [int] @27:18..27:27
+                  element: int 1 : int @27:19..27:20
+                  element: int 2 : int @27:22..27:23
+                  element: int 3 : int @27:25..27:26
+                arg[1]: int 1 : int @27:29..27:30
+              rhs: call pair@14:1..14:62 : int @27:34..27:49
+                arg[0]: array : [int] @27:39..27:45
+                  element: int 4 : int @27:40..27:41
+                  element: int 5 : int @27:43..27:44
+                arg[1]: int 0 : int @27:47..27:48
+            rhs: call mix@16:1..16:53 : int @27:52..27:69
+              arg[0]: array : [int] @27:56..27:62
+                element: int 6 : int @27:57..27:58
+                element: int 8 : int @27:60..27:61
+              arg[1]: int 1 : int @27:64..27:65
+              arg[2]: int 2 : int @27:67..27:68
+          rhs: call mix@16:1..16:53 : int @27:72..27:87
+            arg[0]: array : [int] @27:76..27:79
+              element: int 9 : int @27:77..27:78
+            arg[1]: int 0 : int @27:81..27:82
+            arg[2]: int -3 : int @27:84..27:86
+      let d@28:9..28:10: int @28:5..28:72
+        initializer: eager + : int @28:13..28:72
+          lhs: eager + : int @28:13..28:54
+            lhs: call count@18:1..18:97 : int @28:13..28:35
+              arg[0]: array : [int] @28:19..28:28
+                element: int 1 : int @28:20..28:21
+                element: int 2 : int @28:23..28:24
+                element: int 3 : int @28:26..28:27
+              arg[1]: int 2 : int @28:30..28:31
+              arg[2]: int 2 : int @28:33..28:34
+            rhs: call count@18:1..18:97 : int @28:38..28:54
+              arg[0]: array : [int] @28:44..28:47
+                element: int 7 : int @28:45..28:46
+              arg[1]: int 0 : int @28:49..28:50
+              arg[2]: int 1 : int @28:52..28:53
+          rhs: call count@18:1..18:97 : int @28:57..28:72
+            arg[0]: array : [int] @28:63..28:65
+            arg[1]: int 5 : int @28:67..28:68
+            arg[2]: int 0 : int @28:70..28:71
+      tail: eager + : int @29:5..29:91
+        lhs: eager + : int @29:5..29:77
+          lhs: eager + : int @29:5..29:63
+            lhs: eager + : int @29:5..29:39
+              lhs: eager + : int @29:5..29:18
+                lhs: eager + : int @29:5..29:14
+                  lhs: eager + : int @29:5..29:10
+                    lhs: read a@25:9..25:10 : int
+                    rhs: read b@26:9..26:10 : int
+                  rhs: read c@27:9..27:10 : int
+                rhs: read d@28:9..28:10 : int
+              rhs: call through@20:1..20:53 : int @29:21..29:39
+                arg[0]: array : [int] @29:29..29:35
+                  element: int 1 : int @29:30..29:31
+                  element: int 2 : int @29:33..29:34
+                arg[1]: int 0 : int @29:37..29:38
+            rhs: call through@20:1..20:53 : int @29:42..29:63
+              arg[0]: array : [int] @29:50..29:59
+                element: int 5 : int @29:51..29:52
+                element: int 6 : int @29:54..29:55
+                element: int 7 : int @29:57..29:58
+              arg[1]: int 1 : int @29:61..29:62
+          rhs: field width : int @29:66..29:77
+            base: read small@23:9..23:14 : Grid
+        rhs: field width : int @29:80..29:91
+          base: read large@24:9..24:14 : Grid

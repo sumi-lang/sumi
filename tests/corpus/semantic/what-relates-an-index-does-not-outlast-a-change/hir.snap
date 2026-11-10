@@ -428,16 +428,8 @@ fn main@93:1..100:2 () -> int ∈ [5, +∞)
             rhs: int 1 : int @99:78..99:79
 
 == semantic diagnostics ==
-error[semantic/index-out-of-bounds] 10:16..10:21 "xs[i]": index is outside the sequence: it is [2, 2], and the length is [2, 2]
-  at 97:27..97:28 "2": argument is [2, 2]
-error[semantic/index-out-of-bounds] 19:16..19:21 "xs[j]": index is outside the sequence: it is [2, 2], and the length is [2, 2]
-  at 18:9..18:15 "j += 1": is [2, 2]
-error[semantic/index-out-of-bounds] 25:33..25:38 "xs[i]": index is outside the sequence: it is [3, 3], and the length is [2, 2]
-  at 97:71..97:72 "3": argument is [3, 3]
 error[semantic/index-out-of-bounds] 32:16..32:21 "xs[i]": index may be outside the sequence: it is [0, 1], and the length is [0, 2]
   at 30:9..30:10 "i": is [0, 1] on a loop iteration
-error[semantic/index-out-of-bounds] 41:16..41:21 "xs[i]": index may be outside the sequence: it is [0, 1], and the length is [1, 1]
-  at 39:9..39:10 "i": is [0, 1] on a loop iteration
 error[semantic/index-out-of-bounds] 50:13..50:23 "grid[y][x]": index may be outside the sequence: it is [0, 1], and the length is [1, 2]
   at 48:13..48:14 "x": is [0, 1] on a loop iteration
 error[semantic/index-out-of-bounds] 58:16..58:25 "xs[i + 1]": index may be outside the sequence: it is [1, 2], and the length is [0, 2]
@@ -446,7 +438,24 @@ error[semantic/index-out-of-bounds] 61:16..61:21 "xs[i]": index may be outside t
   at 60:9..60:10 "i": is [0, 2] on a loop iteration
 error[semantic/index-out-of-bounds] 80:16..80:26 "rows[0][j]": index may be outside the sequence: it is [0, 1], and the length is [0, 2]
   at 79:9..79:10 "j": is [0, 1] on a loop iteration
-error[semantic/index-out-of-bounds] 86:16..86:44 "xs[x * -9223372036854775808]": index is outside the sequence: it is [-9223372036854775808, -9223372036854775808], and the length is [2, 2]
-  at 86:19..86:43 "x * -9223372036854775808": is [-9223372036854775808, -9223372036854775808]
-error[semantic/index-out-of-bounds] 90:23..90:39 "xs[k % xs.len()]": index may be outside the sequence: it is [-1, 0], and the length is [0, 2]
-  at 90:26..90:38 "k % xs.len()": is [-1, 0]
+error[semantic/index-out-of-bounds] 97:13..97:29 "stale(mut xs, 2)": index is outside the sequence: `stale` needs `i + 2 <= xs.len()` or `xs.len() <= i` or `i <= -1`
+  at 10:16..10:21 "xs[i]": indexed here
+  at 97:23..97:25 "xs": `xs.len()` is 3
+  at 97:27..97:28 "2": `i` is 2
+error[semantic/index-out-of-bounds] 97:32..97:44 "moved(xs, 1)": index is outside the sequence: `moved` needs `i + 2 <= xs.len()` or `xs.len() <= i` or `i <= -1`
+  at 19:16..19:21 "xs[j]": indexed here
+  at 97:38..97:40 "xs": `xs.len()` is 2
+  at 97:42..97:43 "1": `i` is 1
+error[semantic/index-out-of-bounds] 97:47..97:73 "other(xs, [1, 2, 3, 4], 3)": index is outside the sequence: `other` needs `i < xs.len()` or `ys.len() <= i`
+  at 25:33..25:38 "xs[i]": indexed here
+  at 97:53..97:55 "xs": `xs.len()` is 2
+  at 97:71..97:72 "3": `i` is 3
+error[semantic/index-out-of-bounds] 98:31..98:42 "wide(xs, 1)": index is outside the sequence: `wide` needs `9223372036854775808 * x <= 0` or `x >= 5`
+  at 86:16..86:44 "xs[x * -9223372036854775808]": indexed here
+  at 98:40..98:41 "1": `x` is 1
+error[semantic/index-out-of-bounds] 99:33..99:49 "replaced(mut xs)": index may be outside the sequence: `replaced` needs `xs.len() <= 1`
+  at 41:16..41:21 "xs[i]": indexed here
+  at 99:46..99:48 "xs": `xs.len()` is [0, 2]
+error[semantic/index-out-of-bounds] 99:63..99:80 "signed(xs, 0 - 1)": index may be outside the sequence: `signed` needs `k >= 0` or `xs.len() <= 0`
+  at 90:23..90:39 "xs[k % xs.len()]": indexed here
+  at 99:74..99:79 "0 - 1": `k` is -1

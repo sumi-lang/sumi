@@ -399,7 +399,11 @@ impl Gen<'_> {
                 0 => format!("{q}[0]"),
                 1 => format!("{q}[1]"),
                 2 => format!("{q}.len()"),
+                // Each helper needs of its arguments what the call here gives.
+                3 => format!("at({q}, {})", self.rng.between(0, 1)),
+                4 => format!("at({q}, {q}.len() - 1)"),
                 5 => format!("total({q})"),
+                6 => format!("ends({q}, 1)"),
                 _ => format!("{q}[{q}.len() - 2]"),
             };
         }
@@ -512,7 +516,7 @@ impl Gen<'_> {
         if self.is_doubtful && self.rng.chance(1, 2) {
             let p = self.rng.pick(&sequences).clone();
             let y = self.rng.pick(&locals).clone();
-            return Some(match self.rng.below(9) {
+            return Some(match self.rng.below(12) {
                 0 => format!("if 0 <= {x} && {x} <= {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
                 1 => format!("if 0 <= {x} && {x} < {p}.len() {{ {q}[{x}] }} else {{ {other} }}"),
                 2 => format!("if 0 <= {y} && {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
@@ -523,17 +527,26 @@ impl Gen<'_> {
                 5 => format!("if 0 <= {x} || {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
                 6 => format!("if {x} >= {q}.len() || 0 > {x} {{ {q}[{x}] }} else {{ {other} }}"),
                 7 => format!("{q}[{x} % {q}.len()]"),
-                _ => format!("{q}[size({x}) % ({q}.len() + 1)]"),
+                8 => format!("at({q}, {x})"),
+                9 => format!("{q}[size({x}) % ({q}.len() + 1)]"),
+                10 => format!(
+                    "if {x} > 0 && {x} <= {p}.len() {{ at({q}, {x} - 1) }} else {{ {other} }}"
+                ),
+                _ => format!("part({other}, {q}.len() - 2)"),
             });
         }
-        Some(match self.rng.below(5) {
+        Some(match self.rng.below(7) {
             0 => format!("if 0 <= {x} && {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
             1 => format!("if {x} < 0 || {x} >= {q}.len() {{ {other} }} else {{ {q}[{x}] }}"),
             2 => {
                 format!("if {x} >= 0 && {x} + 1 < {q}.len() {{ {q}[{x} + 1] }} else {{ {other} }}")
             }
             3 => format!("{q}[size({x}) % {q}.len()]"),
-            _ => format!("wrapped({q}, {x})"),
+            4 => format!("wrapped({q}, {x})"),
+            5 => {
+                format!("if {x} > 0 && {x} <= {q}.len() {{ at({q}, {x} - 1) }} else {{ {other} }}")
+            }
+            _ => format!("part({other}, {q}.len())"),
         })
     }
 
@@ -1094,6 +1107,9 @@ fn program_of(seed: u64, is_doubtful: bool) -> String {
          fn exchange<T>(mut a: T, mut b: T) { let t = a\na = b\nb = t }\n\
          fn least(a: int, b: int) -> int = if a < b { a } else { b }\n\
          fn size(a: int) -> int = if a < 0 { -a } else { a }\n\
+         fn at(q: [int], i: int) -> int = q[i]\n\
+         fn ends(q: [int], i: int) -> int = at(q, i) + at(q, q.len() - 1 - i)\n\
+         fn part(a: int, b: int) -> int = a / b\n\
          fn total(q: [int]) -> int { let mut t = 0\nfor i in 0..q.len() { t += q[i] }\nt }\n\
          fn fill(mut q: [int], v: int) { for i in 0..q.len() { q[i] = v } }\n\
          fn shrink(mut q: [int]) { if q.len() > 2 { _ = q.pop() } }\n\
@@ -1330,6 +1346,7 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
             );
             runs.finished += outcome.finished;
             runs.abandoned += outcome.abandoned;
+            runs.unadmitted += outcome.unadmitted;
         }
     }
     assert_ne!(
@@ -1356,6 +1373,11 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
     assert!(
         accepted * 10 >= seeds * 9,
         "only {accepted} of {seeds} generated programs were accepted"
+    );
+    assert!(
+        runs.unadmitted * 50 <= runs.finished,
+        "{} functions ran at no arguments their callers were held to",
+        runs.unadmitted
     );
     assert!(
         runs.abandoned * 50 <= runs.finished,
