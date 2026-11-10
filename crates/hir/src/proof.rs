@@ -1,5 +1,5 @@
 //! What each operation needs of its operands to run, held to what is known of them: the values
-//! that may reach them, then what the body says relates them.
+//! that may reach them, then what the body says relates them, then what its callers give it.
 
 use std::borrow::Cow;
 use std::cell::{Cell, RefCell};
@@ -8,15 +8,24 @@ use std::rc::Rc;
 
 use rustc_hash::FxBuildHasher;
 use sumi_frontend::DiagnosticCode;
-use sumi_graph::{ArithOp, BinaryOp, Case, CmpOp, Domain, Graph, Int, Ints, May, NodeId, Op, Run};
+use sumi_graph::{
+    ArithOp, BinaryOp, Case, CmpOp, Domain, FunctionId, Graph, Int, Ints, May, NodeId, Op, Run,
+    Value,
+};
+use sumi_text::TextRange;
 
 use crate::check::explain;
-use crate::codes;
-use crate::lower::{Lowered, Need, Obligation, Source};
+use crate::dependency::{Components, Rows};
+use crate::lower::{Call, Lowered, Need, Obligation, Source};
 use crate::spans::Spans;
-use crate::summary::{self, Form, Path, Root, Roots, Summaries, Sym, Types};
+use crate::summary::{self, Form, Path, Root, Roots, Step, Summaries, Sym, Types};
 use crate::typing::Typing;
+use crate::{Function, codes};
 
+/// The most a function asks of its callers; what is past it is held to the function alone.
+const MAX_REQUIREMENTS: usize = 16;
+/// The most guards a requirement is excused by.
+const MAX_EXCUSES: usize = 3;
 /// The most conditions a proof reads on the way to an operation, the nearest first.
 const MAX_GUARDS: usize = 64;
 /// The most facts and bounds one claim is led through, one after another and in all.
@@ -112,7 +121,7 @@ fn unmet(typing: &Typing, need: Need) -> Vec<Owed> {
 
 /// Something of a form over paths: that it is at least zero, or that it is not zero.
 #[derive(Clone, Debug, PartialEq, Eq)]
-enum Claim {
+pub(crate) enum Claim {
     AtLeastZero(Form),
     NotZero(Form),
 }
@@ -133,6 +142,63 @@ impl Claim {
             CmpOp::Eq => [above(lhs, rhs, 0)?, above(rhs, lhs, 0)?],
             CmpOp::Ne => [Some(Self::NotZero(lhs.plus_times(rhs, -1)?)), None],
         })
+    }
+
+    fn form(&self) -> &Form {
+        match self {
+            Self::AtLeastZero(form) | Self::NotZero(form) => form,
+        }
+    }
+
+    fn with(&self, form: Form) -> Self {
+        match self {
+            Self::AtLeastZero(_) => Self::AtLeastZero(form),
+            Self::NotZero(_) => Self::NotZero(form),
+        }
+    }
+
+    /// Whether the claim is of the function's parameters alone, and of one at least.
+    fn is_given(&self) -> bool {
+        let terms = self.form().terms();
+        !terms.is_empty() && terms.iter().all(|(path, _)| path.is_given())
+    }
+
+    /// Whether no value its paths may hold makes the claim hold.
+    fn never_holds(&self, body: &Body<'_>) -> bool {
+        let among = self.form().among(body, body.types);
+        among.is_some_and(|ints| match self {
+            Self::AtLeastZero(_) => ints.hi().is_some_and(|hi| hi < Int::ZERO),
+            Self::NotZero(_) => ints.is_zero(),
+        })
+    }
+
+    fn holds(&self, args: &[Value], cx: Types<'_>) -> bool {
+        match self {
+            Self::AtLeastZero(form) => form.value(args, cx).is_some_and(|value| value >= Int::ZERO),
+            Self::NotZero(form) => form.value(args, cx).is_some_and(|value| value != Int::ZERO),
+        }
+    }
+}
+
+/// What a function needs of its parameters for an operation under it to run: one claim of
+/// `needs`, or one of `unless`, which would keep the function from the operation.
+#[derive(Clone, Debug)]
+pub(crate) struct Requirement {
+    needs: Vec<Claim>,
+    unless: Vec<Claim>,
+    /// The operation, by its place among the obligations.
+    origin: usize,
+    /// Whether `needs` is what the operation itself needs, and not only enough for it.
+    is_exact: bool,
+}
+
+impl Requirement {
+    fn claims(&self) -> impl Iterator<Item = &Claim> {
+        self.needs.iter().chain(&self.unless)
+    }
+
+    pub fn holds(&self, args: &[Value], cx: Types<'_>) -> bool {
+        self.claims().any(|claim| claim.holds(args, cx))
     }
 }
 
@@ -362,10 +428,36 @@ struct Proof<'b, 'a> {
     body: &'b Body<'a>,
     /// What the conditions on the way there say, innermost first.
     guards: &'b [Claim],
+    /// What the function needs of its callers anyway.
+    given: &'b [Claim],
+    /// Whether the values that may reach a path are read: without them, what is proved holds
+    /// whatever the callers give.
+    reads_values: bool,
     steps: Cell<u32>,
 }
 
+impl<'b, 'a> Proof<'b, 'a> {
+    fn new(
+        body: &'b Body<'a>,
+        guards: &'b [Claim],
+        given: &'b [Claim],
+        reads_values: bool,
+    ) -> Self {
+        Self {
+            body,
+            guards,
+            given,
+            reads_values,
+            steps: Cell::new(MAX_STEPS),
+        }
+    }
+}
+
 impl Proof<'_, '_> {
+    fn facts(&self) -> impl Iterator<Item = &Claim> {
+        self.guards.iter().chain(self.given)
+    }
+
     fn holds(&self, claim: &Claim) -> bool {
         match claim {
             Claim::AtLeastZero(form) => self.at_least_zero(form, MAX_DEPTH),
@@ -373,7 +465,7 @@ impl Proof<'_, '_> {
                 let among = form.among(self.body, self.body.types);
                 let negated = form.times(-1);
                 among.is_none_or(|ints| !ints.contains_zero())
-                    || self.guards.iter().any(|fact| {
+                    || self.facts().any(|fact| {
                         matches!(fact, Claim::NotZero(known)
                             if known == form || Some(known) == negated.as_ref())
                     })
@@ -383,9 +475,25 @@ impl Proof<'_, '_> {
         }
     }
 
+    /// Whether what holds here rules the claim out.
+    fn refutes(&self, claim: &Claim) -> bool {
+        let below = |form: &Form| form.times(-1).map(|negated| negated.shifted(-1));
+        match claim {
+            Claim::AtLeastZero(form) => {
+                below(form).is_some_and(|form| self.at_least_zero(&form, MAX_DEPTH))
+            }
+            Claim::NotZero(form) => {
+                let negated = form.times(-1);
+                self.at_least_zero(form, MAX_DEPTH)
+                    && negated.is_some_and(|form| self.at_least_zero(&form, MAX_DEPTH))
+            }
+        }
+    }
+
     /// Lists of forms, `form` being at least zero where every form of one list is: each `form`
-    /// less a fact, or with a path replaced by what bounds it in each case.
-    fn weakened(&self, form: &Form, depth: u32) -> Vec<Vec<Form>> {
+    /// less a fact, or with a path replaced by what bounds it in each case. With `is_open`,
+    /// only its paths that are no parameter's are so taken from it.
+    fn weakened(&self, form: &Form, depth: u32, is_open: bool) -> Vec<Vec<Form>> {
         let mut weaker = Vec::new();
         // A form that is not zero and at least minus one is at least zero.
         let above = form.shifted(1);
@@ -393,11 +501,14 @@ impl Proof<'_, '_> {
             matches!(fact, Claim::NotZero(known)
                 if *known == above || above.times(-1).as_ref() == Some(known))
         };
-        if self.guards.iter().any(is_not_zero) {
+        if !is_open && self.facts().any(is_not_zero) {
             weaker.push(vec![above.clone()]);
         }
         for (path, coefficient) in form.terms() {
-            for fact in self.guards.iter() {
+            if is_open && path.is_given() {
+                continue;
+            }
+            for fact in self.facts() {
                 let Claim::AtLeastZero(fact) = fact else {
                     continue;
                 };
@@ -493,19 +604,80 @@ impl Proof<'_, '_> {
     }
 
     fn at_least_zero(&self, form: &Form, depth: u32) -> bool {
-        let among = form.among(self.body, self.body.types);
-        if among.is_none_or(|ints| ints.lo().is_some_and(|lo| lo >= Int::ZERO)) {
+        let is_proved = if self.reads_values {
+            let among = form.among(self.body, self.body.types);
+            among.is_none_or(|ints| ints.lo().is_some_and(|lo| lo >= Int::ZERO))
+        } else {
+            form.terms().is_empty() && *form.constant_term() >= Int::ZERO
+        };
+        if is_proved {
             return true;
         }
         if depth == 0 || self.steps.get() == 0 {
             return false;
         }
         self.steps.set(self.steps.get() - 1);
-        let weaker = self.weakened(form, depth - 1);
+        let weaker = self.weakened(form, depth - 1, false);
         (weaker.iter()).any(|forms| forms.iter().all(|form| self.at_least_zero(form, depth - 1)))
+    }
+
+    /// A claim of the parameters alone that `claim` holds wherever it does, with no more taken
+    /// from it than the paths that are no parameter's.
+    fn given(&self, claim: &Claim, depth: u32) -> Option<Claim> {
+        if claim.is_given() {
+            return Some(claim.clone());
+        }
+        let Claim::AtLeastZero(form) = claim else {
+            return None;
+        };
+        if depth == 0 {
+            return None;
+        }
+        // Of the forms that must each be at least zero, the one that is not proved to be.
+        let weaker = self.weakened(form, depth - 1, true);
+        let mut open = weaker.iter().filter_map(|forms| {
+            let mut open = forms
+                .iter()
+                .filter(|form| !self.at_least_zero(form, depth - 1));
+            let only = open.next()?;
+            open.next()
+                .is_none()
+                .then(|| Claim::AtLeastZero(only.clone()))
+        });
+        open.find_map(|claim| self.given(&claim, depth - 1))
     }
 }
 
+/// Whether the form sums lengths alone, each some times over, and no integer below zero: it is
+/// then never below zero.
+fn is_length_sum(form: &Form) -> bool {
+    let mut terms = form.terms().iter();
+    *form.constant_term() >= Int::ZERO
+        && terms.all(|(path, by)| *by > 0 && matches!(path.steps().last(), Some(Step::Len)))
+}
+
+/// What became of something owed where a function's body could not prove it.
+enum Passed {
+    Up(Requirement),
+    Nowhere,
+}
+
+/// What a diagnostic is reported once for: where, with which code, and in which function when
+/// its instances each report.
+type Once = (TextRange, &'static str, Option<u32>);
+
+struct Checker<'a, 's> {
+    source: &'a mut Source<'s>,
+    graph: &'a Graph,
+    spans: &'a Spans,
+    typing: &'a Typing,
+    lowered: &'a Lowered,
+    functions: &'a [Function],
+    requires: Vec<Vec<Requirement>>,
+    reported: HashSet<Once, FxBuildHasher>,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn check(
     source: &mut Source<'_>,
     graph: &Graph,
@@ -514,105 +686,510 @@ pub(crate) fn check(
     lowered: &Lowered,
     summaries: &Summaries,
     failed: &[bool],
-) {
-    // A place read and then written, and each instance of its function, needs its indices
-    // inside once.
-    let mut reported = HashSet::new();
-    // The body of the function whose obligations are being read, once one is left open.
-    let mut body: Option<(u32, Body<'_>)> = None;
-    for obligation in &lowered.obligations {
-        let owner = obligation.owner;
-        if failed[owner as usize] || !typing.may(obligation.context).is_live() {
+    functions: &[Function],
+) -> Vec<Vec<Requirement>> {
+    let count = graph.runs().len();
+    let mut checker = Checker {
+        source,
+        graph,
+        spans,
+        typing,
+        lowered,
+        functions,
+        requires: vec![Vec::new(); count],
+        reported: HashSet::default(),
+    };
+    // By function, the obligations the values that may reach their operands leave open.
+    let mut open: Vec<Vec<usize>> = vec![Vec::new(); count];
+    let mut is_open = false;
+    for (index, obligation) in lowered.obligations.iter().enumerate() {
+        if failed[obligation.owner as usize] || !typing.may(obligation.context).is_live() {
             continue;
         }
-        let unmet = unmet(typing, obligation.need);
-        if unmet.is_empty() {
-            continue;
+        if !unmet(typing, obligation.need).is_empty() {
+            open[obligation.owner as usize].push(index);
+            is_open = true;
         }
-        let (_, body) = match body.take() {
-            Some(read) if read.0 == owner => body.insert(read),
-            _ => {
-                let read = Body::new(graph, typing, lowered, summaries, owner as usize);
-                body.insert((owner, read))
+    }
+    if !is_open {
+        return checker.requires;
+    }
+    let is_live = |call: &&Call| {
+        !failed[call.caller.index()]
+            && !failed[call.callee.index()]
+            && typing.may(call.context).is_live()
+    };
+    let mut calls: Vec<Vec<&Call>> = vec![Vec::new(); count];
+    for call in lowered.calls.iter().filter(is_live) {
+        calls[call.caller.index()].push(call);
+    }
+    let rows = Rows::new(count, || {
+        let calls = calls.iter().flatten();
+        calls.map(|call| (call.caller.index(), call.callee.index() as u32))
+    });
+    // Numbered callees first, so what a callee needs is known where its callers are read.
+    let components = Components::new(&rows, |callee| callee as usize);
+    for component in 0..components.count() {
+        let inside = |call: &Call| components.of[call.callee.index()] as usize == component;
+        let mut bodies: HashMap<usize, Body<'_>, FxBuildHasher> = HashMap::default();
+        for &member in components.members(component) {
+            let member = member as usize;
+            let needs = |call: &&&Call| !checker.requires[call.callee.index()].is_empty();
+            let outward: Vec<&Call> = (calls[member].iter().filter(|call| !inside(call)))
+                .filter(needs)
+                .copied()
+                .collect();
+            if open[member].is_empty() && outward.is_empty() {
+                continue;
+            }
+            let body = Body::new(graph, typing, lowered, summaries, member);
+            for &index in &open[member] {
+                checker.obligation(&body, member, index);
+            }
+            for call in outward {
+                checker.call(&body, call, true);
+            }
+            bodies.insert(member, body);
+        }
+        // A call inside a recursive group is held to what its callee needs where it stands.
+        for &member in components.members(component) {
+            let member = member as usize;
+            for call in calls[member].iter().filter(|call| inside(call)) {
+                if checker.requires[call.callee.index()].is_empty() {
+                    continue;
+                }
+                let body = bodies
+                    .entry(member)
+                    .or_insert_with(|| Body::new(graph, typing, lowered, summaries, member));
+                checker.call(body, call, false);
+            }
+        }
+    }
+    checker.requires
+}
+
+impl Checker<'_, '_> {
+    /// The claims of `function` that hold whenever it is entered: each it needs of its callers
+    /// with no other way out.
+    fn given(&self, function: usize) -> Vec<Claim> {
+        let single = self.requires[function].iter().filter_map(|requirement| {
+            let mut claims = requirement.claims();
+            let only = claims.next()?;
+            claims.next().is_none().then(|| only.clone())
+        });
+        single.collect()
+    }
+
+    /// Proves one of `needs` or `unless` where `context` is live, or passes it to the function's
+    /// callers when `passes` and some claim is of its parameters.
+    #[allow(clippy::too_many_arguments)]
+    fn owe(
+        &self,
+        body: &Body<'_>,
+        function: usize,
+        needs: &[Claim],
+        unless: &[Claim],
+        context: NodeId,
+        origin: usize,
+        is_exact: bool,
+        passes: bool,
+    ) -> Option<Passed> {
+        let guards = body.guards(context);
+        let mut given = self.given(function);
+        // Of what the function needs one of, the one left where the rest are ruled out here.
+        let left: Vec<Claim> = {
+            let proof = Proof::new(body, &guards, &given, true);
+            let several = self.requires[function].iter();
+            let left = several.filter_map(|requirement| {
+                let mut open = requirement.claims().filter(|claim| !proof.refutes(claim));
+                let only = open.next()?;
+                (requirement.claims().nth(1).is_some() && open.next().is_none())
+                    .then(|| only.clone())
+            });
+            left.collect()
+        };
+        given.extend(left);
+        let proof = |reads_values| Proof::new(body, &guards, &given, reads_values);
+        let mut claims = needs.iter().chain(unless);
+        if claims.clone().any(|claim| proof(true).holds(claim)) {
+            return None;
+        }
+        // What the body rules out whatever it is given is no caller's to give.
+        let passes = passes && !claims.all(|claim| proof(false).refutes(claim));
+        if !passes || self.requires[function].len() >= MAX_REQUIREMENTS {
+            return Some(Passed::Nowhere);
+        }
+        let proof = proof(true);
+        let passed = |claims: &[Claim]| -> Vec<Claim> {
+            let passed = claims
+                .iter()
+                .filter_map(|claim| proof.given(claim, MAX_DEPTH));
+            passed.collect()
+        };
+        let is_exact = is_exact && needs.iter().all(Claim::is_given);
+        let (needs, mut unless) = (passed(needs), passed(unless));
+        if needs.is_empty() && unless.is_empty() {
+            return Some(Passed::Nowhere);
+        }
+        // A guard that fails keeps the function from where the claim is owed: a form at least
+        // zero that is less, or one that is zero, being at least and at most it, that is not.
+        let mut excuses: Vec<Claim> = Vec::new();
+        for guard in guards.iter().filter(|guard| guard.is_given()) {
+            let Claim::AtLeastZero(form) = guard else {
+                continue;
+            };
+            let Some(negated) = form.times(-1) else {
+                continue;
+            };
+            let excuse = if guards.contains(&Claim::AtLeastZero(negated.clone())) {
+                Claim::NotZero(form.clone().min(negated))
+            } else {
+                Claim::AtLeastZero(negated.shifted(-1))
+            };
+            // An excuse that holds only where a claim does excuses nothing.
+            let is_implied = needs
+                .iter()
+                .chain(&unless)
+                .any(|claim| match (claim, &excuse) {
+                    (Claim::AtLeastZero(claim), Claim::AtLeastZero(excuse)) => {
+                        (claim.plus_times(excuse, -1)).is_some_and(|apart| is_length_sum(&apart))
+                    }
+                    _ => claim == &excuse,
+                });
+            if !is_implied && !excuses.contains(&excuse) {
+                excuses.push(excuse);
+            }
+        }
+        unless.extend(excuses.into_iter().take(MAX_EXCUSES));
+        Some(Passed::Up(Requirement {
+            needs,
+            unless,
+            origin,
+            is_exact,
+        }))
+    }
+
+    /// Adds what `function` needs, unless it needs as much already: the same claims for an
+    /// operation of the same kind, or one claim that a form over the same paths is at least zero
+    /// where this one's is, of which the lesser form stays.
+    fn require(&mut self, function: usize, requirement: Requirement) {
+        let obligations = &self.lowered.obligations;
+        let code = |requirement: &Requirement| obligations[requirement.origin].need.code();
+        let only =
+            |requirement: &Requirement| match (&requirement.needs[..], &requirement.unless[..]) {
+                ([Claim::AtLeastZero(form)], []) => Some(form.clone()),
+                _ => None,
+            };
+        for known in &mut self.requires[function] {
+            if code(known) != code(&requirement) {
+                continue;
+            }
+            if known.needs == requirement.needs && known.unless == requirement.unless {
+                return;
+            }
+            if let (Some(mine), Some(theirs)) = (only(known), only(&requirement))
+                && mine.terms() == theirs.terms()
+            {
+                if theirs.constant_term() < mine.constant_term() {
+                    *known = requirement;
+                }
+                return;
+            }
+        }
+        self.requires[function].push(requirement);
+    }
+
+    /// Whether what is owed at `at` is reported for the first time; `need` is the operation's.
+    fn once(&mut self, at: TextRange, need: Need, owner: u32) -> bool {
+        // Each instance of a generic function divides by what its own callers give it.
+        let per = matches!(need, Need::Divisor(_)).then_some(owner);
+        self.reported.insert((at, need.code().name, per))
+    }
+
+    fn obligation(&mut self, body: &Body<'_>, function: usize, index: usize) {
+        let obligation = &self.lowered.obligations[index];
+        for owed in unmet(self.typing, obligation.need) {
+            let needs: Vec<Claim> = body.claim(owed).into_iter().collect();
+            let context = obligation.context;
+            let passed = self.owe(body, function, &needs, &[], context, index, true, true);
+            match passed {
+                None => {}
+                Some(Passed::Up(requirement)) => self.require(function, requirement),
+                Some(Passed::Nowhere) => {
+                    if self.once(obligation.at, obligation.need, obligation.owner) {
+                        self.report(obligation);
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    /// Holds a call to what its callee needs: each requirement where the parameters are the
+    /// call's arguments.
+    fn call(&mut self, body: &Body<'_>, call: &Call, passes: bool) {
+        let caller = call.caller.index();
+        let args: Vec<&Sym> = (self.graph.inputs(call.node).iter())
+            .map(|&arg| body.sym(arg))
+            .collect();
+        'requirements: for requirement in self.requires[call.callee.index()].clone() {
+            // The claims at the arguments, each a form there; a path of one that holds nothing
+            // there is in an operation the call never reaches.
+            let mut given = [Vec::new(), Vec::new()];
+            for (claims, given) in [&requirement.needs, &requirement.unless]
+                .iter()
+                .zip(&mut given)
+            {
+                for claim in claims.iter() {
+                    let form = claim.form().at(&args, body.types);
+                    if form.is_none() {
+                        continue 'requirements;
+                    }
+                    given.extend(form.exact().map(|form| claim.with(form.clone())));
+                }
+            }
+            let [needs, unless] = given;
+            let (origin, context) = (requirement.origin, call.context);
+            // What the operation itself needs, with every claim read at the arguments.
+            let is_exact =
+                requirement.is_exact && needs.len() + unless.len() == requirement.claims().count();
+            match self.owe(
+                body, caller, &needs, &unless, context, origin, is_exact, passes,
+            ) {
+                None => {}
+                Some(Passed::Up(requirement)) => self.require(caller, requirement),
+                Some(Passed::Nowhere) => {
+                    let code = self.lowered.obligations[origin].need.code();
+                    let at = self.spans.origin(call.node);
+                    if self.reported.insert((at, code.name, Some(caller as u32))) {
+                        let mut claims = needs.iter().chain(&unless);
+                        let is_never = is_exact && claims.all(|claim| claim.never_holds(body));
+                        self.report_call(call, &requirement, is_never);
+                    }
+                }
+            }
+        }
+    }
+
+    fn report(&mut self, obligation: &Obligation) {
+        let (graph, spans, typing) = (self.graph, self.spans, self.typing);
+        let calls = &self.lowered.calls;
+        let trace =
+            |start, relevant: &dyn Fn(&Ints) -> bool, describe: &dyn Fn(&Ints, &str) -> String| {
+                let values = typing.values();
+                explain(graph, spans, values, Some(calls), start, relevant, describe)
+            };
+        let (message, labels) = match obligation.need {
+            Need::Divisor(divisor) => {
+                let divisor_ints = &typing.may(divisor).ints;
+                let message = if divisor_ints.is_zero() {
+                    "division by zero"
+                } else {
+                    "divisor may be zero"
+                };
+                let labels = trace(divisor, &Ints::contains_zero, &|ints, where_| {
+                    if ints.is_zero() {
+                        format!("is 0{where_}")
+                    } else {
+                        format!("may be 0{where_}: {ints}")
+                    }
+                });
+                (message.to_owned(), labels)
+            }
+            Need::Last(array) => {
+                let len = ints(typing, Term::Len(array));
+                let message = if len.is_zero() {
+                    "the sequence is empty, and has no last element".to_owned()
+                } else {
+                    format!("the sequence may be empty: its length is {len}")
+                };
+                (message, Vec::new())
+            }
+            Need::Element { array, index } => {
+                let len = ints(typing, Term::Len(array));
+                let index_ints = &typing.may(index).ints;
+                let least = len.lo().unwrap_or(Int::ZERO);
+                // Outside every length the sequence may have, or only some.
+                let is_never = index_ints.hi().is_some_and(|hi| hi < Int::ZERO)
+                    || index_ints
+                        .lo()
+                        .zip(len.hi())
+                        .is_some_and(|(lo, most)| lo >= most);
+                let may = if is_never { "is" } else { "may be" };
+                let message = format!(
+                    "index {may} outside the sequence: it is {index_ints}, and the length is {len}"
+                );
+                let outside = |ints: &Ints| {
+                    ints.lo().is_none_or(|lo| lo < Int::ZERO)
+                        || ints.hi().is_none_or(|hi| hi >= least)
+                };
+                let labels = trace(index, &outside, &|ints, where_| {
+                    format!("is {ints}{where_}")
+                });
+                (message, labels)
             }
         };
-        let proof = Proof {
-            body,
-            guards: &body.guards(obligation.context),
-            steps: Cell::new(MAX_STEPS),
+        self.source
+            .report(obligation.at, obligation.need.code(), message, labels);
+    }
+
+    /// `is_never`: the call never gives what the operation itself needs.
+    fn report_call(&mut self, call: &Call, requirement: &Requirement, is_never: bool) {
+        let origin = &self.lowered.obligations[requirement.origin];
+        let (what, here) = match (origin.need, is_never) {
+            (Need::Divisor(_), false) => ("divisor may be zero", "divided here"),
+            (Need::Divisor(_), true) => ("division by zero", "divided here"),
+            (Need::Element { .. }, false) => ("index may be outside the sequence", "indexed here"),
+            (Need::Element { .. }, true) => ("index is outside the sequence", "indexed here"),
+            (Need::Last(_), false) => (
+                "the sequence may be empty",
+                "its last element is taken here",
+            ),
+            (Need::Last(_), true) => ("the sequence is empty", "its last element is taken here"),
         };
-        let is_proved = |owed: &Owed| body.claim(*owed).is_some_and(|claim| proof.holds(&claim));
-        let is_once =
-            matches!(obligation.need, Need::Divisor(_)) || !reported.contains(&obligation.at);
-        if !unmet.iter().all(is_proved) && is_once {
-            report(source, graph, spans, typing, lowered, obligation);
-            reported.insert(obligation.at);
+        let text = self.source.parsed.source();
+        let callee = self.functions[call.callee.index()].name;
+        let callee = callee.map_or("<missing>", |name| name.text(text));
+        let shown = Shown {
+            graph: self.graph,
+            spans: self.spans,
+            fields: &self.source.field_names,
+            text,
+            function: call.callee,
+        };
+        let claims: Vec<String> = (requirement.claims())
+            .map(|claim| format!("`{}`", shown.claim(claim)))
+            .collect();
+        let message = format!("{what}: `{callee}` needs {}", claims.join(" or "));
+        let mut labels = vec![(origin.at, Box::from(here))];
+        // What the call gives each path the operation's own need reads.
+        let types = Types {
+            decls: self.graph.decls(),
+            unions: self.graph.unions(),
+        };
+        let args = self.graph.inputs(call.node);
+        let mays: Vec<&May> = args.iter().map(|&arg| self.typing.may(arg)).collect();
+        let mut paths: Vec<&Path> = (requirement.needs.iter())
+            .flat_map(|claim| claim.form().terms().iter().map(|(path, _)| path))
+            .collect();
+        paths.sort();
+        paths.dedup();
+        for path in paths {
+            let Root::Param(index) = path.root() else {
+                continue;
+            };
+            let ints = path.among(&mays[..], types).ints;
+            let reads = self.spans.reads(call.node);
+            let (Some(&at), false) = (reads.get(index as usize), ints.is_empty()) else {
+                continue;
+            };
+            let is = match (ints.lo(), ints.hi()) {
+                (Some(lo), Some(hi)) if lo == hi => lo.to_string(),
+                _ => ints.to_string(),
+            };
+            labels.push((at, format!("`{}` is {is}", shown.path(path)).into()));
         }
+        labels.sort_by_key(|(range, _)| range.start());
+        let at = self.spans.origin(call.node);
+        self.source.report(at, origin.need.code(), message, labels);
     }
 }
 
-fn report(
-    source: &mut Source<'_>,
-    graph: &Graph,
-    spans: &Spans,
-    typing: &Typing,
-    lowered: &Lowered,
-    obligation: &Obligation,
-) {
-    let calls = &lowered.calls;
-    let trace =
-        |start, relevant: &dyn Fn(&Ints) -> bool, describe: &dyn Fn(&Ints, &str) -> String| {
-            let values = typing.values();
-            explain(graph, spans, values, Some(calls), start, relevant, describe)
+/// Claims of a function's parameters, as its source names them.
+struct Shown<'a> {
+    graph: &'a Graph,
+    spans: &'a Spans,
+    fields: &'a [&'a str],
+    text: &'a str,
+    function: FunctionId,
+}
+
+impl Shown<'_> {
+    fn path(&self, path: &Path) -> String {
+        let param = match path.root() {
+            Root::Param(index) => self.graph.run(self.function).params().nth(index as usize),
+            Root::Node(_) => None,
         };
-    let (message, labels) = match obligation.need {
-        Need::Divisor(divisor) => {
-            let divisor_ints = &typing.may(divisor).ints;
-            let message = if divisor_ints.is_zero() {
-                "division by zero"
-            } else {
-                "divisor may be zero"
-            };
-            let labels = trace(divisor, &Ints::contains_zero, &|ints, where_| {
-                if ints.is_zero() {
-                    format!("is 0{where_}")
-                } else {
-                    format!("may be 0{where_}: {ints}")
+        let name = param.and_then(|param| self.spans.name(param));
+        let mut shown = name.map_or("_", |name| name.text(self.text)).to_owned();
+        for step in path.steps() {
+            match step {
+                Step::Field(name, _) => {
+                    shown.push('.');
+                    shown.push_str(self.fields[name.index()]);
                 }
-            });
-            (message.to_owned(), labels)
+                Step::Element(index, _) => shown.push_str(&format!("[{}]", self.form(index))),
+                Step::Len => shown.push_str(".len()"),
+            }
         }
-        Need::Last(array) => {
-            let len = ints(typing, Term::Len(array));
-            let message = if len.is_zero() {
-                "the sequence is empty, and has no last element".to_owned()
-            } else {
-                format!("the sequence may be empty: its length is {len}")
-            };
-            (message, Vec::new())
+        shown
+    }
+
+    /// The paths `form` sums on the side `sign` is of, each with how many times.
+    fn terms(&self, form: &Form, sign: i64) -> Vec<String> {
+        let terms = form.terms().iter().filter(|(_, by)| by.signum() == sign);
+        terms
+            .map(|(path, by)| match by.unsigned_abs() {
+                1 => self.path(path),
+                by => format!("{by} * {}", self.path(path)),
+            })
+            .collect()
+    }
+
+    /// The whole of `form`, what it adds before what it takes away.
+    fn form(&self, form: &Form) -> String {
+        let (more, less) = (self.terms(form, 1), self.terms(form, -1));
+        let mut shown = sum(&more, form.constant_term());
+        if more.is_empty() && !less.is_empty() && *form.constant_term() == Int::ZERO {
+            shown = format!("-{}", less.join(" - "));
+        } else if !less.is_empty() {
+            shown.push_str(&format!(" - {}", less.join(" - ")));
         }
-        Need::Element { array, index } => {
-            let len = ints(typing, Term::Len(array));
-            let index_ints = &typing.may(index).ints;
-            let least = len.lo().unwrap_or(Int::ZERO);
-            // Outside every length the sequence may have, or only some.
-            let is_never = index_ints.hi().is_some_and(|hi| hi < Int::ZERO)
-                || index_ints
-                    .lo()
-                    .zip(len.hi())
-                    .is_some_and(|(lo, most)| lo >= most);
-            let may = if is_never { "is" } else { "may be" };
-            let message = format!(
-                "index {may} outside the sequence: it is {index_ints}, and the length is {len}"
-            );
-            let outside = |ints: &Ints| {
-                ints.lo().is_none_or(|lo| lo < Int::ZERO) || ints.hi().is_none_or(|hi| hi >= least)
-            };
-            let labels = trace(index, &outside, &|ints, where_| {
-                format!("is {ints}{where_}")
-            });
-            (message, labels)
-        }
-    };
-    source.report(obligation.at, obligation.need.code(), message, labels);
+        shown
+    }
+
+    fn claim(&self, claim: &Claim) -> String {
+        let form = claim.form();
+        let (more, less) = (self.terms(form, 1), self.terms(form, -1));
+        let constant = form.constant_term();
+        let zero = Int::ZERO;
+        // The lesser side on the left: `less <= more + constant`.
+        let (lhs, op, rhs) = match claim {
+            Claim::AtLeastZero(_) if less.is_empty() => {
+                (sum(&more, &zero), ">=", (-constant).to_string())
+            }
+            Claim::AtLeastZero(_) if more.is_empty() => {
+                (sum(&less, &zero), "<=", constant.to_string())
+            }
+            Claim::AtLeastZero(_) if *constant == Int::from(-1) => {
+                (sum(&less, &zero), "<", sum(&more, &zero))
+            }
+            Claim::AtLeastZero(_) if *constant < zero => {
+                (sum(&less, &-constant), "<=", sum(&more, &zero))
+            }
+            Claim::AtLeastZero(_) => (sum(&less, &zero), "<=", sum(&more, constant)),
+            Claim::NotZero(_) if less.is_empty() => {
+                (sum(&more, &zero), "!=", (-constant).to_string())
+            }
+            Claim::NotZero(_) if more.is_empty() => (sum(&less, &zero), "!=", constant.to_string()),
+            Claim::NotZero(_) if *constant < zero => {
+                (sum(&less, &-constant), "!=", sum(&more, &zero))
+            }
+            Claim::NotZero(_) => (sum(&less, &zero), "!=", sum(&more, constant)),
+        };
+        format!("{lhs} {op} {rhs}")
+    }
+}
+
+/// `terms` and `constant` as a sum, a zero left out beside a term.
+fn sum(terms: &[String], constant: &Int) -> String {
+    let mut shown = terms.join(" + ");
+    if terms.is_empty() {
+        shown = constant.to_string();
+    } else if *constant > Int::ZERO {
+        shown.push_str(&format!(" + {constant}"));
+    } else if *constant < Int::ZERO {
+        shown.push_str(&format!(" - {}", -constant));
+    }
+    shown
 }

@@ -1389,6 +1389,8 @@ fn graph_shape(graph: &sumi_hir::Graph) {
 pub struct Runs {
     pub finished: usize,
     pub abandoned: usize,
+    /// The live functions none of whose sampled arguments their callers were held to.
+    pub unadmitted: usize,
 }
 
 /// Whether an integer is too wide for a run to go on. A step budget is not enough: squaring along
@@ -1407,6 +1409,8 @@ pub fn run(program: Program<'_>) -> Runs {
 
     const STEPS: u64 = 1 << 17;
     const TUPLES: usize = 32;
+    /// How many times the tuples run are sampled, for those a function's callers were held to.
+    const ADMITTED: usize = 8;
 
     fn contains(ints: &Ints, value: &Int) -> bool {
         !ints.is_empty()
@@ -1562,9 +1566,12 @@ pub fn run(program: Program<'_>) -> Runs {
                         tuple
                     })
                 })
-                .take(TUPLES)
+                .take(ADMITTED * TUPLES)
                 .collect();
         }
+        let admitted = tuples.into_iter().filter(|args| program.admits(id, args));
+        let tuples: Vec<Vec<Value>> = admitted.take(TUPLES).collect();
+        runs.unadmitted += usize::from(tuples.is_empty());
         for args in tuples {
             let mut machine = program.machine(id, &args);
             let mut remaining = STEPS;

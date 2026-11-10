@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 17
+semantic errors: 23
 
 == graph ==
 fn divide_by_zero@1:1..1:41 () -> int ∈ ∅
@@ -335,22 +335,29 @@ error[semantic/division-by-zero] 1:30..1:41 "1 / (2 - 2)": division by zero
   at 1:35..1:40 "2 - 2": is 0
 error[semantic/division-by-zero] 2:33..2:38 "7 % 0": division by zero
   at 2:37..2:38 "0": is 0
-error[semantic/division-by-zero] 3:34..3:41 "100 / n": division by zero
-  at 4:47..4:48 "0": argument is 0
-error[semantic/division-by-zero] 5:26..5:33 "100 / d": divisor may be zero
-  at 6:33..6:38 "k - 3": argument may be 0: [-3, 3]
-  at 49:32..49:33 "k": argument is 0
-  at 53:10..53:11 "z": argument is 0
-  at 56:10..56:11 "k": argument is 0
+error[semantic/division-by-zero] 4:34..4:49 "by_parameter(0)": division by zero: `by_parameter` needs `n != 0`
+  at 3:34..3:41 "100 / n": divided here
+  at 4:47..4:48 "0": `n` is 0
 error[semantic/division-by-zero] 12:9..12:14 "a / 0": division by zero
   at 12:13..12:14 "0": is 0
-error[semantic/division-by-zero] 26:9..26:16 "100 / m": divisor may be zero
-  at 29:43..29:44 "0": argument is 0
-error[semantic/division-by-zero] 30:29..30:36 "100 / d": division by zero
-  at 31:32..31:33 "0": argument is 0
-  at 31:45..31:46 "0": argument is 0
-  at 31:58..31:59 "0": argument is 0
-  at 31:71..31:72 "0": argument is 0
+error[semantic/division-by-zero] 29:28..29:45 "inner_guard(0, 0)": division by zero: `inner_guard` needs `m != 0` or `n >= 1`
+  at 26:9..26:16 "100 / m": divided here
+  at 29:43..29:44 "0": `m` is 0
+error[semantic/division-by-zero] 31:24..31:34 "inverse(0)": division by zero: `inverse` needs `d != 0`
+  at 30:29..30:36 "100 / d": divided here
+  at 31:32..31:33 "0": `d` is 0
+error[semantic/division-by-zero] 31:37..31:47 "inverse(0)": division by zero: `inverse` needs `d != 0`
+  at 30:29..30:36 "100 / d": divided here
+  at 31:45..31:46 "0": `d` is 0
+error[semantic/division-by-zero] 31:50..31:60 "inverse(0)": division by zero: `inverse` needs `d != 0`
+  at 30:29..30:36 "100 / d": divided here
+  at 31:58..31:59 "0": `d` is 0
+error[semantic/division-by-zero] 31:63..31:73 "inverse(0)": division by zero: `inverse` needs `d != 0`
+  at 30:29..30:36 "100 / d": divided here
+  at 31:71..31:72 "0": `d` is 0
+error[semantic/division-by-zero] 31:76..31:86 "inverse(0)": division by zero: `inverse` needs `d != 0`
+  at 30:29..30:36 "100 / d": divided here
+  at 31:84..31:85 "0": `d` is 0
 error[semantic/division-by-zero] 37:9..37:16 "100 / z": division by zero
   at 33:13..33:14 "0": is 0
 error[semantic/division-by-zero] 42:5..42:12 "100 / d": division by zero
@@ -358,11 +365,21 @@ error[semantic/division-by-zero] 42:5..42:12 "100 / d": division by zero
   at 46:40..46:41 "0": argument is 0
 error[semantic/arity] 48:27..48:38 "arity(0, 1)": expected 1 arguments, found 2
   at 47:1..47:34 "fn arity(d: int) -> int = 100 / d": declared here
+error[semantic/division-by-zero] 50:22..50:30 "plain(0)": division by zero: `plain` needs `k != 0`
+  at 5:26..5:33 "100 / d": divided here
+  at 50:28..50:29 "0": `k` is 0
+error[semantic/division-by-zero] 53:5..53:12 "half(z)": division by zero: `half` needs `d != 0`
+  at 5:26..5:33 "100 / d": divided here
+  at 53:10..53:11 "z": `d` is 0
+error[semantic/division-by-zero] 56:5..56:12 "half(k)": division by zero: `half` needs `d != 0`
+  at 5:26..5:33 "100 / d": divided here
+  at 56:10..56:11 "k": `d` is 0
 error[semantic/division-by-zero] 70:5..70:12 "100 / h": division by zero
   at 62:13..62:14 "0": is 0
-error[semantic/division-by-zero] 72:29..72:35 "10 / n": division by zero
-  at 76:17..76:18 "x": argument is 0
 error[semantic/unknown-name] 75:8..75:14 "absent": unknown name `absent`
+error[semantic/division-by-zero] 76:9..76:19 "divides(x)": division by zero: `divides` needs `n != 0`
+  at 72:29..72:35 "10 / n": divided here
+  at 76:17..76:18 "x": `n` is 0
 error[semantic/division-by-zero] 87:30..87:55 "10 / returning_zero(true)": division by zero
   at 83:16..83:17 "0": is 0
 error[semantic/division-by-zero] 93:28..93:52 "10 / selected_zero(true)": division by zero
