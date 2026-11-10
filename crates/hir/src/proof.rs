@@ -46,7 +46,6 @@ enum Term {
 enum Rel {
     Below,
     AtMost,
-    /// Of zero alone.
     Not,
 }
 
@@ -57,24 +56,41 @@ struct Owed {
     rhs: Term,
 }
 
+/// What an operation needs, as comparisons: each of one or two, or any of several.
+enum Owes {
+    Each([Option<Owed>; 2]),
+    Any(Vec<Owed>),
+}
+
 impl Need {
-    fn owed(self) -> [Option<Owed>; 2] {
+    fn owes(&self) -> Owes {
         let owed = |lhs, rel, rhs| Some(Owed { lhs, rel, rhs });
         let value = Term::Value;
-        match self {
-            Self::Divisor(divisor) => [owed(value(divisor), Rel::Not, Term::Zero), None],
-            Self::Element { array, index } => [
+        match *self {
+            Self::Divisor(divisor) => {
+                Owes::Each([owed(value(divisor), Rel::Not, Term::Zero), None])
+            }
+            Self::Element { array, index } => Owes::Each([
                 owed(Term::Zero, Rel::AtMost, value(index)),
                 owed(value(index), Rel::Below, Term::Len(array)),
-            ],
-            Self::Last(array) => [owed(Term::Zero, Rel::Below, Term::Len(array)), None],
+            ]),
+            Self::Last(array) => Owes::Each([owed(Term::Zero, Rel::Below, Term::Len(array)), None]),
+            Self::Apart { ref indices, .. } => {
+                let apart = indices.iter().map(|&(a, b)| Owed {
+                    lhs: value(a),
+                    rel: Rel::Not,
+                    rhs: value(b),
+                });
+                Owes::Any(apart.collect())
+            }
         }
     }
 
-    fn code(self) -> DiagnosticCode {
+    fn code(&self) -> DiagnosticCode {
         match self {
             Self::Divisor(_) => codes::DIVISION_BY_ZERO,
             Self::Element { .. } | Self::Last(_) => codes::INDEX_OUT_OF_BOUNDS,
+            Self::Apart { .. } => codes::OVERLAPPING_PLACES,
         }
     }
 }
@@ -91,10 +107,11 @@ fn ints(typing: &Typing, term: Term) -> Cow<'_, Ints> {
 }
 
 fn fits(lhs: &Ints, rel: Rel, rhs: &Ints) -> bool {
+    let below = |a: &Ints, b: &Ints| a.hi().zip(b.lo()).is_some_and(|(hi, lo)| hi < lo);
     match rel {
-        Rel::Below => lhs.hi().zip(rhs.lo()).is_some_and(|(hi, lo)| hi < lo),
+        Rel::Below => below(lhs, rhs),
         Rel::AtMost => lhs.hi().zip(rhs.lo()).is_some_and(|(hi, lo)| hi <= lo),
-        Rel::Not => rhs.is_zero() && !lhs.contains_zero(),
+        Rel::Not => below(lhs, rhs) || below(rhs, lhs) || (rhs.is_zero() && !lhs.contains_zero()),
     }
 }
 
@@ -105,15 +122,31 @@ fn is_met(typing: &Typing, owed: Owed) -> Option<bool> {
     (!lhs.is_empty() && !rhs.is_empty()).then(|| fits(&lhs, owed.rel, &rhs))
 }
 
-/// What of `need` the values that may reach its operands do not meet; none in an operation
-/// that never runs.
-fn unmet(typing: &Typing, need: Need) -> Vec<Owed> {
+/// What of `need` the values that may reach its operands do not meet, each a list one of which
+/// would do; none in an operation that never runs.
+fn unmet(typing: &Typing, need: &Need) -> Vec<Vec<Owed>> {
     let mut unmet = Vec::new();
-    for owed in need.owed().into_iter().flatten() {
-        match is_met(typing, owed) {
-            None => return Vec::new(),
-            Some(true) => {}
-            Some(false) => unmet.push(owed),
+    match need.owes() {
+        Owes::Each(each) => {
+            for owed in each.into_iter().flatten() {
+                match is_met(typing, owed) {
+                    None => return Vec::new(),
+                    Some(true) => {}
+                    Some(false) => unmet.push(vec![owed]),
+                }
+            }
+        }
+        Owes::Any(any) => {
+            let mut is_any_met = false;
+            for &owed in &any {
+                match is_met(typing, owed) {
+                    None => return Vec::new(),
+                    Some(is_met) => is_any_met |= is_met,
+                }
+            }
+            if !is_any_met {
+                unmet.push(any);
+            }
         }
     }
     unmet
@@ -662,9 +695,9 @@ enum Passed {
     Nowhere,
 }
 
-/// What a diagnostic is reported once for: where, with which code, and in which function when
-/// its instances each report.
-type Once = (TextRange, &'static str, Option<u32>);
+/// What a diagnostic is reported once for: where, with which code, in which function when its
+/// instances each report, and beside which other place.
+type Once = (TextRange, &'static str, Option<u32>, Option<TextRange>);
 
 struct Checker<'a, 's> {
     source: &'a mut Source<'s>,
@@ -706,7 +739,7 @@ pub(crate) fn check(
         if failed[obligation.owner as usize] || !typing.may(obligation.context).is_live() {
             continue;
         }
-        if !unmet(typing, obligation.need).is_empty() {
+        if !unmet(typing, &obligation.need).is_empty() {
             open[obligation.owner as usize].push(index);
             is_open = true;
         }
@@ -900,23 +933,27 @@ impl Checker<'_, '_> {
     }
 
     /// Whether what is owed at `at` is reported for the first time; `need` is the operation's.
-    fn once(&mut self, at: TextRange, need: Need, owner: u32) -> bool {
-        // Each instance of a generic function divides by what its own callers give it.
-        let per = matches!(need, Need::Divisor(_)).then_some(owner);
-        self.reported.insert((at, need.code().name, per))
+    fn once(&mut self, at: TextRange, need: &Need, owner: u32) -> bool {
+        let (per, other) = match *need {
+            // Each instance of a generic function divides by what its own callers give it.
+            Need::Divisor(_) => (Some(owner), None),
+            Need::Element { .. } | Need::Last(_) => (None, None),
+            Need::Apart { other, .. } => (None, Some(other)),
+        };
+        self.reported.insert((at, need.code().name, per, other))
     }
 
     fn obligation(&mut self, body: &Body<'_>, function: usize, index: usize) {
         let obligation = &self.lowered.obligations[index];
-        for owed in unmet(self.typing, obligation.need) {
-            let needs: Vec<Claim> = body.claim(owed).into_iter().collect();
+        for any in unmet(self.typing, &obligation.need) {
+            let needs: Vec<Claim> = any.iter().filter_map(|&owed| body.claim(owed)).collect();
             let context = obligation.context;
             let passed = self.owe(body, function, &needs, &[], context, index, true, true);
             match passed {
                 None => {}
                 Some(Passed::Up(requirement)) => self.require(function, requirement),
                 Some(Passed::Nowhere) => {
-                    if self.once(obligation.at, obligation.need, obligation.owner) {
+                    if self.once(obligation.at, &obligation.need, obligation.owner) {
                         self.report(obligation);
                     }
                     return;
@@ -961,7 +998,10 @@ impl Checker<'_, '_> {
                 Some(Passed::Nowhere) => {
                     let code = self.lowered.obligations[origin].need.code();
                     let at = self.spans.origin(call.node);
-                    if self.reported.insert((at, code.name, Some(caller as u32))) {
+                    if self
+                        .reported
+                        .insert((at, code.name, Some(caller as u32), None))
+                    {
                         let mut claims = needs.iter().chain(&unless);
                         let is_never = is_exact && claims.all(|claim| claim.never_holds(body));
                         self.report_call(call, &requirement, is_never);
@@ -980,6 +1020,22 @@ impl Checker<'_, '_> {
                 explain(graph, spans, values, Some(calls), start, relevant, describe)
             };
         let (message, labels) = match obligation.need {
+            Need::Apart { ref indices, other } => {
+                let point = |node: NodeId| {
+                    let ints = &typing.may(node).ints;
+                    ints.lo().zip(ints.hi()).filter(|(lo, hi)| lo == hi)
+                };
+                let is_one = |&(a, b): &(NodeId, NodeId)| {
+                    a == b || point(a).is_some_and(|a| Some(a) == point(b))
+                };
+                let may = if indices.iter().all(is_one) {
+                    "overlaps"
+                } else {
+                    "may overlap"
+                };
+                let message = format!("this place {may} another the call changes");
+                (message, vec![(other, Box::from("also changed here"))])
+            }
             Need::Divisor(divisor) => {
                 let divisor_ints = &typing.may(divisor).ints;
                 let message = if divisor_ints.is_zero() {
@@ -1036,7 +1092,7 @@ impl Checker<'_, '_> {
     /// `is_never`: the call never gives what the operation itself needs.
     fn report_call(&mut self, call: &Call, requirement: &Requirement, is_never: bool) {
         let origin = &self.lowered.obligations[requirement.origin];
-        let (what, here) = match (origin.need, is_never) {
+        let (what, here) = match (&origin.need, is_never) {
             (Need::Divisor(_), false) => ("divisor may be zero", "divided here"),
             (Need::Divisor(_), true) => ("division by zero", "divided here"),
             (Need::Element { .. }, false) => ("index may be outside the sequence", "indexed here"),
@@ -1046,6 +1102,8 @@ impl Checker<'_, '_> {
                 "its last element is taken here",
             ),
             (Need::Last(_), true) => ("the sequence is empty", "its last element is taken here"),
+            (Need::Apart { .. }, false) => ("places a call changes may overlap", "changed here"),
+            (Need::Apart { .. }, true) => ("places a call changes overlap", "changed here"),
         };
         let text = self.source.parsed.source();
         let callee = self.functions[call.callee.index()].name;

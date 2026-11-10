@@ -11,6 +11,12 @@ impl Grid {
     }
 }
 
+fn swap(mut a: int, mut b: int) {
+    let t = a
+    a = b
+    b = t
+}
+
 fn bump(mut xs: [int], i: int) {
     xs[i] += 1
 }
@@ -20,9 +26,7 @@ fn sort(mut xs: [int]) {
         bump(mut xs, i)
         for j in i + 1..xs.len() {
             if xs[j] < xs[i] {
-                let t = xs[i]
-                xs[i] = xs[j]
-                xs[j] = t
+                swap(mut xs[i], mut xs[j])
             }
         }
     }
