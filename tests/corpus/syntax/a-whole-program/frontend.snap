@@ -1,5 +1,5 @@
 == tree ==
-SourceFile 1:1..73:1
+SourceFile 1:1..83:1
   FnItem 3:1..15:2
     Name 3:4..3:8 "main"
     ParamList 3:8..3:10 "()"
@@ -320,3 +320,48 @@ SourceFile 1:1..73:1
               NameRef 72:48..72:49 "b"
         NameRef 72:51..72:56 "value"
       NameRef 72:57..72:62 "value"
+  FnItem 74:1..76:2
+    Name 74:4..74:8 "bump"
+    ParamList 74:8..74:31
+      Param 74:9..74:21
+        Name 74:13..74:14 "p"
+        TypeRef 74:16..74:21 "Point"
+      Param 74:23..74:30
+        Name 74:23..74:25 "by"
+        TypeRef 74:27..74:30 "int"
+    Block 74:32..76:2
+      AssignStmt 75:5..75:19
+        FieldExpr 75:5..75:8
+          NameRef 75:5..75:6 "p"
+          NameRef 75:7..75:8 "x"
+        BinaryExpr 75:11..75:19
+          FieldExpr 75:11..75:14
+            NameRef 75:11..75:12 "p"
+            NameRef 75:13..75:14 "x"
+          NameRef 75:17..75:19 "by"
+  FnItem 78:1..82:2
+    Name 78:4..78:9 "moved"
+    ParamList 78:9..78:11 "()"
+    TypeRef 78:15..78:18 "int"
+    Block 78:19..82:2
+      LetStmt 79:5..79:34
+        Name 79:13..79:14 "p"
+        CallExpr 79:17..79:34
+          NameRef 79:17..79:22 "Point"
+          ArgList 79:22..79:34
+            Arg 79:23..79:27
+              NameRef 79:23..79:24 "x"
+              LiteralExpr 79:26..79:27 "1"
+            Arg 79:29..79:33
+              NameRef 79:29..79:30 "y"
+              LiteralExpr 79:32..79:33 "2"
+      CallExpr 80:5..80:19
+        NameRef 80:5..80:9 "bump"
+        ArgList 80:9..80:19
+          Arg 80:10..80:15
+            NameRef 80:14..80:15 "p"
+          Arg 80:17..80:18
+            LiteralExpr 80:17..80:18 "3"
+      FieldExpr 81:5..81:8
+        NameRef 81:5..81:6 "p"
+        NameRef 81:7..81:8 "x"

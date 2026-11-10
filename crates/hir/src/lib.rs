@@ -232,19 +232,32 @@ impl Analysis {
         Some(Signature {
             params: self.graph.run(id).param_types()?,
             result: self.function(id).result?,
+            product: self.function(id).product,
         })
     }
     /// None for a function without a signature.
     pub fn ranges(&self, id: FunctionId) -> Option<Ranges> {
         self.signature(id)?;
         let run = self.graph.run(id);
+        let returned = self.may(run.result());
+        let result = match self.function(id).product {
+            _ if !self.may(run.entry()).is_live() => May::NONE,
+            None => returned.clone(),
+            // The result is the product's first field.
+            Some(product) => {
+                let (name, _) = self.graph.decl(product).fields()[0];
+                let Ok(result) = sumi_graph::Domain::field(
+                    returned,
+                    name,
+                    self.graph.decls(),
+                    self.graph.unions(),
+                );
+                result
+            }
+        };
         Some(Ranges {
             params: run.params().map(|param| self.may(param).clone()).collect(),
-            result: if self.may(run.entry()).is_live() {
-                self.may(run.result()).clone()
-            } else {
-                May::NONE
-            },
+            result,
         })
     }
     pub fn text(&self, range: TextRange) -> &str {
@@ -418,6 +431,7 @@ pub struct Function {
     type_args: Box<[Ty]>,
     /// Resolved only for a function with parameter types.
     result: Option<Ty>,
+    product: Option<DeclId>,
     is_complete: bool,
     depth: Option<u64>,
 }
@@ -513,7 +527,8 @@ impl TypeDecl {
     pub fn type_args(&self) -> &[Ty] {
         &self.type_args
     }
-    /// In declaration order, parallel to the graph's.
+    /// In declaration order, parallel to the graph's; none for the product of a function with
+    /// `mut` parameters, whose fields the source does not name.
     pub fn fields(&self) -> &[FieldDecl] {
         &self.fields
     }
@@ -566,7 +581,10 @@ pub struct Binding {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BindingKind {
-    Param,
+    /// A `mut` one is its caller's place, which its final value is written back to.
+    Param {
+        is_mutable: bool,
+    },
     Let {
         is_mutable: bool,
     },
@@ -623,4 +641,14 @@ pub struct Ranges {
 pub struct Signature<'a> {
     pub params: &'a [Ty],
     pub result: Ty,
+    /// What a function with `mut` parameters returns, and a call to it holds: a declared type
+    /// with the result as its first field, then each such parameter's final value under its name.
+    pub product: Option<DeclId>,
+}
+
+impl Signature<'_> {
+    /// The type of the value a run of the function yields.
+    pub fn returned(&self) -> Ty {
+        self.product.map_or(self.result, Ty::decl)
+    }
 }

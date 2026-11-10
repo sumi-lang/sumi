@@ -109,13 +109,16 @@ fn type_text() -> BoxedStrategy<String> {
 
 fn param_list() -> BoxedStrategy<String> {
     (
-        prop::collection::vec((name(), type_text()), 0..3),
+        prop::collection::vec((any::<bool>(), name(), type_text()), 0..3),
         any::<bool>(),
     )
         .prop_map(move |(params, trailing)| {
             let params: Vec<String> = params
                 .into_iter()
-                .map(|(param, ty)| format!("{param}: {ty}"))
+                .map(|(mutable, param, ty)| {
+                    let mutable = if mutable { "mut " } else { "" };
+                    format!("{mutable}{param}: {ty}")
+                })
                 .collect();
             let comma = if trailing && !params.is_empty() {
                 ","
@@ -158,16 +161,22 @@ fn expr() -> BoxedStrategy<String> {
             2 => (
                 (name(), type_list(type_text()))
                     .prop_map(|(callee, type_args)| format!("{callee}{type_args}")),
-                prop::collection::vec((prop::option::of(name()), expr.clone()), 0..3),
+                prop::collection::vec(
+                    (prop::option::of(name()), any::<bool>(), expr.clone()),
+                    0..3,
+                ),
                 any::<bool>(),
                 any::<bool>(),
             )
                 .prop_map(|(callee, args, trailing, multiline)| {
                     let args: Vec<String> = args
                         .into_iter()
-                        .map(|(label, value)| match label {
-                            Some(label) => format!("{label}: {value}"),
-                            None => value,
+                        .map(|(label, mutable, value)| {
+                            let mutable = if mutable { "mut " } else { "" };
+                            match label {
+                                Some(label) => format!("{label}: {mutable}{value}"),
+                                None => format!("{mutable}{value}"),
+                            }
                         })
                         .collect();
                     let comma = if trailing && !args.is_empty() { "," } else { "" };

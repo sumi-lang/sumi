@@ -1,6 +1,8 @@
 //! Semantic checking of one file, over the graph lowering built: the types, then the values over
 //! them, then the verdicts that read both.
 
+use std::collections::HashSet;
+
 use sumi_frontend::{Diagnostic, ParsedSource};
 use sumi_graph::{DeclId, FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
@@ -36,6 +38,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             generic: header.generic,
             type_args: type_args.iter().copied().collect(),
             result,
+            product: header.product,
             is_complete: false,
             depth: None,
         })
@@ -90,6 +93,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
         )
     };
     drop(any);
+    let products: HashSet<DeclId> = headers.iter().filter_map(|header| header.product).collect();
     let decls: Vec<TypeDecl> = source
         .decls
         .iter()
@@ -98,9 +102,11 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
             is_param: source.params.holds(DeclId::new(index)),
             name: names.name_node.map(|node| source.range(node)),
             origin: source.range(names.origin),
+            // A product's fields are no names of the source.
             fields: names
                 .fields
                 .iter()
+                .filter(|_| !products.contains(&DeclId::new(index)))
                 .map(|&(name, node)| FieldDecl {
                     name: source.range(node),
                     text: name.into(),
@@ -476,9 +482,11 @@ fn complete(
             }
             Op::Hole => false,
             // A caller's demand can resolve the call without the callee resolving.
-            Op::Call(callee) => functions[callee.index()]
-                .result
-                .is_some_and(|result| Some(result) == typing.resolve(node)),
+            Op::Call(callee) => {
+                let callee = &functions[callee.index()];
+                let returned = callee.product.map(Ty::decl).or(callee.result);
+                callee.result.is_some() && returned == typing.resolve(node)
+            }
             _ if !graph.input_roles(node).iter().all(|role| role.is_value()) => true,
             Op::Switch { arms } if arms.iter().all(|arm| !graph.region(arm).result_has_value()) => {
                 true

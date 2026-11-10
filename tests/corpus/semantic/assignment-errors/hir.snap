@@ -70,7 +70,7 @@ error[semantic/immutable-assignment] 4:5..4:6 "x": cannot assign to immutable lo
   at 3:9..3:10 "x": declared here
 error[semantic/immutable-assignment] 7:5..7:6 "x": cannot assign to immutable local `x`
   at 6:20..6:21 "x": declared here
-error[semantic/invalid-assignment-target] 11:6..11:11 "x + 1": assignment target must be a mutable local name
+error[semantic/invalid-assignment-target] 11:6..11:11 "x + 1": this is no place: a place is a `mut` name, or a field under one
 error[semantic/invalid-assignment-target] 14:5..14:11 "target": function `target` is not assignable
 error[semantic/unknown-name] 17:5..17:12 "missing": unknown name `missing`
 error[semantic/type-mismatch] 21:9..21:13 "true": expected int, found bool

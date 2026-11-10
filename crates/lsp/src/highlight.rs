@@ -116,13 +116,17 @@ pub(crate) fn tokens(
                     name(Some(param.node()), Kind::TypeParameter, DECLARATION);
                 }
             }
-            NodeKind::Param => name(
-                ast::Param::cast(tree, node)
-                    .and_then(|param| param.name(tree))
-                    .map(|name| name.node()),
-                Kind::Parameter,
-                DECLARATION | READONLY,
-            ),
+            NodeKind::Param => {
+                let param = ast::Param::cast(tree, node);
+                let is_mutable = param.is_some_and(|param| param.mutable(tree, lexed));
+                name(
+                    param
+                        .and_then(|param| param.name(tree))
+                        .map(|name| name.node()),
+                    Kind::Parameter,
+                    DECLARATION | if is_mutable { 0 } else { READONLY },
+                )
+            }
             NodeKind::Field => name(
                 ast::Field::cast(tree, node)
                     .and_then(|field| field.name(tree))
@@ -197,7 +201,8 @@ pub(crate) fn tokens(
                 Symbol::Type(_) => (Kind::Type, 0),
                 Symbol::Field(..) => (Kind::Property, 0),
                 Symbol::Local(id) => match analysis.binding(id).kind() {
-                    BindingKind::Param => (Kind::Parameter, READONLY),
+                    BindingKind::Param { is_mutable: true } => (Kind::Parameter, 0),
+                    BindingKind::Param { is_mutable: false } => (Kind::Parameter, READONLY),
                     BindingKind::Let { is_mutable: true } => (Kind::Variable, 0),
                     BindingKind::Let { is_mutable: false }
                     | BindingKind::LoopIndex

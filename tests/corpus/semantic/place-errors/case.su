@@ -1,0 +1,66 @@
+type Point {
+    x: int,
+    y: int,
+}
+type Line {
+    from: Point,
+    to: Point,
+}
+type Circle {
+    radius: int,
+}
+type Square {
+    side: int,
+}
+fn shift(mut p: Point, dx: int) {
+    p.x = p.x + dx
+}
+fn swap<T>(mut a: T, mut b: T) {
+    let t = a
+    a = b
+    b = t
+}
+fn reshape(mut s: Circle | Square) {
+    s = Square(side: 1)
+}
+fn origin() -> Point = Point(x: 0, y: 0)
+fn targets(q: Point) -> int {
+    let p = Point(x: 1, y: 2)
+    let mut m = Point(x: 1, y: 2)
+    p.x = 3
+    q.y = 4
+    origin().x = 5
+    m.z = 6
+    m.x.y = 7
+    m.x = true
+    missing.x = 8
+    m.x
+}
+fn arguments() -> int {
+    let p = Point(x: 1, y: 2)
+    let mut m = Point(x: 1, y: 2)
+    let mut n = 0
+    shift(m, 1)
+    shift(mut m, mut n)
+    shift(mut p, 1)
+    shift(mut origin(), 1)
+    shift(mut m.x, 1)
+    absent(mut m)
+    m.x + n
+}
+fn fields() -> int {
+    let mut m = Point(x: 1, y: 2)
+    let p = Point(x: mut m.x, y: 2)
+    p.x
+}
+fn overlaps() -> int {
+    let mut l = Line(from: Point(x: 0, y: 0), to: Point(x: 3, y: 4))
+    let mut c = Circle(radius: 1)
+    swap(mut l.from, mut l.from)
+    swap(mut l, mut l.to)
+    swap(mut l.from.x, mut l.from)
+    swap(mut l.from, mut c)
+    reshape(mut c)
+    l.from.x + c.radius
+}
+fn unassigned(mut p: Point, mut q: Point) -> int = p.x

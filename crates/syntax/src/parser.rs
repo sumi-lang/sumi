@@ -573,7 +573,7 @@ impl ListRule for Params {
     const RESUMES_AT_ELEMENT: bool = false;
 
     fn starts_element(m: &Marker<'_, '_>) -> bool {
-        m.at(T::Ident) || m.at(T::Underscore)
+        m.at(T::Ident) || m.at(T::Underscore) || m.at(T::MutKw)
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
@@ -649,7 +649,7 @@ impl ListRule for Args {
     const RESUMES_AT_ELEMENT: bool = true;
 
     fn starts_element(m: &Marker<'_, '_>) -> bool {
-        m.starts_expression()
+        m.starts_expression() || m.at(T::MutKw)
     }
 
     fn parse_element(m: &mut Marker<'_, '_>) {
@@ -736,9 +736,12 @@ fn begins_element<R: ListRule>(m: &Marker<'_, '_>) -> bool {
             .is_some_and(|kind| !is_opener(kind) || m.has_partner())
 }
 
-/// A `Param` or a `Field`: `Name ':' TypeRef`.
+/// A `Param` or a `Field`: `Name ':' TypeRef`, a `Param` after its `mut` if it has one.
 fn typed_name(p: &mut Marker<'_, '_>, kind: N) {
     let mut m = p.start();
+    if kind == N::Param && m.at(T::MutKw) {
+        m.token();
+    }
     name(&mut m);
     if m.at(T::Colon) && !m.is_at_boundary() {
         m.token();
@@ -757,6 +760,9 @@ fn arg(p: &mut Marker<'_, '_>) {
     if m.at(T::Ident) && m.nth(1) == Some(T::Colon) {
         let label = leaf(&mut m, N::NameRef);
         m.field(&label, 0);
+        m.token();
+    }
+    if m.at(T::MutKw) {
         m.token();
     }
     if let Some(value) = operand(&mut m) {

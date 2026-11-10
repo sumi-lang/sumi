@@ -17,7 +17,7 @@ use sumi_syntax::{
 };
 use sumi_text::{TextEdit, TextRange, TextSize};
 
-use super::declare::{Declarations, HeaderResult, Named, Order, unbounded_calls};
+use super::declare::{Declarations, HeaderResult, Named, Order, RESULT, unbounded_calls};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
 use super::{Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
@@ -152,6 +152,24 @@ enum Decides {
     Nothing,
 }
 
+/// Whether what is no place has a place's shape, a name and fields, so its name is resolved.
+struct IsShaped(bool);
+
+/// A place: a mutable local and the fields under it, outermost first, each with its name.
+struct Place<'s> {
+    local: LocalId,
+    root: NodeIdx,
+    fields: Vec<(&'s str, NodeIdx)>,
+}
+
+impl Place<'_> {
+    /// Whether a write to one is a write to the other, or to a part of it.
+    fn overlaps(&self, other: &Self) -> bool {
+        let shared = self.fields.iter().zip(&other.fields);
+        self.local == other.local && shared.into_iter().all(|(a, b)| a.0 == b.0)
+    }
+}
+
 /// A call from a generic function's own body to a generic function, at the type arguments it
 /// names or its arguments decide.
 pub(super) struct GenericCall {
@@ -264,6 +282,8 @@ struct Builder<'a, 's> {
     /// The mutable locals of the open scopes, in declaration order.
     mutable_locals: Vec<LocalId>,
     returns: Vec<(NodeId, TextRange)>,
+    /// The `mut` parameters of the function being built, whose values its every exit returns.
+    outs: Vec<LocalId>,
     /// Scratch a version merge fills, kept across merges.
     merge_values: Vec<(NodeId, NodeId)>,
     merge_inputs: Vec<(NodeId, TextRange)>,
@@ -296,6 +316,7 @@ impl<'a, 's> Builder<'a, 's> {
                 entered: Vec::new(),
                 obligations: Vec::new(),
                 fallthroughs: vec![None; functions],
+                exits: vec![Vec::new(); functions],
                 bindings: Vec::new(),
                 references: Vec::new(),
                 unresolved: Vec::new(),
@@ -316,6 +337,7 @@ impl<'a, 's> Builder<'a, 's> {
             versions: Versions::new(),
             mutable_locals: Vec::new(),
             returns: Vec::new(),
+            outs: Vec::new(),
             merge_values: Vec::new(),
             merge_inputs: Vec::new(),
             merge_contexts: Vec::new(),
@@ -341,8 +363,13 @@ impl<'a, 's> Builder<'a, 's> {
         if !value.is_valid {
             return Decides::Failed;
         }
+        self.decides_at(value.node)
+    }
+
+    /// As [`decides`](Self::decides), of a node the typing follows.
+    fn decides_at(&mut self, node: NodeId) -> Decides {
         let owner = FunctionId::new(self.owner as usize);
-        match self.checker().read(owner, value.node) {
+        match self.checker().read(owner, node) {
             Read::Ty(ty) => Decides::Ty(ty),
             Read::Unknown if self.types.is_pending() => Decides::Pending,
             Read::Unknown => Decides::Failed,
@@ -381,9 +408,11 @@ impl<'a, 's> Builder<'a, 's> {
         self.locals.clear();
         self.versions.clear();
         self.mutable_locals.clear();
+        self.outs.clear();
         if self.lowered.built.len() <= owner {
             self.lowered.built.resize(owner + 1, false);
             self.lowered.fallthroughs.resize(owner + 1, None);
+            self.lowered.exits.resize(owner + 1, Vec::new());
         }
         let header = self.declared.headers[owner];
         let item_node = header.item;
@@ -428,7 +457,13 @@ impl<'a, 's> Builder<'a, 's> {
             let node = self.push(param.node, Op::Param { index, ty }, &[], name);
             self.has_failed |= ty.is_none();
             if let (Some((name, _)), Some(range)) = (param.name, name) {
-                self.bind(name, node, BindingKind::Param, range, body_range.start());
+                let kind = BindingKind::Param {
+                    is_mutable: param.is_mut,
+                };
+                let local = self.bind(name, node, kind, range, body_range.start());
+                if header.product.is_some() && param.out().is_some() {
+                    self.outs.push(local);
+                }
             } else {
                 self.has_failed = true;
             }
@@ -442,6 +477,15 @@ impl<'a, 's> Builder<'a, 's> {
         let body = match root_node {
             Some(root) => self.lower(root),
             None => self.hole_value(item_node),
+        };
+        // Where the body falls through, its value is one exit's.
+        let body = match header.product {
+            Some(product) if root_node.is_some() && body.is_valid && !body.completes => Value {
+                node: self.exit(product, body.input()),
+                has_scalar_tail: true,
+                ..body
+            },
+            _ => body,
         };
         let control = body.control;
         let fallthrough = control.map(|control| {
@@ -457,8 +501,9 @@ impl<'a, 's> Builder<'a, 's> {
             .close_with_control(region, body.node, !completes, control);
         self.spans.close(region, body.at);
         self.regions.pop();
-        // A failed parameter does not erase a declared result; the body is still held to it.
-        let declared = declared.declared();
+        // A failed parameter does not erase a declared result; the body is still held to it. A
+        // product's exits each hold their own result to it.
+        let declared = declared.declared().filter(|_| header.product.is_none());
         let value = match (control.is_none() && self.returns.is_empty(), declared) {
             (true, Some((ty, node))) => {
                 let copy = self.push(node, Op::Copy { declared: Some(ty) }, &[body.input()], None);
@@ -522,8 +567,10 @@ impl<'a, 's> Builder<'a, 's> {
         }
         let taken: HashSet<&str, FxBuildHasher> =
             self.locals.iter().map(|local| local.name).collect();
-        for local in &self.locals {
-            if local.is_read {
+        for (index, local) in self.locals.iter().enumerate() {
+            // What a `mut` parameter is assigned, its caller reads.
+            let is_out = local.is_assigned && self.outs.contains(&LocalId::new(index));
+            if local.is_read || is_out {
                 continue;
             }
             let declaration = self.graph.node(local.declaration);
@@ -828,7 +875,10 @@ impl<'a, 's> Builder<'a, 's> {
         range: TextRange,
         from: TextSize,
     ) -> LocalId {
-        let is_mutable = matches!(kind, BindingKind::Let { is_mutable: true });
+        let is_mutable = matches!(
+            kind,
+            BindingKind::Let { is_mutable: true } | BindingKind::Param { is_mutable: true }
+        );
         let end = self.scope_ends[self.depth - 1];
         let from = from.min(end);
         // A muted instance declares no binding, so its locals' IDs name none; `refer` is muted
@@ -1369,37 +1419,258 @@ impl<'a, 's> Builder<'a, 's> {
     fn assign(&mut self, assignment: ast::AssignStmt, damaged: bool) -> Value {
         let tree = self.source.tree;
         let node = assignment.node();
-        let target = assignment
+        let at = self.source.range(node);
+        let place = assignment
             .target(tree)
-            .and_then(|target| self.assignment_target(target));
+            .and_then(|target| self.place_of(target).ok());
         let value = assignment.value(tree).map(|value| self.lower(value.node()));
         let value = self.present(node, value);
-        let assigned = match target {
-            Some(local) => self.push_over(
-                node,
-                Op::Assign,
-                &[value.input()],
-                References::Version(self.locals[local.index()].declaration),
-                None,
-                &[],
-            ),
-            None => self.push(node, Op::Hole, &[value.input()], None),
+        // A value that returns first is assigned to nothing.
+        let assigned = match &place {
+            Some(place) if value.completes => {
+                let declaration = self.locals[place.local.index()].declaration;
+                let references = References::Version(declaration);
+                let assigned = self.place_with(Op::Assign, &[value.input()], references, at, None);
+                self.completes_input(assigned, 0);
+                Some(assigned)
+            }
+            Some(place) => self.write(place, value.input(), at),
+            None => None,
         };
+        let id = match assigned {
+            Some(assigned) => assigned,
+            None => self.place(Op::Hole, &[value.input()], at, None),
+        };
+        self.nodes_of[node.to_usize()] = Some(id);
         self.bottoms[node.to_usize()] = value.completes;
-        if value.completes {
-            self.completes_input(assigned, 0);
-        } else if let Some(local) = target
-            && self.is_typed(assigned)
-        {
-            self.versions.set(local, assigned);
-        }
-        if damaged || target.is_none() || !value.is_valid || !self.is_typed(assigned) {
+        if damaged || assigned.is_none() || !value.is_valid || !self.is_typed(id) {
             self.fail();
         }
-        self.value(node, assigned, value.control, value.completes)
+        self.value(node, id, value.control, value.completes)
     }
 
-    /// A discard or parentheses: the value is the child's, read at `node`.
+    /// The place `target` names: a mutable local, or a field under one. Any other is reported,
+    /// and is no name's reference unless its shape is a place's.
+    fn place_of(&mut self, target: ast::Expr) -> Result<Place<'s>, IsShaped> {
+        let tree = self.source.tree;
+        let mut fields = Vec::new();
+        let mut expr = self.source.peel(target);
+        let name = loop {
+            let step = match expr {
+                ast::Expr::NameRef(name) => break name,
+                ast::Expr::FieldExpr(field) if !tree.has_error(field.node()) => {
+                    field.base(tree).zip(field.field(tree))
+                }
+                _ => None,
+            };
+            let Some((base, field)) = step else {
+                self.source.error(
+                    expr.node(),
+                    codes::INVALID_ASSIGNMENT_TARGET,
+                    "this is no place: a place is a `mut` name, or a field under one",
+                    None,
+                );
+                return Err(IsShaped(false));
+            };
+            fields.push((self.source.text(field.node()), field.node()));
+            expr = self.source.peel(base);
+        };
+        fields.reverse();
+        let text = self.source.text(name.node());
+        let Some(local) = self.lookup(text) else {
+            if let Some(&named) = self.declared.names.get(text) {
+                let what = match named {
+                    Named::Function(id) => {
+                        self.refer(name.node(), Symbol::Function(id), true);
+                        "function"
+                    }
+                    Named::Type(id) => {
+                        self.refer(name.node(), Symbol::Type(id), true);
+                        "type"
+                    }
+                    Named::Ambiguous => "name",
+                };
+                self.source.error(
+                    name.node(),
+                    codes::INVALID_ASSIGNMENT_TARGET,
+                    format!("{what} `{text}` is not assignable"),
+                    None,
+                );
+            } else {
+                self.source.error(
+                    name.node(),
+                    codes::UNKNOWN_NAME,
+                    format!("unknown name `{text}`"),
+                    None,
+                );
+            }
+            return Err(IsShaped(true));
+        };
+        self.refer(
+            name.node(),
+            Symbol::Local(self.locals[local.index()].binding),
+            true,
+        );
+        if !self.versions.is_mutable(local) {
+            let declaration = self.locals[local.index()].declaration;
+            self.source.error(
+                name.node(),
+                codes::IMMUTABLE_ASSIGNMENT,
+                format!("cannot assign to immutable local `{text}`"),
+                self.spans
+                    .name(declaration)
+                    .map(|range| (range, "declared here")),
+            );
+            return Err(IsShaped(true));
+        }
+        self.locals[local.index()].is_assigned = true;
+        Ok(Place {
+            local,
+            root: name.node(),
+            fields,
+        })
+    }
+
+    /// Where the place is written in the source, through the field at `depth` of its fields.
+    fn place_range(&self, place: &Place<'s>, depth: usize) -> TextRange {
+        let end = match depth.checked_sub(1) {
+            Some(last) => place.fields[last].1,
+            None => place.root,
+        };
+        TextRange::new(
+            self.source.range(place.root).start(),
+            self.source.range(end).end(),
+        )
+    }
+
+    /// The value the place holds now: its local's, read through each field.
+    fn read_place(&mut self, place: &Place<'s>) -> Value {
+        self.locals[place.local.index()].is_read = true;
+        let mut read = self.versions.read(place.local);
+        for (depth, &(name, _)) in place.fields.iter().enumerate() {
+            let name = self.source.field_name(name);
+            let range = self.place_range(place, depth + 1);
+            let base = (read, self.place_range(place, depth));
+            read = self.place(Op::Field(name), &[base], range, None);
+        }
+        let range = self.place_range(place, place.fields.len());
+        let is_valid = self.is_typed(read);
+        if !is_valid {
+            self.fail();
+        }
+        Value {
+            node: read,
+            range,
+            at: range,
+            control: None,
+            completes: false,
+            is_valid,
+            has_scalar_tail: is_valid,
+        }
+    }
+
+    /// The declared type the value at `base` is of and its field `name`, by position; none where
+    /// it has no such field, or its type is not known, which is reported unless it failed.
+    fn field_of(&mut self, base: NodeId, name: &str, at: NodeIdx) -> Option<(DeclId, usize)> {
+        if !self.is_typed(base) {
+            return None;
+        }
+        let ty = match self.decides_at(base) {
+            Decides::Ty(ty) => ty,
+            Decides::Failed => return None,
+            read => {
+                let message = format!(
+                    "the type the field `{name}` is of is not known here{}",
+                    pending_text(read)
+                );
+                self.source.error(at, codes::UNKNOWN_FIELD, message, None);
+                return None;
+            }
+        };
+        let decl = ty.as_decl();
+        let field = decl.and_then(|decl| self.source.decls[decl.index()].index_of(name));
+        if let (Some(decl), Some(field)) = (decl, field) {
+            return Some((decl, field));
+        }
+        let declared = decl
+            .and_then(|decl| self.source.decls[decl.index()].name_node)
+            .map(|node| (self.source.range(node), "declared here"));
+        let message = format!("`{}` has no field `{name}`", self.source.show(ty));
+        self.source
+            .error(at, codes::UNKNOWN_FIELD, message, declared);
+        None
+    }
+
+    /// Writes `value` to the place: its local's next version, which is every record on the way
+    /// to the field made again with what changed under it. None where a field is not known.
+    fn write(
+        &mut self,
+        place: &Place<'s>,
+        value: (NodeId, TextRange),
+        at: TextRange,
+    ) -> Option<NodeId> {
+        let mut base = self.versions.read(place.local);
+        let mut steps: Vec<(NodeId, DeclId, usize)> = Vec::with_capacity(place.fields.len());
+        for (depth, &(name, node)) in place.fields.iter().enumerate() {
+            let (decl, field) = self.field_of(base, name, node)?;
+            let item = self.source.decls[decl.index()].item;
+            let is_last = depth + 1 == place.fields.len();
+            self.refer(node, Symbol::Field(item, field as u32), is_last);
+            steps.push((base, decl, field));
+            if !is_last {
+                let name = self.source.field_name(name);
+                let range = self.place_range(place, depth + 1);
+                let read = (base, self.place_range(place, depth));
+                base = self.place(Op::Field(name), &[read], range, None);
+            }
+        }
+        let mut value = value;
+        for (depth, (base, decl, field)) in steps.into_iter().enumerate().rev() {
+            let range = self.place_range(place, depth);
+            let count = self.source.fields(decl).len();
+            let mut inputs = Vec::with_capacity(count);
+            for other in 0..count {
+                if other == field {
+                    inputs.push(value);
+                } else {
+                    let name = self.source.fields(decl)[other].0;
+                    let read = self.place(Op::Field(name), &[(base, range)], range, None);
+                    inputs.push((read, range));
+                }
+            }
+            value = (self.place(Op::Make(decl), &inputs, at, None), range);
+        }
+        let declaration = self.locals[place.local.index()].declaration;
+        let references = References::Version(declaration);
+        let assigned = self.place_with(Op::Assign, &[value], references, at, None);
+        if self.is_typed(assigned) {
+            self.versions.set(place.local, assigned);
+        }
+        Some(assigned)
+    }
+
+    /// One exit's value of a function with `mut` parameters: its result there, held to the type
+    /// declared for it, then the value each `mut` parameter has.
+    fn exit(&mut self, product: DeclId, result: (NodeId, TextRange)) -> NodeId {
+        let owner = self.owner as usize;
+        let (value, at) = result;
+        let value = match self.declared.headers[owner].result.declared() {
+            Some((ty, annotation)) => {
+                let range = self.source.range(annotation);
+                let copy = self.place(Op::Copy { declared: Some(ty) }, &[result], range, None);
+                self.annotate(copy, annotation);
+                copy
+            }
+            None => value,
+        };
+        self.lowered.exits[owner].push((value, at));
+        let mut inputs = vec![(value, at)];
+        for index in 0..self.outs.len() {
+            inputs.push((self.versions.read(self.outs[index]), at));
+        }
+        self.place(Op::Make(product), &inputs, at, None)
+    }
+
     fn through(&mut self, node: NodeIdx, value: Value, damaged: bool) -> Value {
         self.nodes_of[node.to_usize()] = Some(value.node);
         self.bottoms[node.to_usize()] = value.completes;
@@ -1427,6 +1698,13 @@ impl<'a, 's> Builder<'a, 's> {
                 let unit = self.push(node, Op::Unit, &[(self.context(), at)], None);
                 (unit, at)
             }
+        };
+        let product = self.declared.headers[self.owner as usize].product;
+        let payload = match product {
+            Some(product) if !value.is_some_and(|value| value.completes) => {
+                (self.exit(product, payload), at)
+            }
+            _ => payload,
         };
         let returned = self.push(node, Op::Return, &[payload, (self.context(), at)], None);
         let control =
@@ -2224,68 +2502,6 @@ impl<'a, 's> Builder<'a, 's> {
         self.value(node, id, Some(id), completes)
     }
 
-    fn assignment_target(&mut self, target: ast::Expr) -> Option<LocalId> {
-        let target = self.source.peel(target);
-        let ast::Expr::NameRef(name) = target else {
-            self.source.error(
-                target.node(),
-                codes::INVALID_ASSIGNMENT_TARGET,
-                "assignment target must be a mutable local name",
-                None,
-            );
-            return None;
-        };
-        let text = self.source.text(name.node());
-        let Some(local) = self.lookup(text) else {
-            if let Some(&named) = self.declared.names.get(text) {
-                let what = match named {
-                    Named::Function(id) => {
-                        self.refer(name.node(), Symbol::Function(id), true);
-                        "function"
-                    }
-                    Named::Type(id) => {
-                        self.refer(name.node(), Symbol::Type(id), true);
-                        "type"
-                    }
-                    Named::Ambiguous => "name",
-                };
-                self.source.error(
-                    name.node(),
-                    codes::INVALID_ASSIGNMENT_TARGET,
-                    format!("{what} `{text}` is not assignable"),
-                    None,
-                );
-            } else {
-                self.source.error(
-                    name.node(),
-                    codes::UNKNOWN_NAME,
-                    format!("unknown name `{text}`"),
-                    None,
-                );
-            }
-            return None;
-        };
-        self.refer(
-            name.node(),
-            Symbol::Local(self.locals[local.index()].binding),
-            true,
-        );
-        if !self.versions.is_mutable(local) {
-            let declaration = self.locals[local.index()].declaration;
-            self.source.error(
-                name.node(),
-                codes::IMMUTABLE_ASSIGNMENT,
-                format!("cannot assign to immutable local `{text}`"),
-                self.spans
-                    .name(declaration)
-                    .map(|range| (range, "declared here")),
-            );
-            return None;
-        }
-        self.locals[local.index()].is_assigned = true;
-        Some(local)
-    }
-
     fn target(&mut self, node: NodeIdx) -> Target {
         let name = self.source.text(node);
         if let Some(local) = self.lookup(name) {
@@ -2544,6 +2760,8 @@ impl<'a, 's> Builder<'a, 's> {
         };
         // The arguments before any garbage: the ones whose position is reliable.
         let mut args: Vec<(ast::Arg, Value)> = Vec::new();
+        // Each argument written `mut`, by position, with the place it is when it is one.
+        let mut lent: Vec<(usize, Option<Place<'s>>)> = Vec::new();
         if let Some(list) = call.arg_list(tree) {
             for child in tree.children(list.node()) {
                 let Some((arg, value)) =
@@ -2551,9 +2769,44 @@ impl<'a, 's> Builder<'a, 's> {
                 else {
                     break;
                 };
-                let value = self.lower(value.node());
-                self.advance(&value);
+                let is_mut = arg.mutable(tree, self.source.lexed());
+                let place = is_mut.then(|| self.place_of(value));
+                let value = match &place {
+                    Some(Ok(place)) => self.read_place(place),
+                    Some(Err(IsShaped(true))) => self.failed_hole(value.node()),
+                    Some(Err(IsShaped(false))) => self.holed(value.node()),
+                    None => {
+                        let value = self.lower(value.node());
+                        self.advance(&value);
+                        value
+                    }
+                };
+                if let Some(place) = place {
+                    lent.push((args.len(), place.ok()));
+                }
                 args.push((arg, value));
+            }
+        }
+        // A place is read where the call begins: again, if an argument after it wrote its local.
+        for (index, place) in &lent {
+            let Some(place) = place else { continue };
+            let mut read = args[*index].1.node;
+            for _ in &place.fields {
+                read = self.graph.inputs(read)[0];
+            }
+            if read != self.versions.read(place.local) {
+                args[*index].1 = self.read_place(place);
+            }
+        }
+        if !damaged && matches!(applied, Applied::Type(_) | Applied::InferredType(_)) {
+            for &(index, _) in &lent {
+                self.source.report(
+                    args[index].1.range,
+                    codes::MUT_ARGUMENT,
+                    "a field takes a value: `mut` is written for a `mut` parameter",
+                    [],
+                );
+                self.fail();
             }
         }
         match applied {
@@ -2601,6 +2854,7 @@ impl<'a, 's> Builder<'a, 's> {
                 );
             }
         }
+        let mut changes = !damaged && self.changes(named, &args, &lent);
         let target = match (applied, name) {
             (Applied::Function(function), _) => Some(function),
             (Applied::Inferred(generic), Some(name)) if !damaged && arity == Some(args.len()) => {
@@ -2615,7 +2869,8 @@ impl<'a, 's> Builder<'a, 's> {
         }
         let inputs: Vec<(NodeId, TextRange)> =
             args.iter().map(|(_, value)| value.input()).collect();
-        let whole = callee.filter(|&id| !damaged && !is_labeled && self.whole(id, &inputs));
+        let whole =
+            callee.filter(|&id| !damaged && !is_labeled && changes && self.whole(id, &inputs));
         let op = callee.map_or(Op::Hole, Op::Call);
         let id = self.push(node, op, &inputs, None);
         if let Some(target) = callee
@@ -2624,6 +2879,17 @@ impl<'a, 's> Builder<'a, 's> {
             self.lowered.called.push((id, target));
         }
         let at = self.source.range(node);
+        // What a function with `mut` parameters returns holds its result as a field.
+        let product = callee.and_then(|callee| self.declared.headers[callee.index()].product);
+        let result = match product {
+            Some(_) if self.is_typed(id) => {
+                let name = self.source.field_name(RESULT);
+                let result = self.place(Op::Field(name), &[(id, at)], at, None);
+                self.nodes_of[node.to_usize()] = Some(result);
+                result
+            }
+            _ => id,
+        };
         let control = self.compose_control(at, args.iter().map(|(_, value)| value.control));
         let mut completes = false;
         let mut is_valid = true;
@@ -2635,7 +2901,7 @@ impl<'a, 's> Builder<'a, 's> {
             }
         }
         self.bottoms[node.to_usize()] = completes;
-        let value = self.value(node, id, control, completes);
+        let value = self.value(node, result, control, completes);
         if damaged || !is_valid {
             self.fail();
             return value;
@@ -2650,11 +2916,115 @@ impl<'a, 's> Builder<'a, 's> {
             callee: target,
             context,
         });
+        // Each `mut` parameter's final value is written to the place it was read from, in order.
+        for (index, place) in &lent {
+            let index = *index;
+            let Some(place) = place.as_ref().filter(|_| !completes) else {
+                continue;
+            };
+            let name = self.declared.parameters[target.index()][index].out();
+            let name = name.expect("a place is passed to a `mut` parameter");
+            let range = args[index].1.range;
+            if !self.lends(target, index, name, &args[index].1) {
+                changes = false;
+                continue;
+            }
+            let name = self.source.field_name(name);
+            let out = self.place(Op::Field(name), &[(id, range)], range, None);
+            changes &= self.write(place, (out, range), range).is_some();
+        }
         let result = self.declared.headers[target.index()].result;
-        if !completes && matches!(result, HeaderResult::None) {
+        if !changes || !completes && matches!(result, HeaderResult::None) {
             self.fail();
         }
         value
+    }
+
+    /// Whether the place `value` was read from can take back what the `mut` parameter `name` of
+    /// `callee` holds: its type is the parameter's. A value that does not fit is the typing's.
+    fn lends(&mut self, callee: FunctionId, index: usize, name: &str, value: &Value) -> bool {
+        let types = self.graph.param_types(callee);
+        let param = types.expect("a callee has parameter types")[index];
+        let message = match self.decides(value) {
+            Decides::Ty(ty) if ty == param => return true,
+            Decides::Ty(ty) if self.source.unions.borrow().fits(ty, param) => format!(
+                "this place holds {}, and `mut` parameter `{name}` may leave {} in it; their \
+                 types must be the same",
+                self.source.show(ty),
+                self.source.show(param)
+            ),
+            Decides::Ty(_) | Decides::Failed => return false,
+            read => format!(
+                "the type of this place is not known here{}",
+                pending_text(read)
+            ),
+        };
+        let declared = self.declared.parameters[callee.index()][index].node;
+        let declared = (self.source.range(declared), Box::from("declared here"));
+        self.source
+            .report(value.range, codes::TYPE_MISMATCH, message, [declared]);
+        false
+    }
+
+    /// Whether the call writes `mut` where its function's parameters are, on places no two of
+    /// which overlap; reported where not. `lent` are the arguments written `mut`.
+    fn changes(
+        &mut self,
+        named: Option<FunctionId>,
+        args: &[(ast::Arg, Value)],
+        lent: &[(usize, Option<Place<'s>>)],
+    ) -> bool {
+        let takes =
+            named.is_some_and(|named| self.declared.headers[named.index()].product.is_some());
+        if lent.is_empty() && !takes {
+            return true;
+        }
+        let Some(function) = named else {
+            // The name that resolved to nothing is reported; what it would change is unknown.
+            return false;
+        };
+        let mut agrees = true;
+        let name = self.declared.headers[function.index()].name;
+        let name = name.map_or("<missing>", |name| name.text(self.source.parsed.source()));
+        for (index, (_, value)) in args.iter().enumerate() {
+            let Some(param) = self.declared.parameters[function.index()].get(index) else {
+                break;
+            };
+            let is_lent = lent.iter().any(|&(lent, _)| lent == index);
+            let (wants, node) = (param.out().is_some(), param.node);
+            let Some((param, _)) = param.name.filter(|_| wants != is_lent) else {
+                continue;
+            };
+            let message = if wants {
+                format!(
+                    "parameter `{param}` of `{name}` is `mut`; write `mut` before the place it \
+                     changes"
+                )
+            } else {
+                format!("parameter `{param}` of `{name}` is not `mut`")
+            };
+            let declared = (self.source.range(node), Box::from("declared here"));
+            self.source
+                .report(value.range, codes::MUT_ARGUMENT, message, [declared]);
+            agrees = false;
+        }
+        for (position, (index, place)) in lent.iter().enumerate() {
+            let Some(place) = place else { continue };
+            let earlier = lent[..position].iter();
+            let mut earlier =
+                earlier.filter_map(|(index, earlier)| Some((*index, earlier.as_ref()?)));
+            if let Some((first, _)) = earlier.find(|(_, earlier)| earlier.overlaps(place)) {
+                let first = (args[first].1.range, Box::from("also changed here"));
+                self.source.report(
+                    args[*index].1.range,
+                    codes::OVERLAPPING_PLACES,
+                    "this place overlaps another the call changes",
+                    [first],
+                );
+                agrees = false;
+            }
+        }
+        agrees
     }
 
     /// Fields are stored in declaration order; argument controls run in source order. `decl` is the

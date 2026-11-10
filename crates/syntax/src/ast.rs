@@ -458,9 +458,9 @@ grammar! {
     struct ParamList { params: [Param] }
     tokens { LParen, Comma?, RParen }
 
-    /// `Name ':' Type`.
+    /// `'mut'? Name ':' Type`.
     struct Param { name: Name, type_ref: Type }
-    tokens { Colon }
+    tokens { mutable: MutKw?, Colon }
 
     /// `'type' Name TypeParamList? FieldList`.
     struct TypeItem { name: Name, type_params: Option<TypeParamList>, field_list: FieldList }
@@ -548,9 +548,9 @@ grammar! {
     struct ArgList { args: [Arg] }
     tokens { LParen, Comma?, RParen }
 
-    /// `(label:NameRef ':')? value:Expr`.
+    /// `(label:NameRef ':')? 'mut'? value:Expr`.
     struct Arg { label: Option<NameRef>, value: Expr }
-    tokens { Colon? }
+    tokens { Colon?, mutable: MutKw? }
 
     /// `base:Expr '.' field:NameRef`.
     struct FieldExpr { base: Expr, field: NameRef }

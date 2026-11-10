@@ -592,7 +592,41 @@ impl Gen<'_> {
         let depth = self.scope.len();
         let mut lines = Vec::new();
         for _ in 0..self.rng.between(1, 3) {
-            let line = match self.rng.below(11) {
+            let line = match self.rng.below(13) {
+                11 => {
+                    let records: Vec<String> = self
+                        .mutable_locals()
+                        .into_iter()
+                        .filter_map(|(name, kind)| (kind == Kind::Rec).then_some(name))
+                        .collect();
+                    if records.is_empty() {
+                        format!("_ = {}", self.expr(Kind::Int, fuel))
+                    } else {
+                        let name = self.rng.pick(&records).clone();
+                        match self.rng.below(4) {
+                            0 => format!("{name}.a = {}", self.expr(Kind::Int, fuel)),
+                            1 => format!("{name}.b = {}", self.expr(Kind::Bool, fuel)),
+                            2 => format!("bump(mut {name}, {})", self.expr(Kind::Int, fuel)),
+                            _ => format!("_ = reset(mut {name})"),
+                        }
+                    }
+                }
+                12 => {
+                    // A shape's locals differ in the member each was declared with.
+                    let locals: Vec<(String, Kind)> = self
+                        .mutable_locals()
+                        .into_iter()
+                        .filter(|&(_, kind)| kind != Kind::Shape)
+                        .collect();
+                    let pair = locals.iter().enumerate().find_map(|(index, (name, kind))| {
+                        let other = locals[index + 1..].iter().find(|other| other.1 == *kind)?;
+                        Some((name.clone(), other.0.clone()))
+                    });
+                    match pair {
+                        Some((a, b)) => format!("exchange(mut {a}, mut {b})"),
+                        None => format!("_ = {}", self.expr(Kind::Bool, fuel)),
+                    }
+                }
                 10 if fuel > 0 => {
                     let name = self.fresh(Kind::Int);
                     let start = self.rng.between(-2, 2);
@@ -795,6 +829,9 @@ fn program(seed: u64) -> String {
     let mut text = String::from(
         "type R { a: int, b: bool }\ntype S { c: int }\ntype G<T> { g: T }\n\
          fn pass<T>(x: T) -> T = x\nfn wrap<T>(x: T) -> G<T> = G(g: x)\n\
+         fn bump(mut r: R, by: int) { r.a = r.a + by }\n\
+         fn reset(mut r: R) -> int { let old = r.a\nr.a = 0\nold }\n\
+         fn exchange<T>(mut a: T, mut b: T) { let t = a\na = b\nb = t }\n\
          fn least(a: int, b: int) -> int = if a < b { a } else { b }\n\
          fn size(a: int) -> int = if a < 0 { -a } else { a }\n",
     );

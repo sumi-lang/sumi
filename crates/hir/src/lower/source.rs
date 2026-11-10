@@ -179,7 +179,7 @@ impl sumi_graph::Names for Source<'_> {
 
 impl<'s> Source<'s> {
     /// The ID of the field name `text`, minted on first sight.
-    pub(super) fn field_name(&mut self, text: &'s str) -> FieldName {
+    pub fn field_name(&mut self, text: &'s str) -> FieldName {
         *self.field_ids.entry(text).or_insert_with(|| {
             self.field_names.push(text);
             FieldName::new(self.field_names.len() - 1)
@@ -259,6 +259,13 @@ impl<'s> Source<'s> {
         self.fields[decl.index()]
             .as_ref()
             .is_some_and(|fields| fields[field].1.is_some())
+    }
+    /// The type a product's result field has once its function's result is inferred.
+    pub fn set_result(&mut self, product: DeclId, ty: Ty) {
+        self.fields[product.index()]
+            .as_mut()
+            .expect("a product is settled where it is declared")[0]
+            .1 = Some(ty);
     }
     /// A field loses its type where the declaration is reported for it.
     pub(super) fn drop_field_type(&mut self, decl: DeclId, field: usize) {
