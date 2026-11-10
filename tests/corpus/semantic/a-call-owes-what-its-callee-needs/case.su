@@ -57,9 +57,7 @@ fn less(a: int, b: int) -> int = 100 / (a - b - 1)
 
 fn more(a: int, b: int) -> int = 100 / (a - b + 2)
 
-fn ping(xs: [int], i: int) -> int = if i <= 0 { 0 } else { pong(xs, i - 1) }
-
-fn pong(xs: [int], i: int) -> int = xs[i] + ping(xs, i)
+fn up(xs: [int], i: int, n: int) -> int = if n <= 0 { 0 } else { xs[i] + up(xs, i + 1, n - 1) }
 
 fn maybe() -> int {
     let mut sum = 0
@@ -90,6 +88,6 @@ fn main() -> int {
     }
     let bad = at(xs, 3) + at(xs, 0 - 1) + half(1, 0) + first(xs, 4) + through(xs, 2)
     let worse = cell_of(Grid(cells: [1]), 1) + back([0], 0) + third([1, 2, 0]) + minus(0)
-    let worst = less(1, 0) + more(0, 2) + ping(xs, 3) + ping([1], 1) + maybe()
+    let worst = less(1, 0) + more(0, 2) + up(xs, 0, 3) + up([1], 0, 1) + maybe()
     kept() + bad + zero(0) + down(xs, 3) + rev([0], 0) + worse + worst
 }

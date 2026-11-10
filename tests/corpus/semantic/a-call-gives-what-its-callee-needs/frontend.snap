@@ -26,6 +26,14 @@ fn count(xs: [int], i: int, n: int) -> int = if n > 0 {
 
 fn through(xs: [int], i: int) -> int = at(xs, i + 1)
 
+fn ping(xs: [int], i: int) -> int = if i <= 0 {
+    0
+} else {
+    pong(xs, i - 1)
+}
+
+fn pong(xs: [int], i: int) -> int = xs[i] + ping(xs, i)
+
 fn main() -> int {
     let small = Grid(cells: [1, 2], width: 2)
     let large = Grid(cells: [3, 4, 5, 6], width: 2)
@@ -33,5 +41,6 @@ fn main() -> int {
     let b = cell(small, 1) + cell(large, 3) + at2([[1, 2], [3, 4]], 1, 1) + at2([[5]], 0, 0)
     let c = pair([1, 2, 3], 1) + pair([4, 5], 0) + mix([6, 8], 1, 2) + mix([9], 0, -3)
     let d = count([1, 2, 3], 2, 2) + count([7], 0, 1) + count([], 5, 0)
-    a + b + c + d + through([1, 2], 0) + through([5, 6, 7], 1) + small.width + large.width
+    let e = ping([1, 2, 3], 3) + ping([1], 1) + ping([], 0)
+    a + b + c + d + e + through([1, 2], 0) + through([5, 6, 7], 1) + small.width + large.width
 }
