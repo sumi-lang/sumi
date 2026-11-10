@@ -20,7 +20,7 @@ use sumi_text::{TextEdit, TextRange, TextSize};
 use super::declare::{Declarations, HeaderResult, Named, Order, RESULT, SELF, unbounded_calls};
 use super::source::{NameMap, Source};
 use super::versions::{Refinement, RegionState, Versions};
-use super::{Access, Call, Fallthrough, Lowered, Obligation, Statement, diagnostic, join};
+use super::{Call, Fallthrough, Lowered, Need, Obligation, Statement, diagnostic, join};
 use crate::codes;
 use crate::spans::{Spans, SpansBuilder};
 use crate::typing::{Checked, Checker, Read, Types};
@@ -400,7 +400,6 @@ impl<'a, 's> Builder<'a, 's> {
                 called: Vec::new(),
                 entered: Vec::new(),
                 obligations: Vec::new(),
-                accesses: Vec::new(),
                 fallthroughs: vec![None; functions],
                 exits: vec![Vec::new(); functions],
                 bindings: Vec::new(),
@@ -1562,7 +1561,7 @@ impl<'a, 's> Builder<'a, 's> {
                 Some(assigned)
             }
             Some(place) => self.path(place).and_then(|path| {
-                self.owe(place, &path);
+                self.owe_path(place, &path);
                 self.refer_path(place, &path, true);
                 let value = match op {
                     Some(AssignOp::Arith(op)) => self.combined(place, &path, op, &value, node)?,
@@ -1618,16 +1617,20 @@ impl<'a, 's> Builder<'a, 's> {
         Some((id, value.at))
     }
 
-    /// A `/` or `%` at `node` owes its divisor a proof that it is no zero.
+    /// A `/` or `%` at `node` needs a divisor that is no zero.
     fn divides(&mut self, op: BinaryOp, node: NodeIdx, divisor: NodeId) {
         if matches!(op, BinaryOp::Arith(ArithOp::Div | ArithOp::Rem)) {
-            self.lowered.obligations.push(Obligation {
-                owner: self.owner,
-                node,
-                divisor,
-                context: self.context(),
-            });
+            self.owe(self.source.range(node), Need::Divisor(divisor));
         }
+    }
+
+    fn owe(&mut self, at: TextRange, need: Need) {
+        self.lowered.obligations.push(Obligation {
+            owner: self.owner,
+            at,
+            need,
+            context: self.context(),
+        });
     }
 
     /// The place `target` names: a mutable local, or a field under one. Any other is reported,
@@ -1866,24 +1869,15 @@ impl<'a, 's> Builder<'a, 's> {
         None
     }
 
-    /// A read of the sequence at `array` owes a proof that it is inside it: at `index`, or of
-    /// its last element with none.
-    fn access(&mut self, node: NodeIdx, array: NodeId, index: Option<NodeId>) {
-        self.lowered.accesses.push(Access {
-            owner: self.owner,
-            node,
-            array,
-            index,
-            context: self.context(),
-        });
-    }
-
-    /// Each element on the place's path owes its proof, where the place is read or assigned: a
-    /// write after a read is along the same lengths.
-    fn owe(&mut self, place: &Place<'s>, path: &Path) {
+    /// Each element on the place's path needs its index inside, where the place is read or
+    /// assigned: a write after a read is along the same lengths.
+    fn owe_path(&mut self, place: &Place<'s>, path: &Path) {
         for (step, hop) in place.steps.iter().zip(path) {
-            if let Hop::Index(base, (index, _)) = *hop {
-                self.access(step.node(), base, Some(index));
+            if let Hop::Index(array, (index, _)) = *hop {
+                self.owe(
+                    self.source.range(step.node()),
+                    Need::Element { array, index },
+                );
             }
         }
     }
@@ -1922,7 +1916,7 @@ impl<'a, 's> Builder<'a, 's> {
         let path = self.path(place);
         let read = match &path {
             Some(path) => {
-                self.owe(place, path);
+                self.owe_path(place, path);
                 self.held(place, path)
             }
             None => self.place(Op::Hole, &[], range, None),
@@ -3498,7 +3492,7 @@ impl<'a, 's> Builder<'a, 's> {
                 (Some(pushed), pushed)
             }
             SequenceMethod::Pop => {
-                self.access(node, receiver.node, None);
+                self.owe(at, Need::Last(receiver.node));
                 let len = self.place(Op::Len, &[receiver.input()], at, None);
                 let one = self.place(Op::Int(Int::from(1)), &[], at, None);
                 let last = BinaryOp::Arith(ArithOp::Sub);
@@ -3559,7 +3553,13 @@ impl<'a, 's> Builder<'a, 's> {
         if damaged || !base.is_valid || !index.is_valid || !is_sequence {
             self.fail();
         } else if !completes {
-            self.access(node, base.node, Some(index.node));
+            self.owe(
+                range,
+                Need::Element {
+                    array: base.node,
+                    index: index.node,
+                },
+            );
         }
         self.value(node, id, control, completes)
     }

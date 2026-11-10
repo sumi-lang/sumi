@@ -7,6 +7,7 @@ mod dependency;
 mod flows;
 mod lattice;
 mod lower;
+mod proof;
 mod reachability;
 mod recursion;
 mod solver;

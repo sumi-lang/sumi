@@ -4,7 +4,7 @@
 use std::collections::HashSet;
 
 use sumi_frontend::{Diagnostic, ParsedSource};
-use sumi_graph::{DeclId, Domain, FunctionId, Graph, GraphBuilder, Int, NodeId, Op, Ty};
+use sumi_graph::{DeclId, FunctionId, Graph, GraphBuilder, NodeId, Op, Ty};
 use sumi_syntax::ast::{self, View};
 use sumi_text::TextRange;
 
@@ -15,7 +15,7 @@ use crate::spans::Spans;
 use crate::summary::Summaries;
 use crate::typing::Typing;
 use crate::{Analysis, FieldDecl, Function, Ints, Occurrence, Symbol, TypeDecl, flows};
-use crate::{reachability, recursion};
+use crate::{proof, reachability, recursion};
 
 pub fn analyze(parsed: ParsedSource) -> Analysis {
     let mut source = Source::new(&parsed);
@@ -56,8 +56,7 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let values = Values::delivered(&graph, &lowered, &summaries);
     let any = AnyValues::new(&graph, &lowered, &summaries);
     let typing = Typing::new(checked.types, values);
-    divisions(&mut source, &graph, &spans, &typing, &lowered, &failed);
-    accesses(&mut source, &graph, &spans, &typing, &lowered, &failed);
+    proof::check(&mut source, &graph, &spans, &typing, &lowered, &failed);
     exhaustive(
         &mut source,
         &graph,
@@ -246,122 +245,6 @@ fn exhaustive(
             format!("match has no arm for {}", lower::join(&names)),
             [],
         );
-    }
-}
-
-fn divisions(
-    source: &mut Source<'_>,
-    graph: &Graph,
-    spans: &Spans,
-    typing: &Typing,
-    lowered: &Lowered,
-    failed: &[bool],
-) {
-    for obligation in &lowered.obligations {
-        if failed[obligation.owner as usize] {
-            continue;
-        }
-        let divisor = typing.may(obligation.divisor);
-        if !typing.may(obligation.context).is_live() || !divisor.ints.contains_zero() {
-            continue;
-        }
-        let message = if divisor.ints.is_zero() {
-            "division by zero"
-        } else {
-            "divisor may be zero"
-        };
-        let labels = explain(
-            graph,
-            spans,
-            typing.values(),
-            Some(&lowered.calls),
-            obligation.divisor,
-            Ints::contains_zero,
-            |ints, where_| {
-                if ints.is_zero() {
-                    format!("is 0{where_}")
-                } else {
-                    format!("may be 0{where_}: {ints}")
-                }
-            },
-        );
-        source.report(
-            source.range(obligation.node),
-            codes::DIVISION_BY_ZERO,
-            message,
-            labels,
-        );
-    }
-}
-
-/// Each read of a sequence is inside it: an index from 0 to below every length it may have, and
-/// a last element only of one that is never empty.
-fn accesses(
-    source: &mut Source<'_>,
-    graph: &Graph,
-    spans: &Spans,
-    typing: &Typing,
-    lowered: &Lowered,
-    failed: &[bool],
-) {
-    // A place is read and written at one index, and by every instance of its function.
-    let mut reported = std::collections::HashSet::new();
-    for access in &lowered.accesses {
-        if failed[access.owner as usize]
-            || !typing.may(access.context).is_live()
-            || reported.contains(&access.node)
-        {
-            continue;
-        }
-        let Ok(len) = typing.may(access.array).length();
-        let len = len.ints;
-        // No length reaches a read that no sequence does.
-        let Some(least) = len.lo() else { continue };
-        let at = source.range(access.node);
-        let Some(index) = access.index else {
-            if least < Int::from(1) {
-                let message = if len.is_zero() {
-                    "the sequence is empty, and has no last element".to_owned()
-                } else {
-                    format!("the sequence may be empty: its length is {len}")
-                };
-                source.report(at, codes::INDEX_OUT_OF_BOUNDS, message, []);
-                reported.insert(access.node);
-            }
-            continue;
-        };
-        let index_ints = &typing.may(index).ints;
-        if index_ints.is_empty() {
-            continue;
-        }
-        let is_low = index_ints.lo().is_none_or(|lo| lo < Int::ZERO);
-        let is_high = index_ints.hi().is_none_or(|hi| hi >= least);
-        if !is_low && !is_high {
-            continue;
-        }
-        // Outside every length the sequence may have, or only some.
-        let is_never = index_ints.hi().is_some_and(|hi| hi < Int::ZERO)
-            || index_ints
-                .lo()
-                .zip(len.hi())
-                .is_some_and(|(lo, most)| lo >= most);
-        let may = if is_never { "is" } else { "may be" };
-        let message = format!(
-            "index {may} outside the sequence: it is {index_ints}, and the length is {len}"
-        );
-        let labels = explain(
-            graph,
-            spans,
-            typing.values(),
-            Some(&lowered.calls),
-            index,
-            |ints| {
-                ints.lo().is_none_or(|lo| lo < Int::ZERO) || ints.hi().is_none_or(|hi| hi >= least)
-            },
-            |ints, where_| format!("is {ints}{where_}"),
-        );
-        source.report(at, codes::INDEX_OUT_OF_BOUNDS, message, labels);
-        reported.insert(access.node);
     }
 }
 
