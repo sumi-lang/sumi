@@ -109,6 +109,9 @@ struct Gen<'a> {
     /// The cap is two per arm, one when the call passes `n` along; otherwise a run goes
     /// exponential.
     calls: u32,
+    /// Whether to write what the checker may well reject: an index a guard does not quite
+    /// cover, which a run must then never be refused at if it is accepted.
+    is_doubtful: bool,
 }
 
 const GUARDS_THEN: &[&str] = &[
@@ -391,9 +394,14 @@ impl Gen<'_> {
     fn leaf(&mut self, kind: Kind) -> String {
         let sequences = self.locals(Kind::Seq);
         if kind == Kind::Int && !sequences.is_empty() && self.rng.chance(1, 4) {
-            let sequence = self.rng.pick(&sequences).clone();
-            let read = *self.rng.pick(&["[0]", "[1]", ".len()"]);
-            return format!("{sequence}{read}");
+            let q = self.rng.pick(&sequences).clone();
+            return match self.rng.below(8) {
+                0 => format!("{q}[0]"),
+                1 => format!("{q}[1]"),
+                2 => format!("{q}.len()"),
+                5 => format!("total({q})"),
+                _ => format!("{q}[{q}.len() - 2]"),
+            };
         }
         let locals = self.locals(kind);
         if !locals.is_empty() && self.rng.chance(1, 2) {
@@ -492,6 +500,83 @@ impl Gen<'_> {
         })
     }
 
+    /// A read of a sequence at an integer local, inside it by a guard or by a remainder.
+    fn indexed(&mut self, fuel: u32) -> Option<String> {
+        let (sequences, locals) = (self.locals(Kind::Seq), self.locals(Kind::Int));
+        if sequences.is_empty() || locals.is_empty() {
+            return None;
+        }
+        let q = self.rng.pick(&sequences).clone();
+        let x = self.rng.pick(&locals).clone();
+        let other = self.operand(Kind::Int, fuel.saturating_sub(1));
+        if self.is_doubtful && self.rng.chance(1, 2) {
+            let p = self.rng.pick(&sequences).clone();
+            let y = self.rng.pick(&locals).clone();
+            return Some(match self.rng.below(9) {
+                0 => format!("if 0 <= {x} && {x} <= {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
+                1 => format!("if 0 <= {x} && {x} < {p}.len() {{ {q}[{x}] }} else {{ {other} }}"),
+                2 => format!("if 0 <= {y} && {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
+                3 => format!("if {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
+                4 => {
+                    format!("if 0 <= {x} && {x} < {q}.len() {{ {q}[{x} + 1] }} else {{ {other} }}")
+                }
+                5 => format!("if 0 <= {x} || {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
+                6 => format!("if {x} >= {q}.len() || 0 > {x} {{ {q}[{x}] }} else {{ {other} }}"),
+                7 => format!("{q}[{x} % {q}.len()]"),
+                _ => format!("{q}[size({x}) % ({q}.len() + 1)]"),
+            });
+        }
+        Some(match self.rng.below(5) {
+            0 => format!("if 0 <= {x} && {x} < {q}.len() {{ {q}[{x}] }} else {{ {other} }}"),
+            1 => format!("if {x} < 0 || {x} >= {q}.len() {{ {other} }} else {{ {q}[{x}] }}"),
+            2 => {
+                format!("if {x} >= 0 && {x} + 1 < {q}.len() {{ {q}[{x} + 1] }} else {{ {other} }}")
+            }
+            3 => format!("{q}[size({x}) % {q}.len()]"),
+            _ => format!("wrapped({q}, {x})"),
+        })
+    }
+
+    /// A block over rows of its own, read by what relates an index to a row's length; with
+    /// `is_doubtful`, as often after a change that leaves a row shorter than what was read of it.
+    fn rows(&mut self) -> String {
+        let g = format!("g{}", self.fresh);
+        self.fresh += 1;
+        let (a, b, c) = (
+            self.literal(Kind::Int),
+            self.literal(Kind::Int),
+            self.literal(Kind::Int),
+        );
+        let made = format!("let mut {g} = [[{a}, {b}], [{c}, {a}]]");
+        let last = format!("if w{g} > 0 {{ {g}[0][w{g} - 1] }} else {{ 0 }}");
+        if self.is_doubtful && self.rng.chance(1, 2) {
+            return match self.rng.below(4) {
+                0 => format!("{{\n{made}\nlet w{g} = {g}[0].len()\nwipe(mut {g})\n{last}\n}}"),
+                1 => format!(
+                    "{{\n{made}\nfor y{g} in 0..{g}.len() {{ for x{g} in 0..{g}[y{g}].len() {{ \
+                     {g}[y{g}] = [x{g}]\n_ = {g}[y{g}][x{g}] }} }}\n{c}\n}}"
+                ),
+                2 => format!("{{\n{made}\nlet w{g} = {g}[0].len()\n{g}[0] = [{b}]\n{last}\n}}"),
+                _ => format!(
+                    "{{\n{made}\nlet w{g} = {g}[0].len()\nfor y{g} in 0..{g}.len() {{ \
+                     {g}[y{g}] = [y{g}] }}\n{last}\n}}"
+                ),
+            };
+        }
+        match self.rng.below(3) {
+            0 => format!(
+                "{{\n{made}\nfor y{g} in 0..{g}.len() {{ for x{g} in 0..{g}[y{g}].len() {{ \
+                 {g}[y{g}][x{g}] += {b} }} }}\n{g}[1][0]\n}}"
+            ),
+            1 => format!("{{\n{made}\nlet w{g} = {g}[0].len()\ntidy(mut {g})\n{last}\n}}"),
+            _ => format!(
+                "{{\n{made}\nlet mut t{g} = 0\nfor y{g} in 0..{g}.len() {{ for x{g} in \
+                 0..{g}[y{g}].len() {{ t{g} += {g}[y{g}][x{g}] }} }}\n{g} = [[t{g}]]\n\
+                 {g}[0][0]\n}}"
+            ),
+        }
+    }
+
     fn int_after(&mut self, division: &str, fuel: u32) -> String {
         if self.rng.chance(1, 2) {
             let other = self.operand(Kind::Int, fuel);
@@ -529,13 +614,24 @@ impl Gen<'_> {
         if fuel == 0 {
             return self.leaf(Kind::Int);
         }
-        match self.rng.below(11) {
+        if self.is_doubtful && self.rng.chance(1, 12) {
+            return self.rows();
+        }
+        if self.is_doubtful
+            && self.rng.chance(1, 4)
+            && let Some(indexed) = self.indexed(fuel)
+        {
+            return indexed;
+        }
+        match self.rng.below(12) {
             0 | 1 => {
                 let lhs = self.operand(Kind::Int, fuel - 1);
                 let rhs = self.operand(Kind::Int, fuel - 1);
                 let op = self.rng.pick(&["+", "-", "*"]);
                 format!("{lhs} {op} {rhs}")
             }
+            11 if self.rng.chance(1, 4) => self.rows(),
+            11 => self.indexed(fuel).unwrap_or_else(|| self.leaf(Kind::Int)),
             10 => self
                 .field(Kind::Int)
                 .or_else(|| self.matched(Kind::Int, fuel - 1))
@@ -647,6 +743,17 @@ impl Gen<'_> {
     fn block(&mut self, kind: Kind, fuel: u32) -> String {
         let depth = self.scope.len();
         let mut lines = Vec::new();
+        // Something to index, and to index it by.
+        if self.is_doubtful && self.rng.chance(1, 2) {
+            let (q, x) = (self.fresh(Kind::Seq), self.fresh(Kind::Int));
+            let elements: Vec<String> = (0..self.rng.between(2, 4))
+                .map(|_| self.literal(Kind::Int))
+                .collect();
+            lines.push(format!("let mut {q} = [{}]", elements.join(", ")));
+            lines.push(format!("let {x} = {}", self.leaf(Kind::Int)));
+            self.scope.push((q, Kind::Seq, true));
+            self.scope.push((x, Kind::Int, false));
+        }
         for _ in 0..self.rng.between(1, 3) {
             let line = match self.rng.below(14) {
                 13 => {
@@ -660,7 +767,61 @@ impl Gen<'_> {
                     } else {
                         let name = self.rng.pick(&sequences).clone();
                         let value = self.expr(Kind::Int, fuel);
-                        match self.rng.below(8) {
+                        let pick = if self.is_doubtful && self.rng.chance(1, 3) {
+                            12 + self.rng.below(7)
+                        } else {
+                            self.rng.below(12)
+                        };
+                        match pick {
+                            // A loop the sequence may not outlast, or an index past its end.
+                            12 => {
+                                let i = self.fresh(Kind::Int);
+                                format!(
+                                    "for {i} in 0..{name}.len() {{ shrink(mut {name})\n\
+                                     {name}[{i}] = 1 }}"
+                                )
+                            }
+                            13 => {
+                                let i = self.fresh(Kind::Int);
+                                format!("for {i} in 0..{name}.len() {{ {name}[{i} + 1] = {i} }}")
+                            }
+                            14 => {
+                                let i = self.fresh(Kind::Int);
+                                format!("for {i} in 0..{name}.len() + 1 {{ {name}[{i}] = {i} }}")
+                            }
+                            15 => {
+                                let i = self.fresh(Kind::Int);
+                                format!(
+                                    "for {i} in 0..{name}.len() {{ if {name}.len() > 2 {{ _ = \
+                                     {name}.pop() }}\n_ = {name}[{i}] }}"
+                                )
+                            }
+                            16 => {
+                                let i = self.fresh(Kind::Int);
+                                format!(
+                                    "for {i} in 0..{name}.len() {{ {name} = [{i}, {i}]\n\
+                                     {name}[{i}] = 0 }}"
+                                )
+                            }
+                            17 => {
+                                let i = self.fresh(Kind::Int);
+                                format!("for {i} in -1..{name}.len() {{ {name}[{i}] = {i} }}")
+                            }
+                            18 => format!("shrink(mut {name})\n{name}[{name}.len() - 3] = {value}"),
+                            // Every index of a loop to the length is inside, as the loop
+                            // stores or a call changes the elements.
+                            8 => {
+                                let i = self.fresh(Kind::Int);
+                                format!("for {i} in 0..{name}.len() {{ {name}[{i}] = {i} }}")
+                            }
+                            9 => {
+                                let i = self.fresh(Kind::Int);
+                                format!(
+                                    "for {i} in 0..{name}.len() {{ {name}[{i}] += {name}[0]\n\
+                                     fill(mut {name}, {i}) }}"
+                                )
+                            }
+                            11 => format!("fill(mut {name}, {value})"),
                             // An index that may return first is still read once, in order.
                             pick @ 6..=7 => {
                                 let condition = self.bool(fuel);
@@ -856,7 +1017,8 @@ impl Gen<'_> {
     }
 }
 
-fn program(seed: u64) -> String {
+/// A program the checker should accept, or with `is_doubtful` one it may well not.
+fn program_of(seed: u64, is_doubtful: bool) -> String {
     let mut rng = Rng::new(seed);
     let count = rng.between(2, 6) as usize;
     let mut functions: Vec<Signature> = Vec::with_capacity(count);
@@ -932,6 +1094,13 @@ fn program(seed: u64) -> String {
          fn exchange<T>(mut a: T, mut b: T) { let t = a\na = b\nb = t }\n\
          fn least(a: int, b: int) -> int = if a < b { a } else { b }\n\
          fn size(a: int) -> int = if a < 0 { -a } else { a }\n\
+         fn total(q: [int]) -> int { let mut t = 0\nfor i in 0..q.len() { t += q[i] }\nt }\n\
+         fn fill(mut q: [int], v: int) { for i in 0..q.len() { q[i] = v } }\n\
+         fn shrink(mut q: [int]) { if q.len() > 2 { _ = q.pop() } }\n\
+         fn tidy(mut g: [[int]]) { for y in 0..g.len() { for x in 0..g[y].len() { g[y][x] = 0 } } }\n\
+         fn wipe(mut g: [[int]]) { for y in 0..g.len() { g[y] = [] } }\n\
+         fn wrapped(q: [int], k: int) -> int = \
+         if q.len() > 0 && k >= 0 { q[k % q.len()] } else { 0 }\n\
          impl R {\n\
          fn signed(self) -> int = if self.b { self.a } else { -self.a }\n\
          fn grown(self, by: int) -> R = R(a: self.a + by, b: self.b)\n\
@@ -954,6 +1123,7 @@ fn program(seed: u64) -> String {
             arm: None,
             is_owed: false,
             calls: 0,
+            is_doubtful,
         };
         let names = ["n", "a", "b"];
         let params: Vec<String> = signature
@@ -973,6 +1143,10 @@ fn program(seed: u64) -> String {
         ));
     }
     text
+}
+
+fn program(seed: u64) -> String {
+    program_of(seed, false)
 }
 
 fn runs_of(source: &str) -> Option<Runs> {
@@ -1004,6 +1178,11 @@ proptest! {
     #[test]
     fn accepted_programs_run_within_their_claims(seed in any::<u64>()) {
         runs_of(&program(seed));
+    }
+
+    #[test]
+    fn doubtful_programs_run_within_their_claims_where_accepted(seed in any::<u64>()) {
+        runs_of(&program_of(seed, true));
     }
 
     #[test]
@@ -1183,5 +1362,17 @@ fn most_generated_programs_are_accepted_and_run_to_the_end() {
         "{} of {} runs were abandoned",
         runs.abandoned,
         runs.finished + runs.abandoned
+    );
+}
+
+#[test]
+fn doubtful_programs_are_some_accepted_and_some_not() {
+    let seeds = 400u64;
+    let accepted = (0..seeds)
+        .filter(|&seed| runs_of(&program_of(seed, true)).is_some())
+        .count() as u64;
+    assert!(
+        accepted * 10 >= seeds && accepted * 10 <= seeds * 9,
+        "{accepted} of {seeds} doubtful programs were accepted"
     );
 }

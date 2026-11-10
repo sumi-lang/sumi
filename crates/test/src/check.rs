@@ -1471,7 +1471,7 @@ pub fn run(program: Program<'_>) -> Runs {
                     .into_iter()
                     .filter_map(|len| usize::try_from(i64::try_from(&len).ok()?).ok());
                 lengths
-                    .filter(|&len| len <= 4 && (len == 0 || !values.is_empty()))
+                    .filter(|&len| len <= 16 && (len == 0 || !values.is_empty()))
                     .map(|len| {
                         let elements = values.iter().cycle().take(len).cloned();
                         Value::record(decl, elements.collect())

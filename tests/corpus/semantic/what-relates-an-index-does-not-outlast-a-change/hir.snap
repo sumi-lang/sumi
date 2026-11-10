@@ -1,0 +1,452 @@
+file: rejected
+frontend errors: 0 (see frontend.snap)
+semantic errors: 11
+
+== graph ==
+fn shrink@1:1..5:2 ([int] ∈ [[1, 3]; [0, 2]]) -> unit ∈ unit
+  param xs@1:15..1:17: [int]
+  body: make <missing> : <missing> @2:5..4:6
+
+fn stale@7:1..13:2 ([int] ∈ [[1, 3]; [3, 3]], int ∈ [2, 2]) -> int ∈ [1, 3]
+  param xs@7:14..7:16: [int]
+  param i@7:25..7:26: int
+  result: result : <missing> @7:1..13:2
+    outcome[0]:
+      discard: if : unit @8:5..11:6
+        scrutinee: lazy and : bool @8:8..8:30
+          lhs: eager <= : bool @8:8..8:14
+            lhs: int 0 : int @8:8..8:9
+            rhs: read i@7:25..7:26 : int
+          rhs: eager < : bool @8:18..8:30
+            lhs: read i@7:25..7:26 [0 <= i holds@8:8..8:14] : int
+            rhs: len : int @8:22..8:30
+              sequence: read xs@7:14..7:16 : [int]
+        then:
+          discard: index : int @9:13..9:21
+            sequence: read xs@7:14..7:16 : [int]
+            index: eager - : int @9:13..9:21
+              lhs: len : int @9:13..9:21
+                sequence: read xs@7:14..7:16 : [int]
+              rhs: int 1 : int @9:13..9:21
+          assignment: assign xs@7:14..7:16 : [int] @9:13..9:21
+            value: pop : [int] @9:13..9:21
+              sequence: read xs@7:14..7:16 : [int]
+          tail: unit : unit @8:31..11:6
+        else: unit (implicit)
+      discard: after : ? @8:5..11:6
+        control: observe : ? @8:5..11:6
+        context: entry : ? @7:1..13:2
+      tail: make <missing> : <missing> @12:5..12:6
+    outcome[1]: return : <missing> @10:9..10:21
+      payload: make <missing> : <missing> @10:16..10:21
+
+fn moved@15:1..22:2 ([int] ∈ [[1, 3]; [2, 2]], int ∈ [1, 1]) -> int ∈ [1, 3]
+  param xs@15:10..15:12: [int]
+  param i@15:21..15:22: int
+  result: result : int @15:32..15:35
+    outcome[0]:
+      let j@16:13..16:14: int @16:5..16:18
+        initializer: read i@15:21..15:22 : int
+      discard: phi j@16:13..16:14 : int @17:5..20:6
+        scrutinee: lazy and : bool @17:8..17:30
+          lhs: eager <= : bool @17:8..17:14
+            lhs: int 0 : int @17:8..17:9
+            rhs: read j@16:13..16:14 : int
+          rhs: eager < : bool @17:18..17:30
+            lhs: read j@16:13..16:14 [0 <= j holds@17:8..17:14] : int
+            rhs: len : int @17:22..17:30
+              sequence: read xs@15:10..15:12 : [int]
+        then: read j@16:13..16:14 (assigned @18:9..18:15) : int
+        else: read j@16:13..16:14 : int
+      discard: if : unit @17:5..20:6
+        scrutinee: lazy and : bool @17:8..17:30
+          lhs: eager <= : bool @17:8..17:14
+            lhs: int 0 : int @17:8..17:9
+            rhs: read j@16:13..16:14 : int
+          rhs: eager < : bool @17:18..17:30
+            lhs: read j@16:13..16:14 [0 <= j holds@17:8..17:14] : int
+            rhs: len : int @17:22..17:30
+              sequence: read xs@15:10..15:12 : [int]
+        then:
+          assignment: assign j@16:13..16:14 : int @18:9..18:15
+            value: eager + : int @18:9..18:15
+              lhs: read j@16:13..16:14 [j < xs.len() holds@17:18..17:30, 0 <= j holds@17:8..17:14] : int
+              rhs: int 1 : int @18:14..18:15
+          tail: unit : unit @17:31..20:6
+        else: unit (implicit)
+      discard: after : ? @17:5..20:6
+        control: observe : ? @17:5..20:6
+        context: entry : ? @15:1..22:2
+      tail: int 0 : int @21:5..21:6
+    outcome[1]: return : int @19:9..19:21
+      payload: index : int @19:16..19:21
+        sequence: read xs@15:10..15:12 : [int]
+        index: read j@16:13..16:14 (assigned @18:9..18:15) : int
+
+fn other@24:1..26:2 ([int] ∈ [[1, 3]; [2, 2]], [int] ∈ [[1, 4]; [4, 4]], int ∈ [3, 3]) -> int ∈ [1, 3]
+  param xs@24:10..24:12: [int]
+  param ys@24:21..24:23: [int]
+  param i@24:32..24:33: int
+  result: copy : int @24:43..24:46
+    value: if : int @25:5..25:51
+      scrutinee: lazy and : bool @25:8..25:30
+        lhs: eager <= : bool @25:8..25:14
+          lhs: int 0 : int @25:8..25:9
+          rhs: read i@24:32..24:33 : int
+        rhs: eager < : bool @25:18..25:30
+          lhs: read i@24:32..24:33 [0 <= i holds@25:8..25:14] : int
+          rhs: len : int @25:22..25:30
+            sequence: read ys@24:21..24:23 : [int]
+      then: index : int @25:33..25:38
+        sequence: read xs@24:10..24:12 : [int]
+        index: read i@24:32..24:33 [i < ys.len() holds@25:18..25:30, 0 <= i holds@25:8..25:14] : int
+      else: int 0 : int @25:48..25:49
+
+fn shrinking@28:1..35:2 ([int] ∈ [[1, 3]; [2, 2]]) -> int ∈ [1, +∞)
+  param xs@28:18..28:20: [int]
+  result: result : <missing> @28:1..35:2
+    outcome[0]:
+      let sum@29:13..29:16: int @29:5..29:20
+        initializer: int 0 : int @29:19..29:20
+      discard: loop : unit @30:5..33:6
+        start: int 0 : int @30:14..30:15
+        end: len : int @30:17..30:25
+          sequence: read xs@28:18..28:20 : [int]
+        carry[0]: carry xs@28:18..28:20 : [int] @30:5..33:6
+          initial: read xs@28:18..28:20 : [int]
+        carry[1]: carry sum@29:13..29:16 : int @30:5..33:6
+          initial: read sum@29:13..29:16 : int
+        body:
+          let i@30:9..30:10: loop index : int @30:5..33:6
+            start: int 0 : int @30:14..30:15
+            end: len : int @30:17..30:25
+              sequence: read xs@28:18..28:20 : [int]
+          assignment: assign xs@28:18..28:20 : [int] @31:20..31:22
+            value: field xs : [int] @31:20..31:22
+              base: call shrink@1:1..5:2 : <missing> @31:9..31:23
+                arg[0]: read xs@28:18..28:20 (carried @30:5..33:6) : [int]
+          discard: field return : unit @31:9..31:23
+            base: call shrink@1:1..5:2 : <missing> @31:9..31:23
+              arg[0]: read xs@28:18..28:20 (carried @30:5..33:6) : [int]
+          assignment: assign sum@29:13..29:16 : int @32:9..32:21
+            value: eager + : int @32:9..32:21
+              lhs: read sum@29:13..29:16 (carried @30:5..33:6) : int
+              rhs: index : int @32:16..32:21
+                sequence: read xs@28:18..28:20 (assigned @31:20..31:22) : [int]
+                index: read i@30:9..30:10 : int
+          tail: unit : unit @30:26..33:6
+        next[0]: read xs@28:18..28:20 (assigned @31:20..31:22) : [int]
+        next[1]: read sum@29:13..29:16 (assigned @32:9..32:21) : int
+      discard: after : ? @30:5..33:6
+        control: loop : unit @30:5..33:6
+        context: entry : ? @28:1..35:2
+      tail: make <missing> : <missing> @34:5..34:8
+
+fn replaced@37:1..44:2 ([int] ∈ [[1, 3]; [0, 2]]) -> int ∈ [0, +∞)
+  param xs@37:17..37:19: [int]
+  result: result : <missing> @37:1..44:2
+    outcome[0]:
+      let sum@38:13..38:16: int @38:5..38:20
+        initializer: int 0 : int @38:19..38:20
+      discard: loop : unit @39:5..42:6
+        start: int 0 : int @39:14..39:15
+        end: len : int @39:17..39:25
+          sequence: read xs@37:17..37:19 : [int]
+        carry[0]: carry xs@37:17..37:19 : [int] @39:5..42:6
+          initial: read xs@37:17..37:19 : [int]
+        carry[1]: carry sum@38:13..38:16 : int @39:5..42:6
+          initial: read sum@38:13..38:16 : int
+        body:
+          let i@39:9..39:10: loop index : int @39:5..42:6
+            start: int 0 : int @39:14..39:15
+            end: len : int @39:17..39:25
+              sequence: read xs@37:17..37:19 : [int]
+          assignment: assign xs@37:17..37:19 : [int] @40:9..40:17
+            value: array : [int] @40:14..40:17
+              element: read i@39:9..39:10 : int
+          assignment: assign sum@38:13..38:16 : int @41:9..41:21
+            value: eager + : int @41:9..41:21
+              lhs: read sum@38:13..38:16 (carried @39:5..42:6) : int
+              rhs: index : int @41:16..41:21
+                sequence: read xs@37:17..37:19 (assigned @40:9..40:17) : [int]
+                index: read i@39:9..39:10 : int
+          tail: unit : unit @39:26..42:6
+        next[0]: read xs@37:17..37:19 (assigned @40:9..40:17) : [int]
+        next[1]: read sum@38:13..38:16 (assigned @41:9..41:21) : int
+      discard: after : ? @39:5..42:6
+        control: loop : unit @39:5..42:6
+        context: entry : ? @37:1..44:2
+      tail: make <missing> : <missing> @43:5..43:8
+
+fn ragged@46:1..53:2 ([[int]] ∈ [[[1, 3]; [1, 2]]; [2, 2]]) -> unit ∈ unit
+  param grid@46:15..46:19: [[int]]
+  result: result : <missing> @46:1..53:2
+    outcome[0]:
+      discard: after : ? @47:5..52:6
+        control: loop : unit @47:5..52:6
+        context: entry : ? @46:1..53:2
+      tail: make <missing> : <missing> @47:5..52:6
+
+fn past@55:1..64:2 ([int] ∈ [[0, 3]; [0, 2]]) -> int ∈ [0, +∞)
+  param xs@55:9..55:11: [int]
+  result: result : int @55:23..55:26
+    outcome[0]:
+      let sum@56:13..56:16: int @56:5..56:20
+        initializer: int 0 : int @56:19..56:20
+      discard: loop : unit @57:5..59:6
+        start: int 0 : int @57:14..57:15
+        end: len : int @57:17..57:25
+          sequence: read xs@55:9..55:11 : [int]
+        carry[0]: carry sum@56:13..56:16 : int @57:5..59:6
+          initial: read sum@56:13..56:16 : int
+        body:
+          let i@57:9..57:10: loop index : int @57:5..59:6
+            start: int 0 : int @57:14..57:15
+            end: len : int @57:17..57:25
+              sequence: read xs@55:9..55:11 : [int]
+          assignment: assign sum@56:13..56:16 : int @58:9..58:25
+            value: eager + : int @58:9..58:25
+              lhs: read sum@56:13..56:16 (carried @57:5..59:6) : int
+              rhs: index : int @58:16..58:25
+                sequence: read xs@55:9..55:11 : [int]
+                index: eager + : int @58:19..58:24
+                  lhs: read i@57:9..57:10 : int
+                  rhs: int 1 : int @58:23..58:24
+          tail: unit : unit @57:26..59:6
+        next[0]: read sum@56:13..56:16 (assigned @58:9..58:25) : int
+      discard: loop : unit @60:5..62:6
+        start: int 0 : int @60:14..60:15
+        end: eager + : int @60:17..60:29
+          lhs: len : int @60:17..60:25
+            sequence: read xs@55:9..55:11 : [int]
+          rhs: int 1 : int @60:28..60:29
+        carry[0]: carry sum@56:13..56:16 : int @60:5..62:6
+          initial: read sum@56:13..56:16 (after loop @57:5..59:6) : int
+        body:
+          let i@60:9..60:10: loop index : int @60:5..62:6
+            start: int 0 : int @60:14..60:15
+            end: eager + : int @60:17..60:29
+              lhs: len : int @60:17..60:25
+                sequence: read xs@55:9..55:11 : [int]
+              rhs: int 1 : int @60:28..60:29
+          assignment: assign sum@56:13..56:16 : int @61:9..61:21
+            value: eager + : int @61:9..61:21
+              lhs: read sum@56:13..56:16 (carried @60:5..62:6) : int
+              rhs: index : int @61:16..61:21
+                sequence: read xs@55:9..55:11 : [int]
+                index: read i@60:9..60:10 : int
+          tail: unit : unit @60:30..62:6
+        next[0]: read sum@56:13..56:16 (assigned @61:9..61:21) : int
+      discard: after : ? @60:5..62:6
+        control: loop : unit @60:5..62:6
+        context: after : ? @57:5..59:6
+          control: loop : unit @57:5..59:6
+          context: entry : ? @55:1..64:2
+      tail: read sum@56:13..56:16 (after loop @60:5..62:6) : int
+
+fn wipe@66:1..70:2 ([[int]] ∈ [[[0, 3]; [1, 2]]; [2, 2]]) -> unit ∈ unit
+  param rows@66:13..66:17: [[int]]
+  result: result : <missing> @66:1..70:2
+    outcome[0]:
+      discard: after : ? @67:5..69:6
+        control: loop : unit @67:5..69:6
+        context: entry : ? @66:1..70:2
+      tail: make <missing> : <missing> @67:5..69:6
+
+fn wiped@72:1..83:2 ([[int]] ∈ [[[0, 3]; [1, 2]]; [2, 2]]) -> int ∈ [0, +∞)
+  param rows@72:14..72:18: [[int]]
+  result: result : <missing> @72:1..83:2
+    outcome[0]:
+      discard: if : unit @73:5..75:6
+        scrutinee: eager == : bool @73:8..73:23
+          lhs: len : int @73:8..73:18
+            sequence: read rows@72:14..72:18 : [[int]]
+          rhs: int 0 : int @73:22..73:23
+        then: unit : unit @73:24..75:6
+        else: unit (implicit)
+      let n@76:9..76:10: int @76:5..76:26
+        initializer: len : int @76:13..76:26
+          sequence: index : [int] @76:13..76:20
+            sequence: read rows@72:14..72:18 : [[int]]
+            index: int 0 : int @76:18..76:19
+      assignment: assign rows@72:14..72:18 : [[int]] @77:14..77:18
+        value: field rows : [[int]] @77:14..77:18
+          base: call wipe@66:1..70:2 : <missing> @77:5..77:19
+            arg[0]: read rows@72:14..72:18 : [[int]]
+      discard: field return : unit @77:5..77:19
+        base: call wipe@66:1..70:2 : <missing> @77:5..77:19
+          arg[0]: read rows@72:14..72:18 : [[int]]
+      let sum@78:13..78:16: int @78:5..78:20
+        initializer: int 0 : int @78:19..78:20
+      discard: loop : unit @79:5..81:6
+        start: int 0 : int @79:14..79:15
+        end: read n@76:9..76:10 : int
+        carry[0]: carry rows@72:14..72:18 : [[int]] @79:5..81:6
+          initial: read rows@72:14..72:18 (assigned @77:14..77:18) : [[int]]
+        carry[1]: carry sum@78:13..78:16 : int @79:5..81:6
+          initial: read sum@78:13..78:16 : int
+        body:
+          let j@79:9..79:10: loop index : int @79:5..81:6
+            start: int 0 : int @79:14..79:15
+            end: read n@76:9..76:10 : int
+          assignment: assign sum@78:13..78:16 : int @80:9..80:26
+            value: eager + : int @80:9..80:26
+              lhs: read sum@78:13..78:16 (carried @79:5..81:6) : int
+              rhs: index : int @80:16..80:26
+                sequence: index : [int] @80:16..80:23
+                  sequence: read rows@72:14..72:18 (carried @79:5..81:6) : [[int]]
+                  index: int 0 : int @80:21..80:22
+                index: read j@79:9..79:10 : int
+          tail: unit : unit @79:19..81:6
+        next[0]: read rows@72:14..72:18 (carried @79:5..81:6) : [[int]]
+        next[1]: read sum@78:13..78:16 (assigned @80:9..80:26) : int
+      discard: after : ? @79:5..81:6
+        control: loop : unit @79:5..81:6
+        context: after : ? @73:5..75:6
+          control: observe : ? @73:5..75:6
+          context: entry : ? @72:1..83:2
+      tail: make <missing> : <missing> @82:5..82:8
+    outcome[1]: return : <missing> @74:9..74:17
+      payload: make <missing> : <missing> @74:16..74:17
+
+fn wide@85:1..87:2 ([int] ∈ [[1, 3]; [2, 2]], int ∈ [1, 1]) -> int ∈ [1, 3]
+  param xs@85:9..85:11: [int]
+  param x@85:20..85:21: int
+  result: copy : int @85:31..85:34
+    value: if : int @86:5..86:57
+      scrutinee: eager < : bool @86:8..86:13
+        lhs: read x@85:20..85:21 : int
+        rhs: int 5 : int @86:12..86:13
+      then: index : int @86:16..86:44
+        sequence: read xs@85:9..85:11 : [int]
+        index: eager * : int @86:19..86:43
+          lhs: read x@85:20..85:21 [x < 5 holds@86:8..86:13] : int
+          rhs: int -9223372036854775808 : int @86:23..86:43
+      else: int 0 : int @86:54..86:55
+
+fn signed@89:1..91:2 ([int] ∈ [[0, 3]; [0, 2]], int ∈ [-1, -1]) -> int ∈ [0, 3]
+  param xs@89:11..89:13: [int]
+  param k@89:22..89:23: int
+  result: copy : int @89:33..89:36
+    value: if : int @90:5..90:52
+      scrutinee: eager > : bool @90:8..90:20
+        lhs: len : int @90:8..90:16
+          sequence: read xs@89:11..89:13 : [int]
+        rhs: int 0 : int @90:19..90:20
+      then: index : int @90:23..90:39
+        sequence: read xs@89:11..89:13 : [int]
+        index: eager % : int @90:26..90:38
+          lhs: read k@89:22..89:23 : int
+          rhs: len : int @90:30..90:38
+            sequence: read xs@89:11..89:13 : [int]
+      else: int 0 : int @90:49..90:50
+
+fn main@93:1..100:2 () -> int ∈ [5, +∞)
+  result: copy : int @93:14..93:17
+    value:
+      let xs@94:13..94:15: [int] @94:5..94:27
+        initializer: array : [int] @94:18..94:27
+          element: int 1 : int @94:19..94:20
+          element: int 2 : int @94:22..94:23
+          element: int 3 : int @94:25..94:26
+      let grid@95:13..95:17: [[int]] @95:5..95:33
+        initializer: array : [[int]] @95:20..95:33
+          element: array : [int] @95:21..95:27
+            element: int 1 : int @95:22..95:23
+            element: int 2 : int @95:25..95:26
+          element: array : [int] @95:29..95:32
+            element: int 3 : int @95:30..95:31
+      assignment: assign grid@95:13..95:17 : [[int]] @96:16..96:20
+        value: field grid : [[int]] @96:16..96:20
+          base: call ragged@46:1..53:2 : <missing> @96:5..96:21
+            arg[0]: read grid@95:13..95:17 : [[int]]
+      discard: field return : unit @96:5..96:21
+        base: call ragged@46:1..53:2 : <missing> @96:5..96:21
+          arg[0]: read grid@95:13..95:17 : [[int]]
+      assignment: assign xs@94:13..94:15 : [int] @97:23..97:25
+        value: field xs : [int] @97:23..97:25
+          base: call stale@7:1..13:2 : <missing> @97:13..97:29
+            arg[0]: read xs@94:13..94:15 : [int]
+            arg[1]: int 2 : int @97:27..97:28
+      let a@97:9..97:10: int @97:5..97:73
+        initializer: eager + : int @97:13..97:73
+          lhs: eager + : int @97:13..97:44
+            lhs: field return : int @97:13..97:29
+              base: call stale@7:1..13:2 : <missing> @97:13..97:29
+                arg[0]: read xs@94:13..94:15 : [int]
+                arg[1]: int 2 : int @97:27..97:28
+            rhs: call moved@15:1..22:2 : int @97:32..97:44
+              arg[0]: read xs@94:13..94:15 (assigned @97:23..97:25) : [int]
+              arg[1]: int 1 : int @97:42..97:43
+          rhs: call other@24:1..26:2 : int @97:47..97:73
+            arg[0]: read xs@94:13..94:15 (assigned @97:23..97:25) : [int]
+            arg[1]: array : [int] @97:57..97:69
+              element: int 1 : int @97:58..97:59
+              element: int 2 : int @97:61..97:62
+              element: int 3 : int @97:64..97:65
+              element: int 4 : int @97:67..97:68
+            arg[2]: int 3 : int @97:71..97:72
+      assignment: assign grid@95:13..95:17 : [[int]] @98:23..98:27
+        value: field rows : [[int]] @98:23..98:27
+          base: call wiped@72:1..83:2 : <missing> @98:13..98:28
+            arg[0]: read grid@95:13..95:17 (assigned @96:16..96:20) : [[int]]
+      let b@98:9..98:10: int @98:5..98:42
+        initializer: eager + : int @98:13..98:42
+          lhs: field return : int @98:13..98:28
+            base: call wiped@72:1..83:2 : <missing> @98:13..98:28
+              arg[0]: read grid@95:13..95:17 (assigned @96:16..96:20) : [[int]]
+          rhs: call wide@85:1..87:2 : int @98:31..98:42
+            arg[0]: read xs@94:13..94:15 (assigned @97:23..97:25) : [int]
+            arg[1]: int 1 : int @98:40..98:41
+      assignment: assign xs@94:13..94:15 : [int] @99:27..99:29
+        value: field xs : [int] @99:27..99:29
+          base: call shrinking@28:1..35:2 : <missing> @99:13..99:30
+            arg[0]: read xs@94:13..94:15 (assigned @97:23..97:25) : [int]
+      assignment: assign xs@94:13..94:15 : [int] @99:46..99:48
+        value: field xs : [int] @99:46..99:48
+          base: call replaced@37:1..44:2 : <missing> @99:33..99:49
+            arg[0]: read xs@94:13..94:15 (assigned @99:27..99:29) : [int]
+      tail: eager + : int @99:5..99:80
+        lhs: eager + : int @99:5..99:60
+          lhs: eager + : int @99:5..99:49
+            lhs: eager + : int @99:5..99:30
+              lhs: eager + : int @99:5..99:10
+                lhs: read a@97:9..97:10 : int
+                rhs: read b@98:9..98:10 : int
+              rhs: field return : int @99:13..99:30
+                base: call shrinking@28:1..35:2 : <missing> @99:13..99:30
+                  arg[0]: read xs@94:13..94:15 (assigned @97:23..97:25) : [int]
+            rhs: field return : int @99:33..99:49
+              base: call replaced@37:1..44:2 : <missing> @99:33..99:49
+                arg[0]: read xs@94:13..94:15 (assigned @99:27..99:29) : [int]
+          rhs: call past@55:1..64:2 : int @99:52..99:60
+            arg[0]: read xs@94:13..94:15 (assigned @99:46..99:48) : [int]
+        rhs: call signed@89:1..91:2 : int @99:63..99:80
+          arg[0]: read xs@94:13..94:15 (assigned @99:46..99:48) : [int]
+          arg[1]: eager - : int @99:74..99:79
+            lhs: int 0 : int @99:74..99:75
+            rhs: int 1 : int @99:78..99:79
+
+== semantic diagnostics ==
+error[semantic/index-out-of-bounds] 10:16..10:21 "xs[i]": index is outside the sequence: it is [2, 2], and the length is [2, 2]
+  at 97:27..97:28 "2": argument is [2, 2]
+error[semantic/index-out-of-bounds] 19:16..19:21 "xs[j]": index is outside the sequence: it is [2, 2], and the length is [2, 2]
+  at 18:9..18:15 "j += 1": is [2, 2]
+error[semantic/index-out-of-bounds] 25:33..25:38 "xs[i]": index is outside the sequence: it is [3, 3], and the length is [2, 2]
+  at 97:71..97:72 "3": argument is [3, 3]
+error[semantic/index-out-of-bounds] 32:16..32:21 "xs[i]": index may be outside the sequence: it is [0, 1], and the length is [0, 2]
+  at 30:9..30:10 "i": is [0, 1] on a loop iteration
+error[semantic/index-out-of-bounds] 41:16..41:21 "xs[i]": index may be outside the sequence: it is [0, 1], and the length is [1, 1]
+  at 39:9..39:10 "i": is [0, 1] on a loop iteration
+error[semantic/index-out-of-bounds] 50:13..50:23 "grid[y][x]": index may be outside the sequence: it is [0, 1], and the length is [1, 2]
+  at 48:13..48:14 "x": is [0, 1] on a loop iteration
+error[semantic/index-out-of-bounds] 58:16..58:25 "xs[i + 1]": index may be outside the sequence: it is [1, 2], and the length is [0, 2]
+  at 58:19..58:24 "i + 1": is [1, 2]
+error[semantic/index-out-of-bounds] 61:16..61:21 "xs[i]": index may be outside the sequence: it is [0, 2], and the length is [0, 2]
+  at 60:9..60:10 "i": is [0, 2] on a loop iteration
+error[semantic/index-out-of-bounds] 80:16..80:26 "rows[0][j]": index may be outside the sequence: it is [0, 1], and the length is [0, 2]
+  at 79:9..79:10 "j": is [0, 1] on a loop iteration
+error[semantic/index-out-of-bounds] 86:16..86:44 "xs[x * -9223372036854775808]": index is outside the sequence: it is [-9223372036854775808, -9223372036854775808], and the length is [2, 2]
+  at 86:19..86:43 "x * -9223372036854775808": is [-9223372036854775808, -9223372036854775808]
+error[semantic/index-out-of-bounds] 90:23..90:39 "xs[k % xs.len()]": index may be outside the sequence: it is [-1, 0], and the length is [0, 2]
+  at 90:26..90:38 "k % xs.len()": is [-1, 0]

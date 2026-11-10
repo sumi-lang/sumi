@@ -1,0 +1,327 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn total@1:1..7:2 ([int] ∈ [[1, 3]; [2, 3]]) -> int ∈ [1, +∞)
+  param xs@1:10..1:12: [int]
+  result: result : int @1:24..1:27
+    outcome[0]:
+      let sum@2:13..2:16: int @2:5..2:20
+        initializer: int 0 : int @2:19..2:20
+      discard: loop : unit @3:5..5:6
+        start: int 0 : int @3:14..3:15
+        end: len : int @3:17..3:25
+          sequence: read xs@1:10..1:12 : [int]
+        carry[0]: carry sum@2:13..2:16 : int @3:5..5:6
+          initial: read sum@2:13..2:16 : int
+        body:
+          let i@3:9..3:10: loop index : int @3:5..5:6
+            start: int 0 : int @3:14..3:15
+            end: len : int @3:17..3:25
+              sequence: read xs@1:10..1:12 : [int]
+          assignment: assign sum@2:13..2:16 : int @4:9..4:21
+            value: eager + : int @4:9..4:21
+              lhs: read sum@2:13..2:16 (carried @3:5..5:6) : int
+              rhs: index : int @4:16..4:21
+                sequence: read xs@1:10..1:12 : [int]
+                index: read i@3:9..3:10 : int
+          tail: unit : unit @3:26..5:6
+        next[0]: read sum@2:13..2:16 (assigned @4:9..4:21) : int
+      discard: after : ? @3:5..5:6
+        control: loop : unit @3:5..5:6
+        context: entry : ? @1:1..7:2
+      tail: read sum@2:13..2:16 (after loop @3:5..5:6) : int
+
+fn rising@9:1..17:2 ([int] ∈ [[1, 4]; [0, 4]]) -> int ∈ [0, +∞)
+  param xs@9:11..9:13: [int]
+  result: result : int @9:25..9:28
+    outcome[0]:
+      let count@10:13..10:18: int @10:5..10:22
+        initializer: int 0 : int @10:21..10:22
+      discard: loop : unit @11:5..15:6
+        start: int 0 : int @11:14..11:15
+        end: eager - : int @11:17..11:29
+          lhs: len : int @11:17..11:25
+            sequence: read xs@9:11..9:13 : [int]
+          rhs: int 1 : int @11:28..11:29
+        carry[0]: carry count@10:13..10:18 : int @11:5..15:6
+          initial: read count@10:13..10:18 : int
+        body:
+          let i@11:9..11:10: loop index : int @11:5..15:6
+            start: int 0 : int @11:14..11:15
+            end: eager - : int @11:17..11:29
+              lhs: len : int @11:17..11:25
+                sequence: read xs@9:11..9:13 : [int]
+              rhs: int 1 : int @11:28..11:29
+          discard: phi count@10:13..10:18 : int @12:9..14:10
+            scrutinee: eager < : bool @12:12..12:29
+              lhs: index : int @12:12..12:17
+                sequence: read xs@9:11..9:13 : [int]
+                index: read i@11:9..11:10 : int
+              rhs: index : int @12:20..12:29
+                sequence: read xs@9:11..9:13 : [int]
+                index: eager + : int @12:23..12:28
+                  lhs: read i@11:9..11:10 : int
+                  rhs: int 1 : int @12:27..12:28
+            then: read count@10:13..10:18 (assigned @13:13..13:23) : int
+            else: read count@10:13..10:18 (carried @11:5..15:6) : int
+          tail: if : unit @12:9..14:10
+            scrutinee: eager < : bool @12:12..12:29
+              lhs: index : int @12:12..12:17
+                sequence: read xs@9:11..9:13 : [int]
+                index: read i@11:9..11:10 : int
+              rhs: index : int @12:20..12:29
+                sequence: read xs@9:11..9:13 : [int]
+                index: eager + : int @12:23..12:28
+                  lhs: read i@11:9..11:10 : int
+                  rhs: int 1 : int @12:27..12:28
+            then:
+              assignment: assign count@10:13..10:18 : int @13:13..13:23
+                value: eager + : int @13:13..13:23
+                  lhs: read count@10:13..10:18 (carried @11:5..15:6) : int
+                  rhs: int 1 : int @13:22..13:23
+              tail: unit : unit @12:30..14:10
+            else: unit (implicit)
+        next[0]: phi count@10:13..10:18 : int @12:9..14:10
+          scrutinee: eager < : bool @12:12..12:29
+            lhs: index : int @12:12..12:17
+              sequence: read xs@9:11..9:13 : [int]
+              index: read i@11:9..11:10 : int
+            rhs: index : int @12:20..12:29
+              sequence: read xs@9:11..9:13 : [int]
+              index: eager + : int @12:23..12:28
+                lhs: read i@11:9..11:10 : int
+                rhs: int 1 : int @12:27..12:28
+          then: read count@10:13..10:18 (assigned @13:13..13:23) : int
+          else: read count@10:13..10:18 (carried @11:5..15:6) : int
+      discard: after : ? @11:5..15:6
+        control: loop : unit @11:5..15:6
+        context: entry : ? @9:1..17:2
+      tail: read count@10:13..10:18 (after loop @11:5..15:6) : int
+
+fn guarded@19:1..21:2 ([int] ∈ [[1, 3]; [2, 3]], int ∈ [1, 7]) -> int ∈ [0, 3]
+  param xs@19:12..19:14: [int]
+  param i@19:23..19:24: int
+  result: copy : int @19:34..19:37
+    value: if : int @20:5..20:51
+      scrutinee: lazy and : bool @20:8..20:30
+        lhs: eager <= : bool @20:8..20:14
+          lhs: int 0 : int @20:8..20:9
+          rhs: read i@19:23..19:24 : int
+        rhs: eager < : bool @20:18..20:30
+          lhs: read i@19:23..19:24 [0 <= i holds@20:8..20:14] : int
+          rhs: len : int @20:22..20:30
+            sequence: read xs@19:12..19:14 : [int]
+      then: index : int @20:33..20:38
+        sequence: read xs@19:12..19:14 : [int]
+        index: read i@19:23..19:24 [i < xs.len() holds@20:18..20:30, 0 <= i holds@20:8..20:14] : int
+      else: int 0 : int @20:48..20:49
+
+fn after@23:1..28:2 ([int] ∈ [[1, 4]; [1, 3]], int ∈ [0, 1]) -> int ∈ [0, 4]
+  param xs@23:10..23:12: [int]
+  param i@23:21..23:22: int
+  result: result : int @23:32..23:35
+    outcome[0]:
+      discard: if : unit @24:5..26:6
+        scrutinee: lazy or : bool @24:8..24:34
+          lhs: eager < : bool @24:8..24:13
+            lhs: read i@23:21..23:22 : int
+            rhs: int 0 : int @24:12..24:13
+          rhs: eager >= : bool @24:17..24:34
+            lhs: eager + : int @24:17..24:22
+              lhs: read i@23:21..23:22 [i < 0 fails@24:8..24:13] : int
+              rhs: int 1 : int @24:21..24:22
+            rhs: len : int @24:26..24:34
+              sequence: read xs@23:10..23:12 : [int]
+        then: unit : unit @24:35..26:6
+        else: unit (implicit)
+      discard: after : ? @24:5..26:6
+        control: observe : ? @24:5..26:6
+        context: entry : ? @23:1..28:2
+      tail: index : int @27:5..27:14
+        sequence: read xs@23:10..23:12 : [int]
+        index: eager + : int @27:8..27:13
+          lhs: read i@23:21..23:22 [i < 0 fails@24:8..24:13] : int
+          rhs: int 1 : int @27:12..27:13
+    outcome[1]: return : int @25:9..25:17
+      payload: int 0 : int @25:16..25:17
+
+fn wrapped@30:1..32:2 ([int] ∈ [[1, 3]; [0, 3]], int ∈ [3, 7]) -> int ∈ [0, 3]
+  param xs@30:12..30:14: [int]
+  param k@30:23..30:24: int
+  result: copy : int @30:34..30:37
+    value: if : int @31:5..31:62
+      scrutinee: lazy and : bool @31:8..31:30
+        lhs: eager > : bool @31:8..31:20
+          lhs: len : int @31:8..31:16
+            sequence: read xs@30:12..30:14 : [int]
+          rhs: int 0 : int @31:19..31:20
+        rhs: eager >= : bool @31:24..31:30
+          lhs: read k@30:23..30:24 : int
+          rhs: int 0 : int @31:29..31:30
+      then: index : int @31:33..31:49
+        sequence: read xs@30:12..30:14 : [int]
+        index: eager % : int @31:36..31:48
+          lhs: read k@30:23..30:24 [k >= 0 holds@31:24..31:30] : int
+          rhs: len : int @31:40..31:48
+            sequence: read xs@30:12..30:14 : [int]
+      else: int 0 : int @31:59..31:60
+
+fn last@34:1..37:2 ([int] ∈ [[5, 6]; [0, 2]]) -> int ∈ [0, 6]
+  param xs@34:9..34:11: [int]
+  result: copy : int @34:23..34:26
+    value:
+      let ys@35:13..35:15: [int] @35:5..35:20
+        initializer: read xs@34:9..34:11 : [int]
+      discard: phi ys@35:13..35:15 : [int] @36:5..36:44
+        scrutinee: eager > : bool @36:8..36:20
+          lhs: len : int @36:8..36:16
+            sequence: read ys@35:13..35:15 : [int]
+          rhs: int 0 : int @36:19..36:20
+        then: read ys@35:13..35:15 (assigned @36:23..36:31) : [int]
+        else: read ys@35:13..35:15 : [int]
+      tail: if : int @36:5..36:44
+        scrutinee: eager > : bool @36:8..36:20
+          lhs: len : int @36:8..36:16
+            sequence: read ys@35:13..35:15 : [int]
+          rhs: int 0 : int @36:19..36:20
+        then:
+          assignment: assign ys@35:13..35:15 : [int] @36:23..36:31
+            value: pop : [int] @36:23..36:31
+              sequence: read ys@35:13..35:15 : [int]
+          tail: index : int @36:23..36:31
+            sequence: read ys@35:13..35:15 : [int]
+            index: eager - : int @36:23..36:31
+              lhs: len : int @36:23..36:31
+                sequence: read ys@35:13..35:15 : [int]
+              rhs: int 1 : int @36:23..36:31
+        else: int 0 : int @36:41..36:42
+
+fn head@39:1..41:2 ([int] ∈ [[4, 5]; [0, 2]]) -> int ∈ [0, 5]
+  param xs@39:9..39:11: [int]
+  result: copy : int @39:23..39:26
+    value: if : int @40:5..40:42
+      scrutinee: eager != : bool @40:8..40:21
+        lhs: len : int @40:8..40:16
+          sequence: read xs@39:9..39:11 : [int]
+        rhs: int 0 : int @40:20..40:21
+      then: index : int @40:24..40:29
+        sequence: read xs@39:9..39:11 : [int]
+        index: int 0 : int @40:27..40:28
+      else: int 0 : int @40:39..40:40
+
+fn inverses@43:1..49:2 (int ∈ [4, 4]) -> int ∈ [25, +∞)
+  param n@43:13..43:14: int
+  result: result : int @43:24..43:27
+    outcome[0]:
+      let sum@44:13..44:16: int @44:5..44:20
+        initializer: int 0 : int @44:19..44:20
+      discard: loop : unit @45:5..47:6
+        start: int 0 : int @45:14..45:15
+        end: read n@43:13..43:14 : int
+        carry[0]: carry sum@44:13..44:16 : int @45:5..47:6
+          initial: read sum@44:13..44:16 : int
+        body:
+          let k@45:9..45:10: loop index : int @45:5..47:6
+            start: int 0 : int @45:14..45:15
+            end: read n@43:13..43:14 : int
+          assignment: assign sum@44:13..44:16 : int @46:9..46:29
+            value: eager + : int @46:9..46:29
+              lhs: read sum@44:13..44:16 (carried @45:5..47:6) : int
+              rhs: eager / : int @46:16..46:29
+                lhs: int 100 : int @46:16..46:19
+                rhs: eager - : int @46:23..46:28
+                  lhs: read n@43:13..43:14 : int
+                  rhs: read k@45:9..45:10 : int
+          tail: unit : unit @45:19..47:6
+        next[0]: read sum@44:13..44:16 (assigned @46:9..46:29) : int
+      discard: after : ? @45:5..47:6
+        control: loop : unit @45:5..47:6
+        context: entry : ? @43:1..49:2
+      tail: read sum@44:13..44:16 (after loop @45:5..47:6) : int
+
+fn main@51:1..56:2 () -> int ∈ [27, +∞)
+  result: copy : int @51:14..51:17
+    value:
+      let a@52:9..52:10: int @52:5..52:81
+        initializer: eager + : int @52:13..52:81
+          lhs: eager + : int @52:13..52:68
+            lhs: eager + : int @52:13..52:45
+              lhs: call total@1:1..7:2 : int @52:13..52:26
+                arg[0]: array : [int] @52:19..52:25
+                  element: int 1 : int @52:20..52:21
+                  element: int 2 : int @52:23..52:24
+              rhs: call total@1:1..7:2 : int @52:29..52:45
+                arg[0]: array : [int] @52:35..52:44
+                  element: int 1 : int @52:36..52:37
+                  element: int 2 : int @52:39..52:40
+                  element: int 3 : int @52:42..52:43
+            rhs: call rising@9:1..17:2 : int @52:48..52:68
+              arg[0]: array : [int] @52:55..52:67
+                element: int 1 : int @52:56..52:57
+                element: int 3 : int @52:59..52:60
+                element: int 2 : int @52:62..52:63
+                element: int 4 : int @52:65..52:66
+          rhs: call rising@9:1..17:2 : int @52:71..52:81
+            arg[0]: array : [int] @52:78..52:80
+      let b@53:9..53:10: int @53:5..53:93
+        initializer: eager + : int @53:13..53:93
+          lhs: eager + : int @53:13..53:77
+            lhs: eager + : int @53:13..53:55
+              lhs: call guarded@19:1..21:2 : int @53:13..53:31
+                arg[0]: array : [int] @53:21..53:27
+                  element: int 1 : int @53:22..53:23
+                  element: int 2 : int @53:25..53:26
+                arg[1]: int 1 : int @53:29..53:30
+              rhs: call guarded@19:1..21:2 : int @53:34..53:55
+                arg[0]: array : [int] @53:42..53:51
+                  element: int 1 : int @53:43..53:44
+                  element: int 2 : int @53:46..53:47
+                  element: int 3 : int @53:49..53:50
+                arg[1]: int 7 : int @53:53..53:54
+            rhs: call after@23:1..28:2 : int @53:58..53:77
+              arg[0]: array : [int] @53:64..53:73
+                element: int 1 : int @53:65..53:66
+                element: int 2 : int @53:68..53:69
+                element: int 3 : int @53:71..53:72
+              arg[1]: int 1 : int @53:75..53:76
+          rhs: call after@23:1..28:2 : int @53:80..53:93
+            arg[0]: array : [int] @53:86..53:89
+              element: int 4 : int @53:87..53:88
+            arg[1]: int 0 : int @53:91..53:92
+      let c@54:9..54:10: int @54:5..54:36
+        initializer: eager + : int @54:13..54:36
+          lhs: call head@39:1..41:2 : int @54:13..54:25
+            arg[0]: array : [int] @54:18..54:24
+              element: int 4 : int @54:19..54:20
+              element: int 5 : int @54:22..54:23
+          rhs: call head@39:1..41:2 : int @54:28..54:36
+            arg[0]: array : [int] @54:33..54:35
+      tail: eager + : int @55:5..55:95
+        lhs: eager + : int @55:5..55:81
+          lhs: eager + : int @55:5..55:70
+            lhs: eager + : int @55:5..55:55
+              lhs: eager + : int @55:5..55:38
+                lhs: eager + : int @55:5..55:14
+                  lhs: eager + : int @55:5..55:10
+                    lhs: read a@52:9..52:10 : int
+                    rhs: read b@53:9..53:10 : int
+                  rhs: read c@54:9..54:10 : int
+                rhs: call wrapped@30:1..32:2 : int @55:17..55:38
+                  arg[0]: array : [int] @55:25..55:34
+                    element: int 1 : int @55:26..55:27
+                    element: int 2 : int @55:29..55:30
+                    element: int 3 : int @55:32..55:33
+                  arg[1]: int 7 : int @55:36..55:37
+              rhs: call wrapped@30:1..32:2 : int @55:41..55:55
+                arg[0]: array : [int] @55:49..55:51
+                arg[1]: int 3 : int @55:53..55:54
+            rhs: call last@34:1..37:2 : int @55:58..55:70
+              arg[0]: array : [int] @55:63..55:69
+                element: int 5 : int @55:64..55:65
+                element: int 6 : int @55:67..55:68
+          rhs: call last@34:1..37:2 : int @55:73..55:81
+            arg[0]: array : [int] @55:78..55:80
+        rhs: call inverses@43:1..49:2 : int @55:84..55:95
+          arg[0]: int 4 : int @55:93..55:94

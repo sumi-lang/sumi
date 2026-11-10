@@ -1,0 +1,115 @@
+tree: omitted
+
+== formatted ==
+fn shrink(mut xs: [int]) {
+    if xs.len() > 1 {
+        _ = xs.pop()
+    }
+}
+
+fn stale(mut xs: [int], i: int) -> int {
+    if 0 <= i && i < xs.len() {
+        _ = xs.pop()
+        return xs[i]
+    }
+    0
+}
+
+fn moved(xs: [int], i: int) -> int {
+    let mut j = i
+    if 0 <= j && j < xs.len() {
+        j += 1
+        return xs[j]
+    }
+    0
+}
+
+fn other(xs: [int], ys: [int], i: int) -> int {
+    if 0 <= i && i < ys.len() {
+        xs[i]
+    } else {
+        0
+    }
+}
+
+fn shrinking(mut xs: [int]) -> int {
+    let mut sum = 0
+    for i in 0..xs.len() {
+        shrink(mut xs)
+        sum += xs[i]
+    }
+    sum
+}
+
+fn replaced(mut xs: [int]) -> int {
+    let mut sum = 0
+    for i in 0..xs.len() {
+        xs = [i]
+        sum += xs[i]
+    }
+    sum
+}
+
+fn ragged(mut grid: [[int]]) {
+    for y in 0..grid.len() {
+        for x in 0..grid[y].len() {
+            grid[y] = [x]
+            grid[y][x] = 0
+        }
+    }
+}
+
+fn past(xs: [int]) -> int {
+    let mut sum = 0
+    for i in 0..xs.len() {
+        sum += xs[i + 1]
+    }
+    for i in 0..xs.len() + 1 {
+        sum += xs[i]
+    }
+    sum
+}
+
+fn wipe(mut rows: [[int]]) {
+    for i in 0..rows.len() {
+        rows[i] = []
+    }
+}
+
+fn wiped(mut rows: [[int]]) -> int {
+    if rows.len() == 0 {
+        return 0
+    }
+    let n = rows[0].len()
+    wipe(mut rows)
+    let mut sum = 0
+    for j in 0..n {
+        sum += rows[0][j]
+    }
+    sum
+}
+
+fn wide(xs: [int], x: int) -> int {
+    if x < 5 {
+        xs[x * -9223372036854775808]
+    } else {
+        0
+    }
+}
+
+fn signed(xs: [int], k: int) -> int {
+    if xs.len() > 0 {
+        xs[k % xs.len()]
+    } else {
+        0
+    }
+}
+
+fn main() -> int {
+    let mut xs = [1, 2, 3]
+    let mut grid = [[1, 2], [3]]
+    ragged(mut grid)
+    let a = stale(mut xs, 2) + moved(xs, 1) + other(xs, [1, 2, 3, 4], 3)
+    let b = wiped(mut grid) + wide(xs, 1)
+    a + b + shrinking(mut xs) + replaced(mut xs) + past(xs) + signed(xs, 0 - 1)
+}

@@ -56,7 +56,15 @@ pub fn analyze(parsed: ParsedSource) -> Analysis {
     let values = Values::delivered(&graph, &lowered, &summaries);
     let any = AnyValues::new(&graph, &lowered, &summaries);
     let typing = Typing::new(checked.types, values);
-    proof::check(&mut source, &graph, &spans, &typing, &lowered, &failed);
+    proof::check(
+        &mut source,
+        &graph,
+        &spans,
+        &typing,
+        &lowered,
+        &summaries,
+        &failed,
+    );
     exhaustive(
         &mut source,
         &graph,

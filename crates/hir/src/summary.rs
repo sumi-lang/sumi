@@ -1,5 +1,5 @@
-//! A value as its function's parameters decide it: one pass over each body, callees first, so a
-//! call takes its callee's result at its own arguments and not at every caller's.
+//! A value as other values decide it: one pass over each body, callees first, so a call takes its
+//! callee's result at its own arguments and not at every caller's.
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -59,23 +59,62 @@ const MAX_RERUNS: u32 = 16;
 /// The most deeply the index of an element names an element by its own index.
 const MAX_NESTING: usize = 3;
 
+/// What a path starts at: a parameter of the function, or a node of its body that nothing says
+/// more of.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(crate) enum Root {
+    Param(u32),
+    Node(NodeId),
+}
+
+/// What the roots of paths hold.
+pub(crate) trait Roots {
+    fn may(&self, root: Root) -> Option<&May>;
+}
+
+/// A callee's parameters at a call's arguments.
+impl Roots for [&May] {
+    fn may(&self, root: Root) -> Option<&May> {
+        match root {
+            Root::Param(index) => self.get(index as usize).copied(),
+            Root::Node(_) => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-enum Step {
+pub(crate) enum Step {
     /// A field, with the type of what it holds, narrowed where an arm bound it.
     Field(FieldName, Ty),
     Element(Rc<Form>, Ty),
     Len,
 }
 
-/// What a parameter of the enclosing function holds, or a part of it through steps.
+/// What a root holds, or a part of it through steps.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct Path {
-    param: u32,
+    root: Root,
     ty: Ty,
     steps: Rc<[Step]>,
 }
 
 impl Path {
+    pub fn node(node: NodeId, ty: Ty) -> Self {
+        Self {
+            root: Root::Node(node),
+            ty,
+            steps: Rc::from([]),
+        }
+    }
+
+    pub fn root(&self) -> Root {
+        self.root
+    }
+
+    pub fn steps(&self) -> &[Step] {
+        &self.steps
+    }
+
     fn ty(&self) -> Ty {
         match self.steps.last() {
             Some(&(Step::Field(_, ty) | Step::Element(_, ty))) => ty,
@@ -101,7 +140,7 @@ impl Path {
 
     fn then(&self, step: Step) -> Self {
         Self {
-            param: self.param,
+            root: self.root,
             ty: self.ty,
             steps: self.steps.iter().cloned().chain([step]).collect(),
         }
@@ -137,19 +176,23 @@ impl Path {
 
     /// What the path holds where the parameters hold `args`.
     fn at(&self, args: &[&Sym], cx: Types<'_>) -> Sym {
-        let Some(arg) = args.get(self.param as usize) else {
+        let arg = match self.root {
+            Root::Param(index) => args.get(index as usize),
+            Root::Node(_) => None,
+        };
+        let Some(arg) = arg else {
             return Sym::Any;
         };
         let arg = arg.narrowed(self.ty, cx);
         arg.stepped(&self.steps, cx, |index| index.at(args, cx))
     }
 
-    /// The values the path holds where the parameters hold `args`.
-    fn among(&self, args: &[&May], cx: Types<'_>) -> May {
-        let Some(arg) = args.get(self.param as usize) else {
+    /// The values the path holds where its root holds what `roots` gives it.
+    fn among<R: Roots + ?Sized>(&self, roots: &R, cx: Types<'_>) -> May {
+        let Some(root) = roots.may(self.root) else {
             return May::NONE;
         };
-        let mut value = arg.narrow(self.ty, cx.unions);
+        let mut value = root.narrow(self.ty, cx.unions);
         for step in self.steps.iter() {
             value = match *step {
                 Step::Field(name, ty) => {
@@ -169,28 +212,32 @@ impl Path {
 
 /// `constant` plus each path times its coefficient: the terms sorted by path, no coefficient zero.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-struct Form {
+pub(crate) struct Form {
     terms: Vec<(Path, i64)>,
     constant: Int,
 }
 
 impl Form {
-    fn constant(constant: Int) -> Self {
+    pub fn constant(constant: Int) -> Self {
         Self {
             terms: Vec::new(),
             constant,
         }
     }
 
-    fn path(path: Path) -> Self {
+    pub fn path(path: Path) -> Self {
         Self {
             terms: vec![(path, 1)],
             constant: Int::from(0),
         }
     }
 
+    pub fn terms(&self) -> &[(Path, i64)] {
+        &self.terms
+    }
+
     /// The form plus `factor` times `other`; none past an `i64` coefficient.
-    fn plus_times(&self, other: &Self, factor: i64) -> Option<Self> {
+    pub fn plus_times(&self, other: &Self, factor: i64) -> Option<Self> {
         let mut terms = Vec::with_capacity(self.terms.len() + other.terms.len());
         let (mut mine, mut theirs) = (self.terms.iter().peekable(), other.terms.iter().peekable());
         loop {
@@ -224,7 +271,7 @@ impl Form {
     }
 
     /// `factor` is not zero; none past an `i64` coefficient.
-    fn times(&self, factor: i64) -> Option<Self> {
+    pub fn times(&self, factor: i64) -> Option<Self> {
         let terms = self
             .terms
             .iter()
@@ -236,7 +283,7 @@ impl Form {
         })
     }
 
-    fn shifted(&self, by: i64) -> Self {
+    pub fn shifted(&self, by: i64) -> Self {
         Self {
             terms: self.terms.clone(),
             constant: &self.constant + &Int::from(by),
@@ -288,16 +335,17 @@ impl Form {
         sums
     }
 
-    /// The values of the form where the parameters hold `args`; none where a path holds nothing.
-    fn among(&self, args: &[&May], cx: Types<'_>) -> Option<Ints> {
+    /// The values of the form where its paths' roots hold what `roots` gives them; none where a
+    /// path holds nothing.
+    pub fn among<R: Roots + ?Sized>(&self, roots: &R, cx: Types<'_>) -> Option<Ints> {
         // A path alone keeps what its values lack, which sums and products do not.
         if let ([(path, 1)], true) = (self.terms.as_slice(), self.constant == Int::from(0)) {
-            let held = path.among(args, cx).ints;
+            let held = path.among(roots, cx).ints;
             return (!held.is_empty()).then_some(held);
         }
         let mut values = Ints::from(self.constant.clone());
         for (path, coefficient) in &self.terms {
-            let held = path.among(args, cx).ints;
+            let held = path.among(roots, cx).ints;
             if held.is_empty() {
                 return None;
             }
@@ -333,9 +381,9 @@ fn strongest(mut forms: Vec<Form>, is_lower: bool) -> Vec<Form> {
 /// What bounds an integer: it is at least every form of `lo` and at most every form of `hi`, and
 /// it is so bound only where each path of `needs` holds some value, as a `match` arm's member.
 #[derive(Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
-struct Bounds {
-    lo: Vec<Form>,
-    hi: Vec<Form>,
+pub(crate) struct Bounds {
+    pub lo: Vec<Form>,
+    pub hi: Vec<Form>,
     needs: Vec<Path>,
 }
 
@@ -494,22 +542,27 @@ impl Bounds {
         self.lo.iter().find(|form| self.hi.contains(form))
     }
 
-    /// The integers within the bounds where the parameters hold `args`; none where there are none.
-    fn among(&self, args: &[&May], cx: Types<'_>) -> Option<Ints> {
-        if !self.needs.iter().all(|need| need.among(args, cx).is_live()) {
+    /// The integers within the bounds where the roots hold what `roots` gives them; none where
+    /// there are none.
+    fn among<R: Roots + ?Sized>(&self, roots: &R, cx: Types<'_>) -> Option<Ints> {
+        if !self
+            .needs
+            .iter()
+            .all(|need| need.among(roots, cx).is_live())
+        {
             return None;
         }
         // The integer itself keeps in its values what bounds cannot say.
         let exact = self.form();
         let mut band = match exact {
-            Some(form) => form.among(args, cx)?,
+            Some(form) => form.among(roots, cx)?,
             None => Ints::ALL,
         };
         for form in self.lo.iter().filter(|form| Some(*form) != exact) {
-            band = band.refine(CmpOp::Ge, &form.among(args, cx)?);
+            band = band.refine(CmpOp::Ge, &form.among(roots, cx)?);
         }
         for form in self.hi.iter().filter(|form| Some(*form) != exact) {
-            band = band.refine(CmpOp::Le, &form.among(args, cx)?);
+            band = band.refine(CmpOp::Le, &form.among(roots, cx)?);
         }
         (!band.is_empty()).then_some(band)
     }
@@ -519,7 +572,7 @@ impl Bounds {
 /// one that holds of each, and stay so: `is_merged` absorbs, so a join is the same in any order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Cases {
-    cases: Vec<Bounds>,
+    pub cases: Vec<Bounds>,
     is_merged: bool,
 }
 
@@ -645,7 +698,7 @@ fn flipped(op: CmpOp) -> CmpOp {
 }
 
 /// The comparison that holds when `op` does not.
-fn negated(op: CmpOp) -> CmpOp {
+pub(crate) fn negated(op: CmpOp) -> CmpOp {
     match op {
         CmpOp::Lt => CmpOp::Ge,
         CmpOp::Le => CmpOp::Gt,
@@ -656,12 +709,13 @@ fn negated(op: CmpOp) -> CmpOp {
     }
 }
 
-/// What the parameters of a node's function say of its value.
+/// What other values say of a node's: the parameters of its function, and for a proof the body's
+/// own nodes too.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum Sym {
     /// No value reaches the node.
     None,
-    /// Nothing relates the value to the parameters.
+    /// Nothing relates the value to others.
     Any,
     /// The value a path holds, of a type other than `int`.
     Same(Path),
@@ -671,11 +725,12 @@ pub(crate) enum Sym {
     Seq(Box<Seq>),
 }
 
-/// A sequence that is no path's own value: the path that holds one of its length and of its
-/// elements' at every depth, where one does, and its length.
+/// A sequence that is no path's own value: the path that holds this very value where one does,
+/// the path that holds one of its length and of its elements' at every depth, and its length.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Seq {
     decl: DeclId,
+    id: Option<Path>,
     shape: Option<Path>,
     len: Sym,
 }
@@ -683,13 +738,13 @@ pub(crate) struct Seq {
 impl Sym {
     pub fn param(index: u32, ty: Ty) -> Self {
         Self::of(Path {
-            param: index,
+            root: Root::Param(index),
             ty,
             steps: Rc::from([]),
         })
     }
 
-    fn of(path: Path) -> Self {
+    pub fn of(path: Path) -> Self {
         if path.ty() == Ty::INT {
             Self::int_of(Cases::one(Bounds::exact(Form::path(path))))
         } else {
@@ -697,7 +752,7 @@ impl Sym {
         }
     }
 
-    /// Bounds that say nothing are no relation to the parameters.
+    /// Bounds that say nothing are no relation to other values.
     fn int_of(cases: Cases) -> Self {
         match cases.cases.as_slice() {
             [only] if *only == Bounds::default() => Self::Any,
@@ -709,11 +764,17 @@ impl Sym {
         Self::form(Form::constant(value.clone()))
     }
 
-    fn form(form: Form) -> Self {
+    /// The integer `form` is.
+    pub fn form(form: Form) -> Self {
         Self::int_of(Cases::one(Bounds::exact(form)))
     }
 
-    /// What the value holds through `steps`, each index as `at` gives it.
+    /// What the value holds through `steps`.
+    pub fn through(&self, steps: &[Step], cx: Types<'_>) -> Self {
+        self.stepped(steps, cx, |index| Self::form(index.clone()))
+    }
+
+    /// `through`, with each index as `at` gives it.
     fn stepped(&self, steps: &[Step], cx: Types<'_>, at: impl Fn(&Form) -> Self) -> Self {
         let mut value = self.clone();
         for step in steps {
@@ -726,11 +787,22 @@ impl Sym {
         value
     }
 
+    /// A sequence one path holds, of which no more is known than the path says, is that path's
+    /// value.
+    fn of_seq(seq: Seq) -> Self {
+        match (&seq.id, &seq.shape) {
+            (Some(id), Some(shape)) if id == shape && seq.len == Self::of(id.len()) => {
+                Self::Same(id.clone())
+            }
+            _ => Self::Seq(Box::new(seq)),
+        }
+    }
+
     fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 
-    /// A value the parameters say nothing of, where one reaches the node.
+    /// A value nothing says more of, where one reaches the node.
     fn live(&self) -> Self {
         if self.is_none() {
             Self::None
@@ -740,7 +812,7 @@ impl Sym {
     }
 
     /// The form the integer is, where one says so.
-    fn exact(&self) -> Option<&Form> {
+    pub fn exact(&self) -> Option<&Form> {
         match self {
             Self::Int(cases) => match cases.cases.as_slice() {
                 [only] => only.form(),
@@ -750,7 +822,8 @@ impl Sym {
         }
     }
 
-    /// The sequence this is, where it is one: a path's own is of its shape.
+    /// The sequence this is, where it is one: of its own shape where a path holds it and nothing
+    /// says another's.
     fn seq(&self, cx: Types<'_>) -> Option<Seq> {
         match self {
             Self::Same(path) => {
@@ -758,11 +831,15 @@ impl Sym {
                 cx.element(decl)?;
                 Some(Seq {
                     decl,
+                    id: Some(path.clone()),
                     shape: Some(path.clone()),
                     len: Self::of(path.len()),
                 })
             }
-            Self::Seq(seq) => Some((**seq).clone()),
+            Self::Seq(seq) => Some(Seq {
+                shape: seq.shape.clone().or_else(|| seq.id.clone()),
+                ..(**seq).clone()
+            }),
             _ => None,
         }
     }
@@ -770,12 +847,13 @@ impl Sym {
     fn sequence(decl: DeclId, count: usize) -> Self {
         Self::Seq(Box::new(Seq {
             decl,
+            id: None,
             shape: None,
             len: Self::int(&Int::from(count as i64)),
         }))
     }
 
-    fn length(&self, cx: Types<'_>) -> Self {
+    pub fn length(&self, cx: Types<'_>) -> Self {
         self.seq(cx).map_or_else(|| self.live(), |seq| seq.len)
     }
 
@@ -786,25 +864,20 @@ impl Sym {
         let (Some(seq), Some(index)) = (self.seq(cx), index.exact()) else {
             return self.live();
         };
+        let element = cx.element(seq.decl).expect("a sequence type");
+        let id = seq.id.and_then(|path| path.element(index, cx));
+        let Some(decl) = element.as_decl().filter(|&decl| cx.element(decl).is_some()) else {
+            return id.map_or(Self::Any, Self::of);
+        };
         let Some(shape) = seq.shape.and_then(|path| path.element(index, cx)) else {
             return Self::Any;
         };
-        // A path's element is the path's; of a sequence stored into, only a sequence's shape is.
-        match (
-            self,
-            shape
-                .ty()
-                .as_decl()
-                .filter(|&decl| cx.element(decl).is_some()),
-        ) {
-            (Self::Same(_), _) => Self::of(shape),
-            (_, Some(decl)) => Self::Seq(Box::new(Seq {
-                decl,
-                len: Self::of(shape.len()),
-                shape: Some(shape),
-            })),
-            (_, None) => Self::Any,
-        }
+        Self::of_seq(Seq {
+            decl,
+            id,
+            len: Self::of(shape.len()),
+            shape: Some(shape),
+        })
     }
 
     /// The sequence with `by` more elements, or fewer.
@@ -814,6 +887,7 @@ impl Sym {
         };
         Self::Seq(Box::new(Seq {
             decl: seq.decl,
+            id: None,
             shape: None,
             len: (seq.len).arith(ArithOp::Add, &Self::int(&Int::from(by))),
         }))
@@ -831,6 +905,7 @@ impl Sym {
         });
         Self::Seq(Box::new(Seq {
             decl: seq.decl,
+            id: None,
             shape,
             len: seq.len,
         }))
@@ -895,15 +970,16 @@ impl Sym {
             _ => match (self.seq(cx), other.seq(cx)) {
                 (Some(a), Some(b)) if a.decl == b.decl => {
                     let shape = a.shape.filter(|shape| b.shape.as_ref() == Some(shape));
-                    Self::Seq(Box::new(Seq {
+                    Self::of_seq(Seq {
                         decl: a.decl,
+                        id: a.id.filter(|id| b.id.as_ref() == Some(id)),
                         len: match &shape {
                             _ if a.len == b.len => a.len,
                             Some(shape) => Self::of(shape.len()),
                             None => a.len.join(&b.len, cx, widens),
                         },
                         shape,
-                    }))
+                    })
                 }
                 _ => Self::Any,
             },
@@ -989,12 +1065,12 @@ impl Sym {
             Self::Made(made) => made
                 .iter()
                 .any(|(_, fields)| fields.iter().any(Self::reads_params)),
-            Self::Seq(seq) => seq.shape.is_some() || seq.len.reads_params(),
+            Self::Seq(seq) => seq.id.is_some() || seq.shape.is_some() || seq.len.reads_params(),
         }
     }
 
-    /// A callee's value where its parameters hold `args`, as the caller's parameters decide them.
-    fn at(&self, args: &[&Self], cx: Types<'_>) -> Self {
+    /// A callee's value where its parameters hold `args`, as what `args` are of decides them.
+    pub fn at(&self, args: &[&Self], cx: Types<'_>) -> Self {
         if !self.reads_params() {
             return self.clone();
         }
@@ -1014,30 +1090,30 @@ impl Sym {
                     .collect(),
             ),
             Self::Seq(seq) => {
-                let shaped = seq
-                    .shape
-                    .as_ref()
-                    .and_then(|path| path.at(args, cx).seq(cx));
-                Self::Seq(Box::new(Seq {
+                let given = |path: &Option<Path>| path.as_ref()?.at(args, cx).seq(cx);
+                let shaped = given(&seq.shape);
+                Self::of_seq(Seq {
                     decl: seq.decl,
+                    id: given(&seq.id).and_then(|given| given.id),
                     len: match &shaped {
                         Some(shaped) => shaped.len.clone(),
                         None => seq.len.at(args, cx),
                     },
                     shape: shaped.and_then(|shaped| shaped.shape),
-                }))
+                })
             }
         }
     }
 
-    /// Every value this allows where the parameters hold `args`; none where it allows any.
-    pub fn among(&self, args: &[&May], cx: Types<'_>) -> Option<May> {
+    /// Every value this allows where the roots hold what `roots` gives them; none where it
+    /// allows any.
+    pub fn among<R: Roots + ?Sized>(&self, roots: &R, cx: Types<'_>) -> Option<May> {
         match self {
             Self::None | Self::Any => None,
-            Self::Same(path) => Some(path.among(args, cx)),
+            Self::Same(path) => Some(path.among(roots, cx)),
             Self::Int(cases) => {
                 let mut ints = Ints::EMPTY;
-                for band in cases.cases.iter().filter_map(|case| case.among(args, cx)) {
+                for band in cases.cases.iter().filter_map(|case| case.among(roots, cx)) {
                     ints.join(&band);
                 }
                 Some(May::ints(ints))
@@ -1050,7 +1126,7 @@ impl Sym {
                         .iter()
                         .zip(types)
                         .map(|(field, &(_, ty))| {
-                            field.among(args, cx).unwrap_or_else(|| {
+                            field.among(roots, cx).unwrap_or_else(|| {
                                 ty.map_or(May::NONE, |ty| May::every(ty, cx.unions))
                             })
                         })
@@ -1063,7 +1139,7 @@ impl Sym {
             }
             Self::Seq(seq) => {
                 let element = cx.element(seq.decl).expect("a sequence type");
-                let len = match seq.len.among(args, cx) {
+                let len = match seq.len.among(roots, cx) {
                     Some(len) => &len.ints & &Ints::LENGTHS,
                     None => Ints::LENGTHS,
                 };
@@ -1073,6 +1149,37 @@ impl Sym {
                 let element = Box::new(May::every(element, cx.unions));
                 Some(May::decl(seq.decl, Fields::Elements(len, element)))
             }
+        }
+    }
+
+    /// The value with `path`, which holds it, for whatever of it no other value says: an integer
+    /// no form is, a sequence no path holds, and so each field.
+    fn named(self, path: Path, cx: Types<'_>) -> Self {
+        match self {
+            Self::Any if path.ty() == Ty::INT || path.ty().is_declared() => Self::of(path),
+            Self::Int(_) if self.exact().is_none() => Self::of(path),
+            Self::Made(made) => Self::Made(
+                made.into_iter()
+                    .map(|(decl, fields)| {
+                        let names = cx.decls[decl.index()].fields().iter();
+                        let of = path.with_ty(Ty::decl(decl));
+                        let fields = fields.into_iter().zip(names).map(|(field, &(name, _))| {
+                            match of.field(name, cx) {
+                                Some(path) => field.named(path, cx),
+                                None => field,
+                            }
+                        });
+                        (decl, fields.collect())
+                    })
+                    .collect(),
+            ),
+            Self::Seq(seq) => Self::of_seq(Seq {
+                decl: seq.decl,
+                len: seq.len.named(path.len(), cx),
+                id: seq.id.or(Some(path)),
+                shape: seq.shape,
+            }),
+            Self::None | Self::Any | Self::Same(_) | Self::Int(_) => self,
         }
     }
 
@@ -1192,7 +1299,9 @@ impl Summaries {
                         (components.of[callee.index()] as usize != component)
                             .then(|| &results[callee.index()])
                     };
-                    result(graph, lowered, &graph.runs()[member], known, types)
+                    let run = &graph.runs()[member];
+                    let mut syms = pass(graph, lowered, run, known, types, None);
+                    syms.swap_remove(run.slot(run.result()))
                 })
                 .collect();
             for (&member, result) in members.iter().zip(passed) {
@@ -1215,17 +1324,23 @@ impl Summaries {
     pub fn callee(&self, call: NodeId) -> Option<FunctionId> {
         self.calls.get(&call).copied()
     }
+
+    /// The callee's result where `call` takes it as its own arguments decide it.
+    pub fn result(&self, call: NodeId) -> Option<&Sym> {
+        Some(&self.results[self.callee(call)?.index()])
+    }
 }
 
-/// The result of `run` as its parameters decide it. Every operand of a node precedes it but what a
-/// loop carries round; `known` answers a call's callee's result.
-fn result<'a>(
+/// Each node of `run` as others decide it, by slot; `known` answers a call's callee's result. With
+/// `named`, a node's type, a node nothing decides is its own path; without, it is unknown.
+pub(crate) fn pass<'a>(
     graph: &Graph,
     lowered: &Lowered,
     run: &Run,
     known: impl Fn(NodeId) -> Option<&'a Sym>,
     types: Types<'_>,
-) -> Sym {
+    named: Option<&dyn Fn(NodeId) -> Option<Ty>>,
+) -> Vec<Sym> {
     let count = run.nodes().len();
     let mut syms: Vec<Sym> = Vec::with_capacity(count);
     // By the header of a value a loop carries, the node that hands it round.
@@ -1249,6 +1364,8 @@ fn result<'a>(
             Op::Copy { .. } | Op::Assign | Op::Exactly(_) => at(inputs[0]).clone(),
             Op::Sequence => at(inputs[1]).clone(),
             Op::Narrow(ty) => at(inputs[0]).narrowed(*ty, types),
+            // A name keeps what it is of: a guard is read where it holds.
+            Op::Refine { .. } if named.is_some() => at(inputs[0]).clone(),
             Op::Refine {
                 op,
                 local_is_lhs,
@@ -1380,9 +1497,13 @@ fn result<'a>(
             },
             _ => Sym::Any,
         };
+        let sym = match named.and_then(|ty| ty(node)) {
+            Some(ty) => sym.named(Path::node(node, ty), types),
+            None => sym,
+        };
         syms.push(sym);
     }
-    syms.swap_remove(run.slot(run.result()))
+    syms
 }
 
 #[cfg(test)]
@@ -1418,7 +1539,7 @@ mod tests {
             decls: &decls,
             unions: &unions,
         };
-        let among = |a: May, b: May| least().among(&[&a, &b], types).map(|may| may.ints);
+        let among = |a: May, b: May| least().among(&[&a, &b][..], types).map(|may| may.ints);
         assert_eq!(among(band(3, 8), band(5, 6)), Some(band(3, 6).ints));
         assert_eq!(among(band(7, 7), band(5, 5)), Some(band(5, 5).ints));
         // The branch that returns `a` needs `a < b`, which no value here meets.
@@ -1438,7 +1559,7 @@ mod tests {
         let next = n.arith(ArithOp::Add, &Sym::int(&Int::from(1)));
         let ten = Sym::int(&Int::from(10));
         let called = least().at(&[&next, &ten], types);
-        let among = |n: May| called.among(&[&n], types).map(|may| may.ints);
+        let among = |n: May| called.among(&[&n][..], types).map(|may| may.ints);
         assert_eq!(among(band(0, 3)), Some(band(1, 4).ints));
         assert_eq!(among(band(20, 30)), Some(band(10, 10).ints));
         assert_eq!(among(band(5, 15)), Some(band(6, 10).ints));
@@ -1469,7 +1590,7 @@ mod tests {
         };
         assert!(cases.is_merged && cases.cases.len() == 1);
         assert_eq!(forward.joined(&point(2), types), forward);
-        let within = forward.among(&[], types).map(|may| may.ints);
+        let within = forward.among(&[][..], types).map(|may| may.ints);
         assert_eq!(within, Some(band(0, MAX_CASES as i64).ints));
     }
 
@@ -1496,8 +1617,11 @@ mod tests {
             .narrowed(Ty::decl(boxed), types)
             .field(value, types)
             .joined(&fallback.needing(&as_none), types);
-        let among =
-            |v: May, fallback: May| unwrapped.among(&[&v, &fallback], types).map(|may| may.ints);
+        let among = |v: May, fallback: May| {
+            unwrapped
+                .among(&[&v, &fallback][..], types)
+                .map(|may| may.ints)
+        };
         let some = May::make(boxed, vec![band(4, 4)]);
         let nothing = May::make(none, Vec::new());
         assert_eq!(among(some.clone(), band(0, 0)), Some(band(4, 4).ints));
