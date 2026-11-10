@@ -1,6 +1,6 @@
 file: rejected
 frontend errors: 0 (see frontend.snap)
-semantic errors: 25
+semantic errors: 23
 
 == graph ==
 fn swap<T>@5:1..9:2 (T ∈ ∅, T ∈ ∅) -> unit ∈ ∅
@@ -93,6 +93,30 @@ fn errors@11:1..39:2 (int ∈ ∅) -> int ∈ ∅
           element: int 1 : int @31:6..31:7
           element: int 2 : int @31:9..31:10
         part[1]: int 3 : int @31:17..31:18
+      assignment: assign ys@13:13..13:15 : [int] @32:14..32:19
+        value: store : [int] @32:14..32:19
+          sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+          index: int 0 : int @32:17..32:18
+          element: field a : int @32:14..32:19
+            base: call swap@5:1..9:2 : <missing> @32:5..32:31
+              arg[0]: index : int @32:14..32:19
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: int 0 : int @32:17..32:18
+              arg[1]: index : int @32:25..32:30
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: read n@11:11..11:12 : int
+      assignment: assign ys@13:13..13:15 : [int] @32:25..32:30
+        value: store : [int] @32:25..32:30
+          sequence: read ys@13:13..13:15 (assigned @32:14..32:19) : [int]
+          index: read n@11:11..11:12 : int
+          element: field b : int @32:25..32:30
+            base: call swap@5:1..9:2 : <missing> @32:5..32:31
+              arg[0]: index : int @32:14..32:19
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: int 0 : int @32:17..32:18
+              arg[1]: index : int @32:25..32:30
+                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                index: read n@11:11..11:12 : int
       discard: field return : unit @32:5..32:31
         base: call swap@5:1..9:2 : <missing> @32:5..32:31
           arg[0]: index : int @32:14..32:19
@@ -101,25 +125,49 @@ fn errors@11:1..39:2 (int ∈ ∅) -> int ∈ ∅
           arg[1]: index : int @32:25..32:30
             sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
             index: read n@11:11..11:12 : int
+      assignment: assign ys@13:13..13:15 : [int] @33:14..33:19
+        value: store : [int] @33:14..33:19
+          sequence: read ys@13:13..13:15 (assigned @32:25..32:30) : [int]
+          index: int 0 : int @33:17..33:18
+          element: field a : int @33:14..33:19
+            base: call swap@5:1..9:2 : <missing> @33:5..33:31
+              arg[0]: index : int @33:14..33:19
+                sequence: read ys@13:13..13:15 (assigned @32:25..32:30) : [int]
+                index: int 0 : int @33:17..33:18
+              arg[1]: index : int @33:25..33:30
+                sequence: read ys@13:13..13:15 (assigned @32:25..32:30) : [int]
+                index: int 0 : int @33:28..33:29
+      assignment: assign ys@13:13..13:15 : [int] @33:25..33:30
+        value: store : [int] @33:25..33:30
+          sequence: read ys@13:13..13:15 (assigned @33:14..33:19) : [int]
+          index: int 0 : int @33:28..33:29
+          element: field b : int @33:25..33:30
+            base: call swap@5:1..9:2 : <missing> @33:5..33:31
+              arg[0]: index : int @33:14..33:19
+                sequence: read ys@13:13..13:15 (assigned @32:25..32:30) : [int]
+                index: int 0 : int @33:17..33:18
+              arg[1]: index : int @33:25..33:30
+                sequence: read ys@13:13..13:15 (assigned @32:25..32:30) : [int]
+                index: int 0 : int @33:28..33:29
       discard: field return : unit @33:5..33:31
         base: call swap@5:1..9:2 : <missing> @33:5..33:31
           arg[0]: index : int @33:14..33:19
-            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            sequence: read ys@13:13..13:15 (assigned @32:25..32:30) : [int]
             index: int 0 : int @33:17..33:18
           arg[1]: index : int @33:25..33:30
-            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            sequence: read ys@13:13..13:15 (assigned @32:25..32:30) : [int]
             index: int 0 : int @33:28..33:29
       assignment: assign ys@13:13..13:15 : [int] @34:14..34:19
         value: store : [int] @34:14..34:19
-          sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+          sequence: read ys@13:13..13:15 (assigned @33:25..33:30) : [int]
           index: int 0 : int @34:17..34:18
           element: field a : int @34:14..34:19
             base: call swap@5:1..9:2 : <missing> @34:5..34:31
               arg[0]: index : int @34:14..34:19
-                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                sequence: read ys@13:13..13:15 (assigned @33:25..33:30) : [int]
                 index: int 0 : int @34:17..34:18
               arg[1]: index : int @34:25..34:30
-                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                sequence: read ys@13:13..13:15 (assigned @33:25..33:30) : [int]
                 index: int 1 : int @34:28..34:29
       assignment: assign ys@13:13..13:15 : [int] @34:25..34:30
         value: store : [int] @34:25..34:30
@@ -128,18 +176,18 @@ fn errors@11:1..39:2 (int ∈ ∅) -> int ∈ ∅
           element: field b : int @34:25..34:30
             base: call swap@5:1..9:2 : <missing> @34:5..34:31
               arg[0]: index : int @34:14..34:19
-                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                sequence: read ys@13:13..13:15 (assigned @33:25..33:30) : [int]
                 index: int 0 : int @34:17..34:18
               arg[1]: index : int @34:25..34:30
-                sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+                sequence: read ys@13:13..13:15 (assigned @33:25..33:30) : [int]
                 index: int 1 : int @34:28..34:29
       discard: field return : unit @34:5..34:31
         base: call swap@5:1..9:2 : <missing> @34:5..34:31
           arg[0]: index : int @34:14..34:19
-            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            sequence: read ys@13:13..13:15 (assigned @33:25..33:30) : [int]
             index: int 0 : int @34:17..34:18
           arg[1]: index : int @34:25..34:30
-            sequence: read ys@13:13..13:15 (assigned @23:5..23:18) : [int]
+            sequence: read ys@13:13..13:15 (assigned @33:25..33:30) : [int]
             index: int 1 : int @34:28..34:29
       let zs@35:9..35:11: hole : ? @35:5..35:30
         part[0]: read p@17:9..17:10 : Point
@@ -189,10 +237,6 @@ error[semantic/type-arguments] 28:11..28:16 "<int>": expected 0 type arguments, 
 error[semantic/unknown-method] 29:12..29:16 "nope": `[int]` has no method `nope`
 error[semantic/unknown-field] 30:9..30:15 "ys.len": `len` is a method of `[int]`: a call of it takes `()`
 error[semantic/invalid-assignment-target] 31:5..31:11 "[1, 2]": `push` changes its receiver, which is no place: a place is a `mut` name, or a field or an element under one
-error[semantic/overlapping-places] 32:25..32:30 "ys[n]": this place overlaps another the call changes
-  at 32:14..32:19 "ys[0]": also changed here
-error[semantic/overlapping-places] 33:25..33:30 "ys[0]": this place overlaps another the call changes
-  at 33:14..33:19 "ys[0]": also changed here
 error[semantic/invalid-union-member] 35:13..35:18 "[int]": a sequence is no member of a union
 error[semantic/unknown-type] 36:14..36:21 "Missing": unknown type `Missing`
 error[semantic/type-arguments] 36:25..36:27 "[]": nothing here decides what this sequence holds; give what takes it a type

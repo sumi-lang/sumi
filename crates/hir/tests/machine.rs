@@ -834,6 +834,22 @@ impl Gen<'_> {
                                      fill(mut {name}, {i}) }}"
                                 )
                             }
+                            10 => {
+                                let i = self.fresh(Kind::Int);
+                                format!(
+                                    "for {i} in 1..{name}.len() {{ exchange(mut {name}[0], mut \
+                                     {name}[{i}]) }}"
+                                )
+                            }
+                            11 if self.rng.chance(1, 3) => {
+                                let (i, j) = (self.fresh(Kind::Int), self.fresh(Kind::Int));
+                                format!(
+                                    "for {i} in 0..{name}.len() {{ for {j} in {i} + 1..\
+                                     {name}.len() {{ exchange(mut {name}[{i}], mut {name}[{j}]) \
+                                     }} }}"
+                                )
+                            }
+                            11 if self.rng.chance(1, 2) => format!("trade(mut {name}, 1, 0)"),
                             11 => format!("fill(mut {name}, {value})"),
                             // An index that may return first is still read once, in order.
                             pick @ 6..=7 => {
@@ -1115,6 +1131,7 @@ fn program_of(seed: u64, is_doubtful: bool) -> String {
          fn shrink(mut q: [int]) { if q.len() > 2 { _ = q.pop() } }\n\
          fn tidy(mut g: [[int]]) { for y in 0..g.len() { for x in 0..g[y].len() { g[y][x] = 0 } } }\n\
          fn wipe(mut g: [[int]]) { for y in 0..g.len() { g[y] = [] } }\n\
+         fn trade(mut q: [int], i: int, j: int) { exchange(mut q[i], mut q[j]) }\n\
          fn wrapped(q: [int], k: int) -> int = \
          if q.len() > 0 && k >= 0 { q[k % q.len()] } else { 0 }\n\
          impl R {\n\

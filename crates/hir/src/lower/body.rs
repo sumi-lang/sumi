@@ -168,13 +168,12 @@ enum Hop {
 type Path = Vec<Hop>;
 
 /// One step under a place's local: a field by its name, or the element at an index, which is
-/// read once, where the place is named, and is the integer `constant` when it is written as one.
+/// read once, where the place is named.
 enum Step<'s> {
     Field(&'s str, NodeIdx),
     Index {
         node: NodeIdx,
         index: (NodeId, TextRange),
-        constant: Option<Int>,
     },
 }
 
@@ -197,18 +196,23 @@ struct Place<'s> {
 }
 
 impl Place<'_> {
-    /// Whether a write to one is a write to the other, or to a part of it: two elements are
-    /// apart only at indices written as different integers.
-    fn overlaps(&self, other: &Self) -> bool {
-        let shared = self.steps.iter().zip(&other.steps);
-        self.local == other.local
-            && shared.into_iter().all(|steps| match steps {
-                (Step::Field(a, _), Step::Field(b, _)) => a == b,
-                (Step::Index { constant: a, .. }, Step::Index { constant: b, .. }) => {
-                    a.is_none() || b.is_none() || a == b
+    /// None where the places are apart by a field's name; else the pairs of indices where both
+    /// are elements: a write to one is to the other, or a part of it, where each pair is one.
+    fn overlap(&self, other: &Self) -> Option<Vec<(NodeId, NodeId)>> {
+        if self.local != other.local {
+            return None;
+        }
+        let mut indices = Vec::new();
+        for steps in self.steps.iter().zip(&other.steps) {
+            match steps {
+                (Step::Field(a, _), Step::Field(b, _)) if a != b => return None,
+                (Step::Index { index: a, .. }, Step::Index { index: b, .. }) => {
+                    indices.push((a.0, b.0));
                 }
-                _ => true,
-            })
+                _ => {}
+            }
+        }
+        Some(indices)
     }
 }
 
@@ -1743,14 +1747,9 @@ impl<'a, 's> Builder<'a, 's> {
                 return None;
             }
             control = self.compose_control(value.range, [control, value.control]);
-            let constant = match &self.graph.node(value.node).op {
-                Op::Int(value) => Some(value.clone()),
-                _ => None,
-            };
             steps.push(Step::Index {
                 node: expr.node(),
                 index: value.input(),
-                constant,
             });
         }
         Some((steps, control))
@@ -3961,17 +3960,24 @@ impl<'a, 's> Builder<'a, 's> {
         for (position, (index, place)) in lent.iter().enumerate() {
             let Some(place) = place else { continue };
             let earlier = lent[..position].iter();
-            let mut earlier =
-                earlier.filter_map(|(index, earlier)| Some((*index, earlier.as_ref()?)));
-            if let Some((first, _)) = earlier.find(|(_, earlier)| earlier.overlaps(place)) {
-                let first = (args[first].1.range, Box::from("also changed here"));
-                self.source.report(
-                    args[*index].1.range,
-                    codes::OVERLAPPING_PLACES,
-                    "this place overlaps another the call changes",
-                    [first],
-                );
-                agrees = false;
+            let earlier = earlier.filter_map(|(index, earlier)| Some((*index, earlier.as_ref()?)));
+            for (first, earlier) in earlier {
+                let Some(indices) = earlier.overlap(place) else {
+                    continue;
+                };
+                let other = args[first].1.range;
+                if indices.is_empty() {
+                    self.source.report(
+                        args[*index].1.range,
+                        codes::OVERLAPPING_PLACES,
+                        "this place overlaps another the call changes",
+                        [(other, Box::from("also changed here"))],
+                    );
+                    agrees = false;
+                    break;
+                }
+                let indices = indices.into_boxed_slice();
+                self.owe(args[*index].1.range, Need::Apart { indices, other });
             }
         }
         agrees

@@ -17,11 +17,20 @@ pub(crate) use source::{Params, Source, diagnostic};
 use crate::{Binding, Occurrence};
 
 /// What an operation needs of its operands to run.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub(crate) enum Need {
     Divisor(NodeId),
-    Element { array: NodeId, index: NodeId },
+    Element {
+        array: NodeId,
+        index: NodeId,
+    },
     Last(NodeId),
+    /// Two places a call changes, apart where some pair of `indices` is not one index; `other`
+    /// is where the place before this one is written.
+    Apart {
+        indices: Box<[(NodeId, NodeId)]>,
+        other: TextRange,
+    },
 }
 
 /// An operation at `at` that runs under `context` only with what it needs.

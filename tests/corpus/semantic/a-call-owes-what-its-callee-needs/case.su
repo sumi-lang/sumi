@@ -12,6 +12,16 @@ fn first(xs: [int], n: int) -> int {
 
 fn through(xs: [int], i: int) -> int = at(xs, i + 1)
 
+fn swap(mut a: int, mut b: int) {
+    let t = a
+    a = b
+    b = t
+}
+
+fn swap_at(mut xs: [int], i: int, j: int) {
+    swap(mut xs[i], mut xs[j])
+}
+
 type Row {
     cells: [int],
 }
@@ -66,13 +76,18 @@ fn maybe() -> int {
 }
 
 fn kept() -> int {
-    let xs = [1, 2, 3]
+    let mut xs = [1, 2, 3]
+    swap_at(mut xs, 0, 2)
     let rows = cell(Row(cells: [1, 2]), 1) + cell(Row(cells: [3]), 0) + cell(Empty(), 7)
     rows + at(xs, 2) + half(8, 2) + half(9, -3) + first(xs, 3) + first([], -2) + through(xs, 1)
 }
 
 fn main() -> int {
-    let xs = [1, 2, 3]
+    let mut xs = [1, 2, 3]
+    swap_at(mut xs, 1, 1)
+    for i in 0..xs.len() {
+        swap(mut xs[i], mut xs[0])
+    }
     let bad = at(xs, 3) + at(xs, 0 - 1) + half(1, 0) + first(xs, 4) + through(xs, 2)
     let worse = cell_of(Grid(cells: [1]), 1) + back([0], 0) + third([1, 2, 0]) + minus(0)
     let worst = less(1, 0) + more(0, 2) + ping(xs, 3) + ping([1], 1) + maybe()
