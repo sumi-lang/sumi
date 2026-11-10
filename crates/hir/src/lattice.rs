@@ -297,7 +297,7 @@ impl Lattice for May {
                     decls: &cx.decls,
                     unions: &cx.unions,
                 };
-                let allowed = cx.results[callee.index()].among(&args, types);
+                let allowed = cx.results[callee.index()].among(&args[..], types);
                 let result = allowed.map_or_else(|| self.clone(), |allowed| self.meet(&allowed));
                 return rounded(&result, cyclic, cx);
             }

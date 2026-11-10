@@ -1,0 +1,55 @@
+type Grid {
+    cells: [int],
+    width: int,
+}
+
+impl Grid {
+    fn clear(mut self) {
+        for i in 0..self.cells.len() {
+            self.cells[i] = self.width
+        }
+    }
+}
+
+fn sort(mut xs: [int]) {
+    for i in 0..xs.len() {
+        for j in i + 1..xs.len() {
+            if xs[j] < xs[i] {
+                let t = xs[i]
+                xs[i] = xs[j]
+                xs[j] = t
+            }
+        }
+    }
+}
+
+fn double(mut grid: [[int]]) {
+    for y in 0..grid.len() {
+        for x in 0..grid[y].len() {
+            grid[y][x] = grid[y][x] * 2
+        }
+    }
+}
+
+fn squares(n: int) -> [int] {
+    let mut out: [int] = []
+    for i in 0..n {
+        out.push(i * i)
+    }
+    out
+}
+
+fn main() -> int {
+    let mut g = Grid(cells: [1, 2, 3, 4], width: 2)
+    g.clear()
+    let mut xs = [3, 1, 2]
+    sort(mut xs)
+    let mut rows = [[1, 2, 3], [4, 5], [6]]
+    double(mut rows)
+    let sq = squares(4)
+    let mut sum = 0
+    for i in 0..sq.len() {
+        sum += sq[i]
+    }
+    g.cells[3] + xs[0] * 100 + xs[2] * 10 + rows[1][0] + rows[2][0] + sum
+}

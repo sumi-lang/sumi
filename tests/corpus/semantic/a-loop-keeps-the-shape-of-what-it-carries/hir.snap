@@ -1,0 +1,174 @@
+file: accepted
+frontend errors: 0 (see frontend.snap)
+semantic errors: 0
+
+== graph ==
+fn clear@7:5..11:6 (Grid ∈ Grid([[1, 4]; [4, 4]], [2, 2])) -> unit ∈ unit
+  param self@7:18..7:22: Grid
+  result: result : <missing> @7:5..11:6
+    outcome[0]:
+      discard: after : ? @8:9..10:10
+        control: loop : unit @8:9..10:10
+        context: entry : ? @7:5..11:6
+      tail: make <missing> : <missing> @8:9..10:10
+
+fn sort@14:1..24:2 ([int] ∈ [[1, 3]; [3, 3]]) -> unit ∈ unit
+  param xs@14:13..14:15: [int]
+  result: result : <missing> @14:1..24:2
+    outcome[0]:
+      discard: after : ? @15:5..23:6
+        control: loop : unit @15:5..23:6
+        context: entry : ? @14:1..24:2
+      tail: make <missing> : <missing> @15:5..23:6
+
+fn double@26:1..32:2 ([[int]] ∈ [[[1, 6]; [1, 3]]; [3, 3]]) -> unit ∈ unit
+  param grid@26:15..26:19: [[int]]
+  result: result : <missing> @26:1..32:2
+    outcome[0]:
+      discard: after : ? @27:5..31:6
+        control: loop : unit @27:5..31:6
+        context: entry : ? @26:1..32:2
+      tail: make <missing> : <missing> @27:5..31:6
+
+fn squares@34:1..40:2 (int ∈ [4, 4]) -> [int] ∈ [[0, 9]; [1, +∞)]
+  param n@34:12..34:13: int
+  result: result : [int] @34:23..34:28
+    outcome[0]:
+      let out@35:13..35:16: [int] @35:5..35:28
+        initializer: array : [int] @35:26..35:28
+      discard: loop : unit @36:5..38:6
+        start: int 0 : int @36:14..36:15
+        end: read n@34:12..34:13 : int
+        carry[0]: carry out@35:13..35:16 : [int] @36:5..38:6
+          initial: read out@35:13..35:16 : [int]
+        body:
+          let i@36:9..36:10: loop index : int @36:5..38:6
+            start: int 0 : int @36:14..36:15
+            end: read n@34:12..34:13 : int
+          assignment: assign out@35:13..35:16 : [int] @37:9..37:24
+            value: push : [int] @37:9..37:24
+              sequence: read out@35:13..35:16 (carried @36:5..38:6) : [int]
+              element: eager * : int @37:18..37:23
+                lhs: read i@36:9..36:10 : int
+                rhs: read i@36:9..36:10 : int
+          tail: unit : unit @37:9..37:24
+        next[0]: read out@35:13..35:16 (assigned @37:9..37:24) : [int]
+      discard: after : ? @36:5..38:6
+        control: loop : unit @36:5..38:6
+        context: entry : ? @34:1..40:2
+      tail: read out@35:13..35:16 (after loop @36:5..38:6) : [int]
+
+fn main@42:1..55:2 () -> int ∈ [113, +∞)
+  result: result : int @42:14..42:17
+    outcome[0]:
+      let g@43:13..43:14: Grid @43:5..43:52
+        initializer: make Grid : Grid @43:17..43:52
+          cells: array : [int] @43:29..43:41
+            element: int 1 : int @43:30..43:31
+            element: int 2 : int @43:33..43:34
+            element: int 3 : int @43:36..43:37
+            element: int 4 : int @43:39..43:40
+          width: int 2 : int @43:50..43:51
+      assignment: assign g@43:13..43:14 : Grid @44:5..44:6
+        value: field self : Grid @44:5..44:6
+          base: call clear@7:5..11:6 : <missing> @44:5..44:14
+            arg[0]: read g@43:13..43:14 : Grid
+      discard: field return : unit @44:5..44:14
+        base: call clear@7:5..11:6 : <missing> @44:5..44:14
+          arg[0]: read g@43:13..43:14 : Grid
+      let xs@45:13..45:15: [int] @45:5..45:27
+        initializer: array : [int] @45:18..45:27
+          element: int 3 : int @45:19..45:20
+          element: int 1 : int @45:22..45:23
+          element: int 2 : int @45:25..45:26
+      assignment: assign xs@45:13..45:15 : [int] @46:14..46:16
+        value: field xs : [int] @46:14..46:16
+          base: call sort@14:1..24:2 : <missing> @46:5..46:17
+            arg[0]: read xs@45:13..45:15 : [int]
+      discard: field return : unit @46:5..46:17
+        base: call sort@14:1..24:2 : <missing> @46:5..46:17
+          arg[0]: read xs@45:13..45:15 : [int]
+      let rows@47:13..47:17: [[int]] @47:5..47:44
+        initializer: array : [[int]] @47:20..47:44
+          element: array : [int] @47:21..47:30
+            element: int 1 : int @47:22..47:23
+            element: int 2 : int @47:25..47:26
+            element: int 3 : int @47:28..47:29
+          element: array : [int] @47:32..47:38
+            element: int 4 : int @47:33..47:34
+            element: int 5 : int @47:36..47:37
+          element: array : [int] @47:40..47:43
+            element: int 6 : int @47:41..47:42
+      assignment: assign rows@47:13..47:17 : [[int]] @48:16..48:20
+        value: field grid : [[int]] @48:16..48:20
+          base: call double@26:1..32:2 : <missing> @48:5..48:21
+            arg[0]: read rows@47:13..47:17 : [[int]]
+      discard: field return : unit @48:5..48:21
+        base: call double@26:1..32:2 : <missing> @48:5..48:21
+          arg[0]: read rows@47:13..47:17 : [[int]]
+      let sq@49:9..49:11: [int] @49:5..49:24
+        initializer: call squares@34:1..40:2 : [int] @49:14..49:24
+          arg[0]: int 4 : int @49:22..49:23
+      let sum@50:13..50:16: int @50:5..50:20
+        initializer: int 0 : int @50:19..50:20
+      discard: loop : unit @51:5..53:6
+        start: int 0 : int @51:14..51:15
+        end: len : int @51:17..51:25
+          sequence: read sq@49:9..49:11 : [int]
+        carry[0]: carry g@43:13..43:14 : Grid @51:5..53:6
+          initial: read g@43:13..43:14 (assigned @44:5..44:6) : Grid
+        carry[1]: carry xs@45:13..45:15 : [int] @51:5..53:6
+          initial: read xs@45:13..45:15 (assigned @46:14..46:16) : [int]
+        carry[2]: carry rows@47:13..47:17 : [[int]] @51:5..53:6
+          initial: read rows@47:13..47:17 (assigned @48:16..48:20) : [[int]]
+        carry[3]: carry sum@50:13..50:16 : int @51:5..53:6
+          initial: read sum@50:13..50:16 : int
+        body:
+          let i@51:9..51:10: loop index : int @51:5..53:6
+            start: int 0 : int @51:14..51:15
+            end: len : int @51:17..51:25
+              sequence: read sq@49:9..49:11 : [int]
+          assignment: assign sum@50:13..50:16 : int @52:9..52:21
+            value: eager + : int @52:9..52:21
+              lhs: read sum@50:13..50:16 (carried @51:5..53:6) : int
+              rhs: index : int @52:16..52:21
+                sequence: read sq@49:9..49:11 : [int]
+                index: read i@51:9..51:10 : int
+          tail: unit : unit @51:26..53:6
+        next[0]: read g@43:13..43:14 (carried @51:5..53:6) : Grid
+        next[1]: read xs@45:13..45:15 (carried @51:5..53:6) : [int]
+        next[2]: read rows@47:13..47:17 (carried @51:5..53:6) : [[int]]
+        next[3]: read sum@50:13..50:16 (assigned @52:9..52:21) : int
+      discard: after : ? @51:5..53:6
+        control: loop : unit @51:5..53:6
+        context: entry : ? @42:1..55:2
+      tail: eager + : int @54:5..54:74
+        lhs: eager + : int @54:5..54:68
+          lhs: eager + : int @54:5..54:55
+            lhs: eager + : int @54:5..54:42
+              lhs: eager + : int @54:5..54:29
+                lhs: index : int @54:5..54:15
+                  sequence: field cells : [int] @54:5..54:12
+                    base: read g@43:13..43:14 (assigned @44:5..44:6) : Grid
+                  index: int 3 : int @54:13..54:14
+                rhs: eager * : int @54:18..54:29
+                  lhs: index : int @54:18..54:23
+                    sequence: read xs@45:13..45:15 (assigned @46:14..46:16) : [int]
+                    index: int 0 : int @54:21..54:22
+                  rhs: int 100 : int @54:26..54:29
+              rhs: eager * : int @54:32..54:42
+                lhs: index : int @54:32..54:37
+                  sequence: read xs@45:13..45:15 (assigned @46:14..46:16) : [int]
+                  index: int 2 : int @54:35..54:36
+                rhs: int 10 : int @54:40..54:42
+            rhs: index : int @54:45..54:55
+              sequence: index : [int] @54:45..54:52
+                sequence: read rows@47:13..47:17 (assigned @48:16..48:20) : [[int]]
+                index: int 1 : int @54:50..54:51
+              index: int 0 : int @54:53..54:54
+          rhs: index : int @54:58..54:68
+            sequence: index : [int] @54:58..54:65
+              sequence: read rows@47:13..47:17 (assigned @48:16..48:20) : [[int]]
+              index: int 2 : int @54:63..54:64
+            index: int 0 : int @54:66..54:67
+        rhs: read sum@50:13..50:16 (after loop @51:5..53:6) : int
